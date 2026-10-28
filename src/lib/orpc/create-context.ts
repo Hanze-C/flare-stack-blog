@@ -1,4 +1,3 @@
-import { getRequestAuth } from "@/lib/auth/auth.server";
 import { getDb } from "@/lib/db";
 import type { ApiContext } from "./context";
 
@@ -13,6 +12,11 @@ export function createApiContext(
     env,
     executionCtx,
     db,
-    getAuth: () => getRequestAuth({ db, env, executionCtx }),
+    // Better Auth's server code is a large module graph; a cold isolate only
+    // evaluates it once a procedure actually reads the session.
+    getAuth: async () => {
+      const { getRequestAuth } = await import("@/lib/auth/auth.server");
+      return getRequestAuth({ db, env, executionCtx });
+    },
   };
 }

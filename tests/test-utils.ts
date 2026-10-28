@@ -108,7 +108,7 @@ export function createTestContext(
     db: createTestDb(),
     env: { ...env },
     executionCtx: createMockExecutionCtx(),
-    getAuth: () => auth,
+    getAuth: async () => auth,
     ...overrides,
   };
 
