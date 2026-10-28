@@ -3,8 +3,11 @@ export type ApiContext = {
   env: Env;
   executionCtx: ExecutionContext<unknown>;
   db: DB;
-  /** Builds Better Auth on first use, so public procedures never pay for it. */
-  getAuth: () => Auth;
+  /**
+   * Loads and builds Better Auth on first use, so public procedures never pay
+   * for either.
+   */
+  getAuth: () => Promise<Auth>;
 };
 
 export type AuthedApiContext = ApiContext & {

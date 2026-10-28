@@ -1,38 +1,16 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
+import { ROUTED_FIRST_SEGMENTS } from "virtual:routed-first-segments";
 import { describe, expect, it } from "vitest";
 import {
   FRAMEWORK_FIRST_SEGMENTS,
-  ROUTED_FIRST_SEGMENTS,
   isRoutedPath,
   probeNotFoundResponse,
 } from "./probe-404";
 
-// The route tree pulls every route module, which does not load under Node, so
-// read the keys of its `FileRoutesByFullPath` interface instead.
-function routeTreeFirstSegments(): string[] {
-  const source = readFileSync(
-    path.join(__dirname, "../routeTree.gen.ts"),
-    "utf8",
-  );
-  const block = /interface FileRoutesByFullPath \{([^}]*)\}/.exec(source)?.[1];
-  if (!block) throw new Error("FileRoutesByFullPath not found");
-  const segments = new Set<string>();
-  for (const [, fullPath] of block.matchAll(/^\s*'([^']*)':/gm)) {
-    const first = fullPath!.split("/")[1] ?? "";
-    // `/$` is the public catch-all, which is what this guard sits in front of.
-    if (first === "" || first === "$") continue;
-    if (/[${}]/.test(first)) {
-      throw new Error(`Dynamic first segment ${fullPath} needs a decision`);
-    }
-    segments.add(first.toLowerCase());
-  }
-  return [...segments].sort();
-}
-
 describe("ROUTED_FIRST_SEGMENTS", () => {
-  it("matches the first segments of the generated route tree", () => {
-    expect([...ROUTED_FIRST_SEGMENTS].sort()).toEqual(routeTreeFirstSegments());
+  it("is generated from the route tree by the Vite plugin", () => {
+    expect(ROUTED_FIRST_SEGMENTS).toEqual(
+      expect.arrayContaining(["admin", "posts", "post", "rss.xml"]),
+    );
   });
 
   it("is lowercase", () => {

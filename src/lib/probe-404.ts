@@ -1,34 +1,10 @@
+import { ROUTED_FIRST_SEGMENTS } from "virtual:routed-first-segments";
 import { CACHE_CONTROL } from "@/lib/constants";
 
-// First path segments the app routes, lowercased (the router is case
-// insensitive). `probe-404.test.ts` derives them from `routeTree.gen.ts`, so
-// adding a top-level route fails the test until it is listed here.
-export const ROUTED_FIRST_SEGMENTS = [
-  "admin",
-  "api",
-  "atom.xml",
-  "feed.json",
-  "forgot-password",
-  "friend-links",
-  "images",
-  "login",
-  "post",
-  "posts",
-  "profile",
-  "register",
-  "reset-link",
-  "robots.txt",
-  "rss.xml",
-  "search",
-  "site.webmanifest",
-  "sitemap.xml",
-  "stats.js",
-  "submit-friend-link",
-  "unsubscribe",
-  "verify-email",
-] as const;
-
-// Handled by TanStack Start itself, not by a file route.
+// First path segments the app routes come from the generated route tree
+// (`scripts/vite-routed-segments.ts`), lowercased because the router is case
+// insensitive. `_serverfn` is handled by TanStack Start itself, not by a file
+// route.
 export const FRAMEWORK_FIRST_SEGMENTS = ["_serverfn"] as const;
 
 const KNOWN = new Set<string>([
