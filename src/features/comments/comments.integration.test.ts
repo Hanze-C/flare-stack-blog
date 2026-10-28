@@ -680,7 +680,10 @@ describe("Comments Integration", () => {
         ]);
 
         const oldestThread = result.items[4];
-        expect(oldestThread.user).toMatchObject({ id: author, name: authorName });
+        expect(oldestThread.user).toMatchObject({
+          id: author,
+          name: authorName,
+        });
         expect(result.items[3].user).toBeNull();
         expect(result.items[3].replies[0].user).toBeNull();
         expect(oldestThread.replies.map((reply) => reply.replyTo)).toEqual([
