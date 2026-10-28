@@ -1,4 +1,4 @@
-import { getAuth } from "@/lib/auth/auth.server";
+import { getRequestAuth } from "@/lib/auth/auth.server";
 import { getDb } from "@/lib/db";
 import type { ApiContext } from "./context";
 
@@ -13,6 +13,6 @@ export function createApiContext(
     env,
     executionCtx,
     db,
-    auth: getAuth({ db, env }),
+    getAuth: () => getRequestAuth({ db, env, executionCtx }),
   };
 }

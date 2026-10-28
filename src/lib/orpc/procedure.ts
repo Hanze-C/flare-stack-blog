@@ -10,7 +10,7 @@ import type { ApiContext, AuthedApiContext } from "./context";
 
 async function readSession(context: ApiContext) {
   try {
-    return await context.auth.api.getSession({ headers: context.headers });
+    return await context.getAuth().api.getSession({ headers: context.headers });
   } catch (error) {
     if (
       isAPIError(error) &&
