@@ -18,7 +18,7 @@ import { m } from "@/paraglide/messages";
 export const Route = createFileRoute("/_public")({
   component: PublicLayout,
   headers: () => {
-    return CACHE_CONTROL.public;
+    return CACHE_CONTROL.html;
   },
   head: () => {
     const env = clientEnv();
