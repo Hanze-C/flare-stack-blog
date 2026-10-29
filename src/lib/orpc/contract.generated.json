@@ -194,7 +194,7 @@
             "method": "POST",
             "path": "/admin/posts/{id}/pin",
             "summary": "Pin a post",
-            "description": "Pins the post to the top of the homepage. Takes effect at once, without publishing: the public site reads the post's own pin, not the Public Content Snapshot, and its caches are purged. Pinning an already pinned post keeps its place. A draft can be pinned too; the pin shows once it is published. Returns the post's new saveToken, since any write to the post replaces it.",
+            "description": "Pins the post to the top of the homepage. Takes effect at once, without publishing: the public site reads the post's own pin, not the Public Content Snapshot, and its caches are purged. Pinning an already pinned post keeps its place. A draft can be pinned too; the pin shows once it is published. The pin is not part of the draft, so the post's saveToken stays as it was.",
             "tags": ["Admin Posts"]
           }
         }
@@ -207,7 +207,7 @@
             "method": "POST",
             "path": "/admin/posts/{id}/unpin",
             "summary": "Unpin a post",
-            "description": "Removes the post's pin. Takes effect at once, without publishing, and purges the public caches. Returns the post's new saveToken, since any write to the post replaces it.",
+            "description": "Removes the post's pin. Takes effect at once, without publishing, and purges the public caches. The pin is not part of the draft, so the post's saveToken stays as it was.",
             "tags": ["Admin Posts"]
           }
         }

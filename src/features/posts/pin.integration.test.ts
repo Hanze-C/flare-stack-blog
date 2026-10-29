@@ -141,20 +141,20 @@ describe("Pinning a post", () => {
     expect(feed.items.map((item) => item.id)).toEqual([newer]);
   });
 
-  it("rotates saveToken and returns the new one", async () => {
+  it("keeps saveToken, so an open editor does not see an Edit Conflict", async () => {
     const apiKey = await seedAdminApiKey();
     const id = await createPublishedPost(apiKey, "Tokened", 1);
     const before = await readPost(apiKey, id);
 
     const pinned = (await (await pin(apiKey, id)).json()) as WriteResult;
     expect(pinned.success).toBe(true);
-    expect(pinned.saveToken).not.toBe(before.saveToken);
+    expect(pinned.saveToken).toBe(before.saveToken);
     const afterPin = await readPost(apiKey, id);
     expect(afterPin.saveToken).toBe(pinned.saveToken);
     expect(afterPin.pinnedAt).not.toBeNull();
 
     const unpinned = (await (await unpin(apiKey, id)).json()) as WriteResult;
-    expect(unpinned.saveToken).not.toBe(pinned.saveToken);
+    expect(unpinned.saveToken).toBe(before.saveToken);
     const afterUnpin = await readPost(apiKey, id);
     expect(afterUnpin.saveToken).toBe(unpinned.saveToken);
     expect(afterUnpin.pinnedAt).toBeNull();

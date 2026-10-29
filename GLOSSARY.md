@@ -196,7 +196,7 @@ _Avoid_: New commit, fork update
 - An **API Key** authenticates as its owning **Admin** and has that Admin's content-management permissions.
 - An **API Key** cannot create or revoke **API Keys**. Only a signed-in **Admin** in the admin UI can.
 - An **Agent Skill** authenticates with an **API Key**.
-- A save of a **Post** that states the read it is based on ends in an **Edit Conflict** if the **Post** was saved since that read, by anyone and for any field. A save that states no read overwrites.
+- A save of a **Post** that states the read it is based on ends in an **Edit Conflict** if the **Post** was saved since that read, by anyone and for any part of its draft. Pinning is not a save. A save that states no read overwrites.
 - Publishing a **Post** can state the read it is based on in the same way, so the **Public Content Snapshot** is the draft that was read.
 - The admin editor and the **Agent Skill** always state their read.
 - A **System Config** section save based on a stale read also ends in an **Edit Conflict**.

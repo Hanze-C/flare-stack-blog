@@ -58,7 +58,7 @@ const ContentMarkdownInputSchema = z
 const SaveTokenSchema = z
   .string()
   .describe(
-    "Opaque token that every write to the post replaces, including tags, category, cover, publish, unpublish and Post Revision restores. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
+    "Opaque token that every save of the post's draft and every publish or unpublish replaces, including tags, category, cover and Post Revision restores; pinning keeps it. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
   );
 
 const StatedSaveTokenSchema = z
@@ -298,7 +298,7 @@ const AdminPostListItemSchema = z.object({
   ),
   contentMarkdown: ContentMarkdownOutputSchema,
   saveToken: SaveTokenSchema.optional().describe(
-    "Returned together with the body (includeContent=true). Opaque token that every write to the post replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
+    "Returned together with the body (includeContent=true). Opaque token that every save, publish or unpublish replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
   ),
 });
 

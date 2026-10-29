@@ -595,6 +595,8 @@ export async function setPostPinned(db: DB, id: number, pinned: boolean) {
         ? sql`coalesce(${PostsTable.pinnedAt}, unixepoch())`
         : null,
       updatedAt: sql`${PostsTable.updatedAt}`,
+      // The pin is not part of the draft, so an open editor keeps its token.
+      saveToken: sql`${PostsTable.saveToken}`,
     })
     .where(eq(PostsTable.id, id))
     .returning({

@@ -26,7 +26,7 @@ Creating or saving a Post changes its draft only, except its Category and Tags, 
 
 ## saveToken and Edit Conflict
 
-Every Post carries an opaque \`saveToken\`, returned by each read of the Post and by each write to it. Any write to the Post (content, title, tags, category, cover, publish, unpublish, restoring a Post Revision) replaces it. Saving (PATCH, body \`{ data, saveToken }\`) and publishing (body \`{ saveToken }\`) take the token you read. If the Post was saved since, by anyone and for any field, the request answers 409 with error code \`EDIT_CONFLICT\` and \`data.saveToken\` set to the current token, and nothing is written: read the Post again and decide. Without a token the request writes unconditionally.
+Every Post carries an opaque \`saveToken\`, returned by each read of the Post and by each write to it. Saving the Post's draft (content, title, tags, category, cover, restoring a Post Revision), publishing and unpublishing replace it; pinning keeps it. Saving (PATCH, body \`{ data, saveToken }\`) and publishing (body \`{ saveToken }\`) take the token you read. If the Post was saved since, by anyone and for any part of its draft, the request answers 409 with error code \`EDIT_CONFLICT\` and \`data.saveToken\` set to the current token, and nothing is written: read the Post again and decide. Without a token the request writes unconditionally.
 
 ## Markdown content
 

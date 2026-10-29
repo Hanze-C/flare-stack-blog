@@ -65,7 +65,8 @@ export const PostsTable = sqliteTable(
       onDelete: "set null",
     }),
     // Opaque, replaced by every write to the row so a save can refuse an
-    // Edit Conflict (ADR 0031). $onUpdate covers every Drizzle update.
+    // Edit Conflict (ADR 0031). $onUpdate covers every Drizzle update;
+    // pinning keeps it, since the pin is not part of the draft.
     saveToken: text("save_token")
       .notNull()
       .$defaultFn(newSaveToken)
