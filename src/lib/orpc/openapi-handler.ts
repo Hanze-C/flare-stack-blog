@@ -22,7 +22,7 @@ Send a browser \`User-Agent\` on every request, including the one for this docum
 
 ## Drafts and publishing
 
-Creating or saving a Post, and changing its tags, category or cover, changes its draft only. Publishing replaces the Post's Public Content Snapshot (what the public site lists, renders and searches) with the current draft and records a Post Revision; publishing again is safe. Unpublishing discards the snapshot: the Post becomes a Draft Post and leaves the public site. Category and Tag assignments show publicly without republishing. A Published Post's public page is \`/post/{publicSlug}\` on the site origin; public pages are cached, so a change can take some seconds to show.
+Creating or saving a Post changes its draft only, except its Category and Tags, which the public site shows at once without republishing. Publishing replaces the Post's Public Content Snapshot (what the public site lists, renders and searches) with the current draft and records a Post Revision; publishing again is safe. Unpublishing discards the snapshot: the Post becomes a Draft Post and leaves the public site. A Published Post's public page is \`/post/{publicSlug}\` on the site origin; public pages are cached, so a change can take some seconds to show.
 
 ## saveToken and Edit Conflict
 
