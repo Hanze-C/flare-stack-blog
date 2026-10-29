@@ -468,13 +468,8 @@ export async function updatePost(
     await syncPostMedia(context.db, updatedPost);
   }
 
-  if (updateData.categoryId !== undefined && updatedPost.publicSnapshotJson) {
-    context.executionCtx.waitUntil(
-      invalidate.categoryChanged(context, {
-        slugs: [updatedPost.publicSnapshotJson.slug],
-      }),
-    );
-  }
+  // The Category, like every other field, changes the draft only (ADR 0033),
+  // so no public cache needs purging.
   return ok(stripPublicSnapshot(updatedPost));
 }
 

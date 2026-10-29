@@ -142,7 +142,7 @@ _Avoid_: New commit, fork update
 - A **Post** has at most one **Category**.
 - A **Category** can group zero or more **Posts**.
 - A **Post** with no **Category** is uncategorized. Uncategorized is not a **Category**.
-- **Category** and **Tag** assignments are shared by the editor and public site. Assignment edits, renames and deletion apply without republishing; public caches may refresh later.
+- A **Post**'s **Category** and **Tags** are part of its draft and reach the public site when it is published. Creating, renaming and deleting a **Category** or **Tag** apply at once; public caches may refresh later.
 - An **Admin** assigns a **Category** by choosing an existing one while editing a **Post**. Editing a **Post** does not create a **Category**.
 - **Categories** and **Tags** are managed on one Admin page.
 - Deleting a **Category** is allowed. **Posts** that had it become uncategorized. Deleting a **Tag** removes its Post associations.
@@ -164,7 +164,7 @@ _Avoid_: New commit, fork update
 - Autosave does not create a **Post Revision**.
 - Editing or autosaving a **Post** does not update the **Public Content Snapshot**.
 - Unpublishing a **Published Post** discards its **Public Content Snapshot**, making it a **Draft Post**, and removes it from public listing, detail, and search.
-- Restoring a **Post Revision** first saves the current editable **Post** as a **Post Revision**, then restores the editable content and shared Category/Tag assignments. It does not replace or discard the **Public Content Snapshot**.
+- Restoring a **Post Revision** first saves the current editable **Post** as a **Post Revision**, then restores the editable content, **Category** and **Tags**. It does not replace or discard the **Public Content Snapshot**.
 - Publishing with a new slug replaces the **Public Content Snapshot** slug. The previous public slug does not remain reachable.
 - A **Published Post** has a publication date for display and listing order. The date is a past or current server date, never a future date. First publication without a date uses server time.
 - A **Post Revision** belongs to exactly one **Post**.

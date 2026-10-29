@@ -7,6 +7,7 @@ export type AdminPostListItem = Omit<
   | "publicSnapshotJson"
   | "coverMediaId"
   | "categoryId"
+  | "publicCategoryId"
   | "saveToken"
 >;
 

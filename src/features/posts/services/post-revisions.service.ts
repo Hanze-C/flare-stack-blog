@@ -1,4 +1,3 @@
-import { invalidate } from "@/features/cache/public-cache";
 import * as MediaRepo from "@/features/media/data/media.data";
 import { syncPostMedia } from "@/features/posts/data/post-media.data";
 import * as PostRevisionRepo from "@/features/posts/data/post-revisions.data";
@@ -212,14 +211,9 @@ export async function restorePostRevision(
     return err({ reason: "POST_NOT_FOUND" });
   }
 
+  // Restoring changes the draft only, its Category and Tags included
+  // (ADR 0033), so no public cache needs purging.
   await syncPostMedia(context.db, restoredPost);
-  if (restoredPost.publicSnapshotJson) {
-    context.executionCtx.waitUntil(
-      invalidate.postPublished(context, {
-        slug: restoredPost.publicSnapshotJson.slug,
-      }),
-    );
-  }
 
   return ok({
     post: restoredPost,

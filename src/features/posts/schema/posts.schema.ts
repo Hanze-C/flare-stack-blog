@@ -76,6 +76,7 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
   updatedAt: coercedDate,
 }).omit({
   publicSnapshotJson: true,
+  publicCategoryId: true,
 });
 /**
  * Strict on purpose, and narrower than the table.
@@ -97,6 +98,7 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
 })
   .omit({
     publicSnapshotJson: true,
+    publicCategoryId: true,
     publicSlug: true,
     pinnedAt: true,
     status: true,
