@@ -13,6 +13,38 @@ export const TagWithCountSchema = TagSelectSchema.extend({
   postCount: z.number(),
 });
 
+// API Output Schemas
+export const TagListItemSchema = TagSelectSchema.extend({
+  postCount: z
+    .number()
+    .optional()
+    .describe(
+      "How many posts currently carry the tag, drafts included. Only returned when withCount=true.",
+    ),
+});
+
+export const AdminTagWithCountSchema = TagWithCountSchema.extend({
+  postCount: z
+    .number()
+    .describe("How many posts currently carry the tag, drafts included."),
+  publicPostCount: z
+    .number()
+    .describe(
+      "How many published posts show the tag on the public site, as of their last publish.",
+    ),
+});
+
+export const DeleteTagResultSchema = z.object({ success: z.boolean() });
+
+export const SetPostTagsResultSchema = z.object({
+  saveToken: z
+    .string()
+    .nullable()
+    .describe(
+      "The post's saveToken after the write, to state on your next save or publish. Null when the post does not exist.",
+    ),
+});
+
 // API Input Schemas
 export const CreateTagInputSchema = z.object({
   name: z.string().min(1).max(50),

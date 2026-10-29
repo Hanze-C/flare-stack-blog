@@ -1,9 +1,11 @@
 import { createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import { z } from "zod";
-import { PublicCategorySchema } from "@/features/categories/categories.schema";
+import {
+  CategorySelectSchema,
+  PublicCategorySchema,
+} from "@/features/categories/categories.schema";
 import { TagSelectSchema } from "@/features/tags/tags.schema";
-import type { PostStatus } from "@/lib/db/schema";
-import { PostsTable } from "@/lib/db/schema";
+import { POST_STATUSES, PostsTable } from "@/lib/db/schema";
 import { NullableJsonContentSchema } from "./json-content.schema";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
@@ -273,7 +275,7 @@ export const GetPostsInputSchema = z.object({
     .describe("Only posts currently carrying this tag."),
   offset: z.number().optional(),
   limit: z.number().optional(),
-  status: z.custom<PostStatus>().optional(),
+  status: z.enum(POST_STATUSES).optional(),
   hasUnpublishedChanges: z
     .boolean()
     .optional()
@@ -307,7 +309,7 @@ const AdminPostListItemSchema = z.object({
   summary: z.string().nullable(),
   slug: z.string(),
   publicSlug: PublicSlugSchema,
-  status: z.enum(["draft", "published"]),
+  status: z.enum(POST_STATUSES),
   hasUnpublishedChanges: HasUnpublishedChangesSchema,
   publishedAt: coercedDateNullable,
   pinnedAt: coercedDateNullable,
@@ -386,6 +388,60 @@ export const PublishPostInputSchema = z.object({
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
   ),
+});
+
+export const CreatePostResultSchema = z.object({
+  id: z.number().int(),
+  saveToken: SaveTokenSchema.describe(
+    "The draft's saveToken. State it on your next save or publish.",
+  ),
+});
+
+export const DeletePostResultSchema = z.object({ success: z.boolean() });
+
+export const GenerateSlugResultSchema = z.object({
+  slug: z
+    .string()
+    .describe(
+      "A slug made from the title that no other post uses. A number is appended when the plain one is taken.",
+    ),
+});
+
+// A post as a write answers it: the draft's own fields with its category and
+// tags. The public snapshot and the change-tracking fingerprints stay out.
+const WrittenPostSchema = PostSelectSchema.extend({
+  contentJson: NullableJsonContentSchema.describe(
+    "The editable body as TipTap JSON.",
+  ),
+  category: CategorySelectSchema.nullable().describe(
+    "The draft's category. Null when it has none.",
+  ),
+  tags: z.array(TagSelectSchema).describe("The draft's tags."),
+});
+
+export const UpdatedPostSchema = WrittenPostSchema.omit({
+  publicSlug: true,
+}).extend({
+  hasUnpublishedChanges: HasUnpublishedChangesSchema,
+});
+
+export const RestorePostRevisionResultSchema = z.object({
+  post: WrittenPostSchema.extend({ publicSlug: PublicSlugSchema }).describe(
+    "The post after the restore. post.saveToken is its token after the restore.",
+  ),
+  restored: z
+    .boolean()
+    .describe(
+      "False when the draft already matched the revision, so nothing was written and the saveToken is unchanged.",
+    ),
+  revisionId: z.number().int().describe("The revision that was restored."),
+});
+
+export const DeletePostRevisionsResultSchema = z.object({
+  deletedIds: z
+    .array(z.number().int())
+    .describe("Ids of the revisions that were deleted."),
+  deletedCount: z.number().int(),
 });
 
 export const PostWriteResultSchema = z.object({

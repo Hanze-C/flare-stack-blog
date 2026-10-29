@@ -1,10 +1,18 @@
+import { oo } from "@orpc/openapi";
+import { os } from "@orpc/server";
 import { z } from "zod";
 import {
   ACCEPTED_IMAGE_TYPES,
+  DeleteMediaResultSchema,
+  DeleteUnusedMediaResultSchema,
   GetMediaListInputSchema,
   ImportMediaUrlInputSchema,
+  LinkedPostSchema,
   MAX_FILE_SIZE,
   MediaKeyInputSchema,
+  MediaListPageSchema,
+  MediaSelectSchema,
+  MediaStatsSchema,
   UpdateMediaNameInputSchema,
 } from "@/features/media/media.schema";
 import * as MediaService from "@/features/media/service/media.service";
@@ -36,6 +44,7 @@ const list = adminProcedure
     tags: ["Admin Media"],
   })
   .input(GetMediaListInputSchema)
+  .output(MediaListPageSchema)
   .handler(({ context, input }) => MediaService.getMediaList(context, input));
 
 const upload = adminProcedure
@@ -51,6 +60,7 @@ const upload = adminProcedure
       image: imageFile,
     }),
   )
+  .output(MediaSelectSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(MediaService.upload(context, { file: input.image }), {
       MEDIA_RECORD_CREATE_FAILED: () => {
@@ -68,6 +78,7 @@ const importFromUrl = adminProcedure
     tags: ["Admin Media"],
   })
   .input(ImportMediaUrlInputSchema)
+  .output(MediaSelectSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(MediaService.importFromUrl(context, input), {
       MEDIA_RECORD_CREATE_FAILED: () => {
@@ -92,6 +103,7 @@ const stats = adminProcedure
     summary: "Get media library stats",
     tags: ["Admin Media"],
   })
+  .output(MediaStatsSchema)
   .handler(({ context }) => MediaService.getMediaStats(context));
 
 const totalSize = adminProcedure
@@ -101,6 +113,7 @@ const totalSize = adminProcedure
     summary: "Get total media size",
     tags: ["Admin Media"],
   })
+  .output(z.number().int())
   .handler(({ context }) => MediaService.getTotalMediaSize(context));
 
 const linkedKeys = adminProcedure
@@ -111,6 +124,7 @@ const linkedKeys = adminProcedure
     tags: ["Admin Media"],
   })
   .input(z.object({ keys: z.array(z.string()) }))
+  .output(z.array(z.string()))
   .handler(({ context, input }) =>
     MediaService.getLinkedMediaKeys(context, input.keys),
   );
@@ -122,7 +136,12 @@ const removeUnused = adminProcedure
     summary: "Delete unused media",
     tags: ["Admin Media"],
   })
-  .handler(({ context }) => MediaService.deleteUnused(context));
+  .output(DeleteUnusedMediaResultSchema)
+  .handler(async ({ context }) => {
+    const result = await MediaService.deleteUnused(context);
+    if (result.data === null) throw new Error("Expected ok result");
+    return result;
+  });
 
 const remove = adminProcedure
   .errors(mediaErrors)
@@ -133,6 +152,7 @@ const remove = adminProcedure
     tags: ["Admin Media"],
   })
   .input(MediaKeyInputSchema)
+  .output(DeleteMediaResultSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(MediaService.deleteImage(context, input.key.trim()), {
       MEDIA_IN_USE: () => {
@@ -149,6 +169,7 @@ const linkedPosts = adminProcedure
     tags: ["Admin Media"],
   })
   .input(MediaKeyInputSchema)
+  .output(z.array(LinkedPostSchema))
   .handler(({ context, input }) =>
     MediaService.getLinkedPosts(context, input.key.trim()),
   );
@@ -167,6 +188,7 @@ const replace = adminProcedure
       image: imageFile,
     }),
   )
+  .output(MediaSelectSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(
       MediaService.replaceImage(context, {
@@ -181,7 +203,21 @@ const replace = adminProcedure
     ),
   );
 
+// The rename answers 200 with an empty body, which a response schema cannot
+// say: the document describes the response without a body instead.
+const emptyResponse = oo.spec(
+  os.middleware(({ next }) => next()),
+  (operation) => ({
+    ...operation,
+    responses: {
+      ...operation.responses,
+      200: { description: "Renamed. The response body is empty." },
+    },
+  }),
+);
+
 const updateName = adminProcedure
+  .use(emptyResponse)
   .route({
     method: "PATCH",
     path: "/admin/media/{key}",
@@ -189,6 +225,7 @@ const updateName = adminProcedure
     tags: ["Admin Media"],
   })
   .input(UpdateMediaNameInputSchema)
+  .output(z.void())
   .handler(({ context, input }) =>
     MediaService.updateMediaName(context, input),
   );

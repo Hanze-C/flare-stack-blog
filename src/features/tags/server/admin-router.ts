@@ -1,9 +1,15 @@
+import { z } from "zod";
 import {
+  AdminTagWithCountSchema,
   CreateTagInputSchema,
   DeleteTagInputSchema,
+  DeleteTagResultSchema,
   GetTagsByPostIdInputSchema,
   GetTagsInputSchema,
   SetPostTagsInputSchema,
+  SetPostTagsResultSchema,
+  TagListItemSchema,
+  TagSelectSchema,
   UpdateTagInputSchema,
 } from "@/features/tags/tags.schema";
 import * as TagService from "@/features/tags/tags.service";
@@ -23,6 +29,7 @@ const adminList = adminProcedure
     tags: ["Admin Tags"],
   })
   .input(GetTagsInputSchema)
+  .output(z.array(TagListItemSchema))
   .handler(({ context, input }) => TagService.getTags(context, input));
 
 const adminListWithCount = adminProcedure
@@ -33,6 +40,7 @@ const adminListWithCount = adminProcedure
     tags: ["Admin Tags"],
   })
   .input(GetTagsInputSchema)
+  .output(z.array(AdminTagWithCountSchema))
   .handler(({ context, input }) => TagService.getTagsWithCount(context, input));
 
 const create = adminProcedure
@@ -44,6 +52,7 @@ const create = adminProcedure
     tags: ["Admin Tags"],
   })
   .input(CreateTagInputSchema)
+  .output(TagSelectSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(TagService.createTag(context, input), {
       TAG_NAME_ALREADY_EXISTS: () => {
@@ -61,6 +70,7 @@ const update = adminProcedure
     tags: ["Admin Tags"],
   })
   .input(UpdateTagInputSchema)
+  .output(TagSelectSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(TagService.updateTag(context, input), {
       TAG_NOT_FOUND: () => {
@@ -81,6 +91,7 @@ const remove = adminProcedure
     tags: ["Admin Tags"],
   })
   .input(DeleteTagInputSchema)
+  .output(DeleteTagResultSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(TagService.deleteTag(context, input), {
       TAG_NOT_FOUND: () => {
@@ -99,6 +110,7 @@ const setPostTags = adminProcedure
     tags: ["Admin Tags"],
   })
   .input(SetPostTagsInputSchema)
+  .output(SetPostTagsResultSchema)
   .handler(({ context, input }) => TagService.setPostTags(context, input));
 
 const byPostId = adminProcedure
@@ -109,6 +121,7 @@ const byPostId = adminProcedure
     tags: ["Admin Tags"],
   })
   .input(GetTagsByPostIdInputSchema)
+  .output(z.array(TagSelectSchema))
   .handler(({ context, input }) => TagService.getTagsByPostId(context, input));
 
 export default {
