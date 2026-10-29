@@ -4,6 +4,7 @@ import {
   type PostRevisionReason,
   type PostRevisionSnapshot,
   PostRevisionsTable,
+  newSaveToken,
   PostsTable,
   PostTagsTable,
 } from "@/lib/db/schema";
@@ -119,6 +120,9 @@ export async function restorePostSnapshot(
   },
 ) {
   const tagIds = normalizeTagIds(data.snapshot.tagIds);
+  // Set here rather than by $onUpdate so the restore hands out its own token,
+  // even if another write lands before the Post is read back.
+  const saveToken = newSaveToken();
   const batchQueries: [BatchItem<"sqlite">, ...Array<BatchItem<"sqlite">>] = [
     db.insert(PostRevisionsTable).values({
       postId: data.postId,
@@ -140,6 +144,7 @@ export async function restorePostSnapshot(
         contentJson: data.snapshot.contentJson,
         coverMediaId: data.snapshot.coverMediaId ?? null,
         categoryId: data.snapshot.categoryId ?? null,
+        saveToken,
       })
       .where(eq(PostsTable.id, data.postId)),
     db.delete(PostTagsTable).where(eq(PostTagsTable.postId, data.postId)),
@@ -157,7 +162,8 @@ export async function restorePostSnapshot(
   }
 
   await db.batch(batchQueries);
-  return await findPostById(db, data.postId);
+  const post = await findPostById(db, data.postId);
+  return post && { ...post, saveToken };
 }
 
 export async function deletePostRevisions(

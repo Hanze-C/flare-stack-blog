@@ -97,8 +97,12 @@ A secret an **Admin** issues so a caller can authenticate as that **Admin** on t
 _Avoid_: Token, bearer, service account, machine user, OAuth client
 
 **Agent Skill**:
-The instructions and scripts an AI agent installs so it can operate a Flare Stack Blog as an **Admin** over the HTTP API with an **API Key**. It is not part of the deployed CMS.
+The instructions an AI agent installs so it can operate a Flare Stack Blog as an **Admin** over the HTTP API with an **API Key**. It is not part of the deployed CMS.
 _Avoid_: MCP, plugin, integration, 插件, 技能包
+
+**Edit Conflict**:
+A save refused because what it would change was saved by someone else after the saver read it. Nothing is written; the saver reads again and decides.
+_Avoid_: Version conflict, stale write, merge conflict, 版本冲突
 
 **Search Index**:
 The public search read model built from **Published Posts**.
@@ -188,6 +192,10 @@ _Avoid_: New commit, fork update
 - An **API Key** authenticates as its owning **Admin** and has that Admin's content-management permissions.
 - An **API Key** cannot create or revoke **API Keys**. Only a signed-in **Admin** in the admin UI can.
 - An **Agent Skill** authenticates with an **API Key**.
+- A save of a **Post** that states the read it is based on ends in an **Edit Conflict** if the **Post** was saved since that read, by anyone and for any field. A save that states no read overwrites.
+- Publishing a **Post** can state the read it is based on in the same way, so the **Public Content Snapshot** is the draft that was read.
+- The admin editor and the **Agent Skill** always state their read.
+- A **System Config** section save based on a stale read also ends in an **Edit Conflict**.
 - Each **Application Release** publishes the **Agent Skill** that matches it. The admin UI offers the one matching the **Running Application Release**.
 - A **User** can create **Comments** and submit **Friend Links**.
 - A **User** signs in with GitHub or with a **Sign-in Code**. There are no passwords.

@@ -132,7 +132,10 @@ export async function getPosts(
       // other column is read from publicSnapshotJson, so returning the draft
       // here would mix an unpublished body into a published row.
       ...(includeContent && !publicScope
-        ? { contentJson: PostsTable.contentJson }
+        ? {
+            contentJson: PostsTable.contentJson,
+            saveToken: PostsTable.saveToken,
+          }
         : {}),
     })
     .from(PostsTable)
@@ -173,6 +176,7 @@ export async function findReusableEmptyDraft(db: DB) {
     .select({
       id: PostsTable.id,
       contentJson: PostsTable.contentJson,
+      saveToken: PostsTable.saveToken,
     })
     .from(PostsTable)
     .where(
@@ -477,13 +481,54 @@ export async function findPostBySlug(
   return { ...rest, tags };
 }
 
+/**
+ * Matches the Post, and with `saveToken` only while the Post still carries
+ * it, so the compare and the write are one statement.
+ */
+function postToWrite(id: number, saveToken: string | undefined) {
+  return and(
+    eq(PostsTable.id, id),
+    saveToken === undefined ? undefined : eq(PostsTable.saveToken, saveToken),
+  );
+}
+
+/**
+ * Re-reads the Post after a write, keeping the saveToken that write set: a
+ * later write may land before the read, and its token must not be handed out
+ * for content the caller never saw.
+ */
+async function findWrittenPost(db: DB, id: number, saveToken: string) {
+  const post = await findPostById(db, id);
+  return post && { ...post, saveToken };
+}
+
+/**
+ * Returns null when no Post was written: it does not exist, or it no longer
+ * carries the stated `saveToken`.
+ */
 export async function updatePost(
   db: DB,
   id: number,
-  data: Partial<Omit<typeof PostsTable.$inferInsert, "id" | "createdAt">>,
+  data: Partial<
+    Omit<typeof PostsTable.$inferInsert, "id" | "createdAt" | "saveToken">
+  >,
+  options: { saveToken?: string } = {},
 ) {
-  await db.update(PostsTable).set(data).where(eq(PostsTable.id, id));
-  return await findPostById(db, id);
+  const [written] = await db
+    .update(PostsTable)
+    .set(data)
+    .where(postToWrite(id, options.saveToken))
+    .returning({ saveToken: PostsTable.saveToken });
+  if (!written) return null;
+  return await findWrittenPost(db, id, written.saveToken);
+}
+
+export async function findPostSaveToken(db: DB, id: number) {
+  const [post] = await db
+    .select({ saveToken: PostsTable.saveToken })
+    .from(PostsTable)
+    .where(eq(PostsTable.id, id));
+  return post?.saveToken ?? null;
 }
 
 export async function touchPostUpdatedAt(db: DB, id: number) {
@@ -491,29 +536,50 @@ export async function touchPostUpdatedAt(db: DB, id: number) {
     .update(PostsTable)
     .set({ updatedAt: new Date() })
     .where(eq(PostsTable.id, id))
-    .returning({ publicSlug: PostsTable.publicSlug });
+    .returning({
+      publicSlug: PostsTable.publicSlug,
+      saveToken: PostsTable.saveToken,
+    });
   return post;
 }
 
+/**
+ * Writes the Public Content Snapshot together with the draft fields publishing
+ * settles, in one statement. With `saveToken`, nothing is written unless the
+ * Post still carries it, so what goes live is the draft that was read.
+ */
 export async function writePublicSnapshot(
   db: DB,
   id: number,
   snapshot: PublicPostSnapshot,
+  options: {
+    draft?: Partial<
+      Pick<typeof PostsTable.$inferInsert, "publishedAt" | "contentJson">
+    >;
+    saveToken?: string;
+  } = {},
 ) {
-  await db
+  const draft = options.draft ?? {};
+  const [written] = await db
     .update(PostsTable)
     .set({
+      ...draft,
       publicSnapshotJson: snapshot,
       publicSlug: snapshot.slug,
       status: "published",
-      updatedAt: sql`${PostsTable.updatedAt}`,
+      // Publishing alone leaves updatedAt; settling a draft field moves it.
+      ...(Object.keys(draft).length === 0 && {
+        updatedAt: sql`${PostsTable.updatedAt}`,
+      }),
     })
-    .where(eq(PostsTable.id, id));
-  return await findPostById(db, id);
+    .where(postToWrite(id, options.saveToken))
+    .returning({ saveToken: PostsTable.saveToken });
+  if (!written) return null;
+  return await findWrittenPost(db, id, written.saveToken);
 }
 
 export async function clearPublicSnapshot(db: DB, id: number) {
-  await db
+  const [written] = await db
     .update(PostsTable)
     .set({
       publicSnapshotJson: null,
@@ -521,8 +587,10 @@ export async function clearPublicSnapshot(db: DB, id: number) {
       status: "draft",
       updatedAt: sql`${PostsTable.updatedAt}`,
     })
-    .where(eq(PostsTable.id, id));
-  return await findPostById(db, id);
+    .where(eq(PostsTable.id, id))
+    .returning({ saveToken: PostsTable.saveToken });
+  if (!written) return null;
+  return await findWrittenPost(db, id, written.saveToken);
 }
 
 export async function publicSlugExists(

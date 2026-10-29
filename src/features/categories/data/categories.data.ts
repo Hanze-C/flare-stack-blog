@@ -104,7 +104,15 @@ export async function updateCategory(
 }
 
 export async function deleteCategory(db: DB, id: number) {
-  await db.delete(CategoriesTable).where(eq(CategoriesTable.id, id));
+  // Clear the Posts' category here rather than leave it to ON DELETE SET NULL,
+  // so the write replaces their saveToken like any other.
+  await db.batch([
+    db
+      .update(PostsTable)
+      .set({ categoryId: null, updatedAt: sql`${PostsTable.updatedAt}` })
+      .where(eq(PostsTable.categoryId, id)),
+    db.delete(CategoriesTable).where(eq(CategoriesTable.id, id)),
+  ]);
 }
 
 export async function getPublishedPostsByCategoryId(

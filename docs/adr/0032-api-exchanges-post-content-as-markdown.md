@@ -1,0 +1,11 @@
+# The HTTP API exchanges Post content as Markdown
+
+The editor stores TipTap JSON, but agents and external editors write Markdown, so each client converted on its own. The **Agent Skill** carried a second, regex-based converter that drifted from the editor schema and tied every skill to one release. Reads now take `contentFormat=markdown` and answer `contentMarkdown`; writes take either `contentJson` or `contentMarkdown`, and the server converts with the editor's own Markdown parser, the one Markdown paste uses. The conversion has fixed rules: a video link alone on a line is a video block, as when pasted; a Markdown write resets table column widths to equal; an image must be a web address or a **Media** path, and a local file path, which the server cannot upload, is refused; video title, cover and length are looked up on write and left empty when the lookup fails.
+
+With content and API-wide rules (authentication, client fingerprint, drafts and publishing) defined by the OpenAPI document, the Agent Skill holds only how to connect, the order of work and its rules, with no scripts.
+
+**Considered Options**
+
+- Refusing a Markdown write that would lose what Markdown cannot express. The agent would then switch between two formats on the same Post.
+- Markdown only when creating a Post. Editing an existing Post needs it too.
+- Always answering both formats. Most reads would convert for nothing.

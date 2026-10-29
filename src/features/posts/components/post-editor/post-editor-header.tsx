@@ -16,6 +16,8 @@ interface PostEditorHeaderProps {
   lastSaved: Date | null;
   processState: "IDLE" | "PROCESSING" | "SUCCESS";
   canPublish: boolean;
+  /** A save was refused; going live or back to a draft waits for the Admin. */
+  conflicted: boolean;
   hasPublicSnapshot: boolean;
   publicSlug: string | null;
   title: string;
@@ -54,6 +56,7 @@ export function PostEditorHeader({
   lastSaved,
   processState,
   canPublish,
+  conflicted,
   hasPublicSnapshot,
   publicSlug,
   title,
@@ -82,7 +85,7 @@ export function PostEditorHeader({
       label: m.editor_header_unpublish(),
       icon: EyeOff,
       danger: true,
-      disabled: busy,
+      disabled: busy || conflicted,
       onSelect: (trigger) => {
         menuTriggerRef.current = trigger;
         setConfirmingUnpublish(true);

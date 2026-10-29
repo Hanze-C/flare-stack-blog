@@ -29,7 +29,47 @@ const PublicSlugSchema = z
     "Slug of the live page at /post/{publicSlug}. It can differ from slug, the draft's, until the next publish. Null while the post is not published.",
   );
 
+const MARKDOWN_RULES =
+  "CommonMark with GFM tables, strikethrough and autolinks. It carries headings, bold, italic, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, fenced code blocks with their language (a mermaid block renders as a diagram), tables with column alignment, inline math as $…$, block math with $$ alone on the lines before and after it, images and videos. A Bilibili or YouTube link alone in a paragraph is a video block. Headings stay within levels 2 to 4: when there is an H1 every heading moves one level down, and anything below level 4 becomes level 4. Images must be http(s) addresses or Media paths (/images/<key>). Table column widths are not carried, and a table cell holds a single line. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.";
+
+export const PostContentFormatSchema = z
+  .enum(["json", "markdown"])
+  .optional()
+  .describe(
+    `Format of the returned body. json, the default, returns contentJson, the editor's TipTap JSON. markdown returns contentMarkdown instead, and no contentJson. ${MARKDOWN_RULES}`,
+  );
+export type PostContentFormat = z.infer<typeof PostContentFormatSchema>;
+
+const ContentMarkdownOutputSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .describe(
+    "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
+  );
+
+const ContentMarkdownInputSchema = z
+  .string()
+  .optional()
+  .describe(
+    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal.`,
+  );
+
+const SaveTokenSchema = z
+  .string()
+  .describe(
+    "Opaque token that every write to the post replaces, including tags, category, cover, publish, unpublish and Post Revision restores. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
+  );
+
+const StatedSaveTokenSchema = z
+  .string()
+  .optional()
+  .describe(
+    "The saveToken from your latest read or write of this post. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken: read the post again before deciding what to write. Omit it to write unconditionally.",
+  );
+
 const PostSelectSchema = createSelectSchema(PostsTable, {
+  saveToken: SaveTokenSchema,
   publishedAt: coercedDateNullable,
   pinnedAt: coercedDateNullable,
   createdAt: coercedDate,
@@ -59,10 +99,13 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
     id: true,
     createdAt: true,
     updatedAt: true,
+    saveToken: true,
   })
+  .extend({ contentMarkdown: ContentMarkdownInputSchema })
   .strict();
 
 export const PostItemSchema = PostSelectSchema.omit({
+  saveToken: true,
   contentJson: true,
   publicSlug: true,
   coverMediaId: true,
@@ -88,6 +131,7 @@ export const HomePostsResponseSchema = z.object({
   totalPages: z.number().int().positive(),
 });
 export const PostWithTocSchema = PostSelectSchema.omit({
+  saveToken: true,
   publicSlug: true,
   coverMediaId: true,
   categoryId: true,
@@ -108,6 +152,10 @@ export const PostWithTocSchema = PostSelectSchema.omit({
   .nullable();
 
 export const AdminPostSchema = PostSelectSchema.extend({
+  contentJson: NullableJsonContentSchema.optional().describe(
+    "The editable body as TipTap JSON. Not returned when the request asks for contentFormat=markdown.",
+  ),
+  contentMarkdown: ContentMarkdownOutputSchema,
   publicSlug: PublicSlugSchema,
   tags: z.array(TagSelectSchema).optional(),
   hasPublicSnapshot: z.boolean(),
@@ -219,6 +267,7 @@ export const GetPostsInputSchema = z.object({
     .describe(
       "Include the editable TipTap body of every item. Ignored when taxonomy.scope is public, where every column is read from the Public Content Snapshot instead. Pagination, the 50 item limit and every other response field stay the same.",
     ),
+  contentFormat: PostContentFormatSchema,
 });
 
 const GetPostsCountInputSchema = GetPostsInputSchema.omit({
@@ -226,6 +275,7 @@ const GetPostsCountInputSchema = GetPostsInputSchema.omit({
   limit: true,
   sortDir: true,
   includeContent: true,
+  contentFormat: true,
 });
 
 const AdminPostListItemSchema = z.object({
@@ -241,6 +291,10 @@ const AdminPostListItemSchema = z.object({
   updatedAt: coercedDate,
   contentJson: NullableJsonContentSchema.optional().describe(
     "Only returned when the request asks for includeContent=true outside the public taxonomy scope.",
+  ),
+  contentMarkdown: ContentMarkdownOutputSchema,
+  saveToken: SaveTokenSchema.optional().describe(
+    "Returned together with the body (includeContent=true). Opaque token that every write to the post replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
   ),
 });
 
@@ -260,6 +314,10 @@ export const AdminPostListPageSchema = z.object({
 
 export const FindPostByIdInputSchema = z.object({ id: z.number() });
 
+export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
+  contentFormat: PostContentFormatSchema,
+});
+
 /**
  * Content for a newly created draft. When present, `POST /api/admin/posts`
  * always creates a new draft instead of reusing an existing empty one, so
@@ -273,6 +331,7 @@ const CreatePostDataSchema = z.object({
     .describe("Draft title; a unique slug is generated from it."),
   summary: z.string().nullable().optional(),
   contentJson: NullableJsonContentSchema.optional(),
+  contentMarkdown: ContentMarkdownInputSchema,
 });
 
 export const CreatePostInputSchema = z
@@ -286,12 +345,31 @@ export const CreatePostInputSchema = z
 export const UpdatePostInputSchema = z.object({
   id: z.number(),
   data: PostUpdateSchema,
+  saveToken: StatedSaveTokenSchema,
 });
 
 export const DeletePostInputSchema = z.object({ id: z.number() });
 
 export const PublishPostInputSchema = z.object({
   id: z.number(),
+  saveToken: StatedSaveTokenSchema.describe(
+    "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
+  ),
+});
+
+export const PostWriteResultSchema = z.object({
+  success: z.boolean(),
+  saveToken: SaveTokenSchema.describe(
+    "The post's saveToken after this write. State it on your next save or publish.",
+  ),
+});
+
+export const EditConflictDataSchema = z.object({
+  saveToken: z
+    .string()
+    .describe(
+      "The post's current saveToken. Read the post again to see what changed; state this token only to overwrite it on purpose.",
+    ),
 });
 
 export const UnpublishPostInputSchema = z.object({

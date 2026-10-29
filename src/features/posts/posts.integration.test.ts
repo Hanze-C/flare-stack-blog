@@ -48,28 +48,34 @@ describe("Posts Integration", () => {
   describe("Homepage pagination", () => {
     it("paginates public snapshots with pinned posts first and no duplicate or private posts", async () => {
       const publishedAt = "2026-01-01T00:00:00.000Z";
-      const rows = await adminContext.db
-        .insert(PostsTable)
-        .values(
-          Array.from({ length: 18 }, (_, i) => ({
-            title: `Private edit ${i}`,
-            slug: `private-edit-${i}`,
-            status: "published" as const,
-            publicSlug: `home-${i}`,
-            publicSnapshotJson: {
-              title: `Public ${i}`,
-              summary: null,
-              slug: `home-${i}`,
-              contentJson: null,
-              tagIds: [],
-              categoryId: null,
-              cover: null,
-              publishedAt,
-              pinnedAt: i < 9 ? "2026-02-01T00:00:00.000Z" : null,
-            },
-          })),
-        )
-        .returning();
+      const values = Array.from({ length: 18 }, (_, i) => ({
+        title: `Private edit ${i}`,
+        slug: `private-edit-${i}`,
+        status: "published" as const,
+        publicSlug: `home-${i}`,
+        publicSnapshotJson: {
+          title: `Public ${i}`,
+          summary: null,
+          slug: `home-${i}`,
+          contentJson: null,
+          tagIds: [],
+          categoryId: null,
+          cover: null,
+          publishedAt,
+          pinnedAt: i < 9 ? "2026-02-01T00:00:00.000Z" : null,
+        },
+      }));
+      // Two inserts keep each query under D1's 100 bound parameters.
+      const rows = [
+        ...(await adminContext.db
+          .insert(PostsTable)
+          .values(values.slice(0, 9))
+          .returning()),
+        ...(await adminContext.db
+          .insert(PostsTable)
+          .values(values.slice(9))
+          .returning()),
+      ];
       await adminContext.db
         .insert(PostsTable)
         .values({ title: "Hidden draft", slug: "hidden-draft" });

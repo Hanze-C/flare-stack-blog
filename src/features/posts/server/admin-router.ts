@@ -1,12 +1,14 @@
 import { z } from "zod";
 import {
+  AdminFindPostByIdInputSchema,
   AdminPostListPageSchema,
   CreatePostInputSchema,
   DeletePostInputSchema,
-  FindPostByIdInputSchema,
   GenerateSlugInputSchema,
   GetPostsInputSchema,
   AdminPostSchema,
+  EditConflictDataSchema,
+  PostWriteResultSchema,
   PublishPostInputSchema,
   UnpublishPostInputSchema,
   UpdatePostInputSchema,
@@ -21,6 +23,7 @@ import {
   PostRevisionSelectSchema,
   RestorePostRevisionInputSchema,
 } from "@/features/posts/schema/post-revisions.schema";
+import * as PostMarkdownService from "@/features/posts/services/post-markdown.service";
 import * as PostRevisionService from "@/features/posts/services/post-revisions.service";
 import * as PostService from "@/features/posts/services/posts.service";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
@@ -46,6 +49,56 @@ const postErrors = {
   },
   MEDIA_NOT_FOUND: { status: 404, message: "Media not found." },
   CATEGORY_NOT_FOUND: { status: 404, message: "Category not found." },
+  CONTENT_FORMAT_AMBIGUOUS: {
+    status: 400,
+    message: "Send contentJson or contentMarkdown, not both.",
+  },
+  MARKDOWN_IMAGE_INVALID: {
+    status: 400,
+    message:
+      "Markdown images must be http(s) addresses or Media paths (/images/<key>).",
+    data: z.object({
+      images: z.array(z.string()).describe("The refused image addresses."),
+    }),
+  },
+} as const;
+
+type MarkdownContentError =
+  | { reason: "CONTENT_FORMAT_AMBIGUOUS" }
+  | { reason: "MARKDOWN_IMAGE_INVALID"; images: Array<string> };
+
+function throwMarkdownContentError(
+  error: MarkdownContentError,
+  errors: {
+    CONTENT_FORMAT_AMBIGUOUS: () => Error;
+    MARKDOWN_IMAGE_INVALID: (options: {
+      message: string;
+      data: { images: Array<string> };
+    }) => Error;
+  },
+): never {
+  switch (error.reason) {
+    case "CONTENT_FORMAT_AMBIGUOUS":
+      throw errors.CONTENT_FORMAT_AMBIGUOUS();
+    case "MARKDOWN_IMAGE_INVALID": {
+      const list = error.images.map((src) => `"${src}"`).join(", ");
+      throw errors.MARKDOWN_IMAGE_INVALID({
+        message: `${error.images.length > 1 ? "Images" : "Image"} ${list} must be an http(s) address or a Media path (/images/<key>). Upload local images as Media and use their path.`,
+        data: { images: error.images },
+      });
+    }
+    default:
+      error satisfies never;
+      throw new Error("Unknown Markdown content error");
+  }
+}
+
+const editConflictErrors = {
+  EDIT_CONFLICT: {
+    status: 409,
+    message: "The post was saved since the stated saveToken was read.",
+    data: EditConflictDataSchema,
+  },
 } as const;
 
 const adminList = adminProcedure
@@ -57,9 +110,17 @@ const adminList = adminProcedure
   })
   .input(GetPostsInputSchema)
   .output(AdminPostListPageSchema)
-  .handler(({ context, input }) =>
-    PostService.listAdminPostsPage(context, input),
-  );
+  .handler(async ({ context, input }) => {
+    const page = await PostService.listAdminPostsPage(context, input);
+    return {
+      ...page,
+      items: await Promise.all(
+        page.items.map((item) =>
+          PostMarkdownService.inContentFormat(item, input.contentFormat),
+        ),
+      ),
+    };
+  });
 
 const adminGet = adminProcedure
   .errors(postErrors)
@@ -68,12 +129,17 @@ const adminGet = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Get a post by id",
     description:
-      "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft.",
+      "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
     tags: ["Admin Posts"],
   })
-  .input(FindPostByIdInputSchema)
+  .input(AdminFindPostByIdInputSchema)
   .output(AdminPostSchema)
-  .handler(({ context, input }) => PostService.findPostById(context, input));
+  .handler(async ({ context, input }) => {
+    const post = await PostService.findPostById(context, input);
+    return (
+      post && PostMarkdownService.inContentFormat(post, input.contentFormat)
+    );
+  });
 
 const generateSlug = adminProcedure
   .route({
@@ -102,43 +168,62 @@ const videoMeta = adminProcedure
   });
 
 const create = adminProcedure
+  .errors(postErrors)
   .route({
     method: "POST",
     path: "/admin/posts",
     summary: "Create a draft post",
     description:
-      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one.",
+      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken.",
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
-  .handler(({ context, input }) =>
-    input?.data
-      ? PostService.createDraft(context, input.data)
-      : PostService.createEmptyPost(context),
-  );
+  .handler(async ({ context, input, errors }) => {
+    if (!input?.data) return PostService.createEmptyPost(context);
+    const data = await PostMarkdownService.resolveMarkdownContent(
+      context,
+      input.data,
+    );
+    if (data.error) throwMarkdownContentError(data.error, errors);
+    return PostService.createDraft(context, data.data);
+  });
 
 const update = adminProcedure
-  .errors(postErrors)
+  .errors({ ...postErrors, ...editConflictErrors })
   .route({
     method: "PATCH",
     path: "/admin/posts/{id}",
     summary: "Update a post",
+    description:
+      "Writes only the fields in data and returns the updated Post with its new saveToken. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
-  .handler(({ context, input, errors }) =>
-    unwrapResult(PostService.updatePost(context, input), {
-      POST_NOT_FOUND: () => {
-        throw errors.POST_NOT_FOUND();
+  .handler(async ({ context, input, errors }) => {
+    const data = await PostMarkdownService.resolveMarkdownContent(
+      context,
+      input.data,
+      input.id,
+    );
+    if (data.error) throwMarkdownContentError(data.error, errors);
+    return unwrapResult(
+      PostService.updatePost(context, { ...input, data: data.data }),
+      {
+        POST_NOT_FOUND: () => {
+          throw errors.POST_NOT_FOUND();
+        },
+        EDIT_CONFLICT: ({ saveToken }) => {
+          throw errors.EDIT_CONFLICT({ data: { saveToken } });
+        },
+        MEDIA_NOT_FOUND: () => {
+          throw errors.MEDIA_NOT_FOUND();
+        },
+        CATEGORY_NOT_FOUND: () => {
+          throw errors.CATEGORY_NOT_FOUND();
+        },
       },
-      MEDIA_NOT_FOUND: () => {
-        throw errors.MEDIA_NOT_FOUND();
-      },
-      CATEGORY_NOT_FOUND: () => {
-        throw errors.CATEGORY_NOT_FOUND();
-      },
-    }),
-  );
+    );
+  });
 
 const remove = adminProcedure
   .errors(postErrors)
@@ -158,21 +243,27 @@ const remove = adminProcedure
   );
 
 const publishPost = adminProcedure
-  .errors(postErrors)
+  .errors({ ...postErrors, ...editConflictErrors })
   .route({
     method: "POST",
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
     description:
-      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot.",
+      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)
+  .output(PostWriteResultSchema)
   .handler(async ({ input, errors }) => {
-    const result = await (await getPostPublisher(input.id)).publish(input.id);
-    return unwrapResult<{ success: boolean }>(result, {
+    const result = await (
+      await getPostPublisher(input.id)
+    ).publish(input.id, input.saveToken);
+    return unwrapResult(result, {
       POST_NOT_FOUND: () => {
         throw errors.POST_NOT_FOUND();
+      },
+      EDIT_CONFLICT: ({ saveToken }) => {
+        throw errors.EDIT_CONFLICT({ data: { saveToken } });
       },
       PUBLISHED_AT_IN_FUTURE: () => {
         throw errors.PUBLISHED_AT_IN_FUTURE();
@@ -192,9 +283,10 @@ const unpublishPost = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(UnpublishPostInputSchema)
+  .output(PostWriteResultSchema)
   .handler(async ({ input, errors }) => {
     const result = await (await getPostPublisher(input.id)).unpublish(input.id);
-    return unwrapResult<{ success: boolean }>(result, {
+    return unwrapResult(result, {
       POST_NOT_FOUND: () => {
         throw errors.POST_NOT_FOUND();
       },
@@ -234,6 +326,8 @@ const restoreRevision = adminProcedure
     method: "POST",
     path: "/admin/posts/{postId}/revisions/{revisionId}/restore",
     summary: "Restore a post revision",
+    description:
+      "Writes the revision back into the draft. post.saveToken is the post's token after the restore.",
     tags: ["Admin Posts"],
   })
   .input(RestorePostRevisionInputSchema)

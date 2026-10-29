@@ -33,6 +33,10 @@ export type PublicPostSnapshot = {
   cover: PublicPostCover | null;
 };
 
+export function newSaveToken() {
+  return crypto.randomUUID();
+}
+
 export const CategoriesTable = sqliteTable("categories", {
   id,
   name: text().notNull().unique(),
@@ -59,6 +63,12 @@ export const PostsTable = sqliteTable(
     categoryId: integer("category_id").references(() => CategoriesTable.id, {
       onDelete: "set null",
     }),
+    // Opaque, replaced by every write to the row so a save can refuse an
+    // Edit Conflict (ADR 0031). $onUpdate covers every Drizzle update.
+    saveToken: text("save_token")
+      .notNull()
+      .$defaultFn(newSaveToken)
+      .$onUpdate(newSaveToken),
     createdAt,
     updatedAt,
   },

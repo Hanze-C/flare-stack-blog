@@ -94,6 +94,8 @@ const setPostTags = adminProcedure
     method: "PUT",
     path: "/admin/posts/{postId}/tags",
     summary: "Set tags on a post",
+    description:
+      "Replaces the post's tags. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist.",
     tags: ["Admin Tags"],
   })
   .input(SetPostTagsInputSchema)
