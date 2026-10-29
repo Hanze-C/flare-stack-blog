@@ -32,7 +32,7 @@ When an entity has both public and admin operations, use the admin ones.
 
 ## 3. Change the draft
 
-Every save changes the draft; readers see nothing until it is published.
+Every save changes the draft, and readers see it only once it is published, except a Post's Category and Tags, which show at once (the document's description says so); tell the human before changing them on a Published Post.
 
 - **Resolve the target** by id, or by a search on the title or slug; several matches means ask which.
 - **Read right before each write.** The Admin edits the same Posts in the browser, which autosaves as they type. Read the Post immediately before each save, build the save on what you just read, and send that read's `saveToken`. A Post saved in between is then kept and the save answers 409 instead of overwriting it. See [Conflicts](#conflicts).
