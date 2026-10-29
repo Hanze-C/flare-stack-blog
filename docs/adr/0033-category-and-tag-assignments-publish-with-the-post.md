@@ -4,6 +4,8 @@ A **Post**'s **Category** and **Tags** are now part of its **Public Content Snap
 
 The Categories and Tags themselves keep no draft: creating, renaming and deleting them take effect at once, as in the sibling real-estate CMS. A draft Category would let a Published Post refer to a Category the public site cannot show, and its name and filter would silently disappear. Deleting one asks for confirmation naming how many Published Posts lose it.
 
+Pinning moves the other way, out of the snapshot: it orders the whole site, so the post list's pin switch takes effect at once, and the editor no longer offers it. Everything the editor changes now waits for publishing, and Unpublished Changes compare a fingerprint of the draft's content (title, summary, slug, content, publication date, cover, Category, Tags) with the one taken at publishing, so undoing an edit clears them.
+
 **Considered Options**
 
 - Drafts for Category and Tag definitions as well. Rejected for the dangling reference above; the definitions have only a name, so there is little to draft.

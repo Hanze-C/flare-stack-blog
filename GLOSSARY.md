@@ -17,7 +17,7 @@ A **Post** that has a **Public Content Snapshot** and therefore appears in publi
 _Avoid_: Live article, scheduled post, future post
 
 **Public Content Snapshot**:
-The published state of a **Post** that the public site reads for listing, detail, search, and caching. It includes the public title, summary, slug, content, publication date, pin state, **Post Cover**, **Category** and **Tags**. Editing or autosaving a **Post** does not change it. Publishing replaces it. Unpublishing discards it.
+The published state of a **Post** that the public site reads for listing, detail, search, and caching. It includes the public title, summary, slug, content, publication date, **Post Cover**, **Category** and **Tags**. Editing or autosaving a **Post** does not change it. Publishing replaces it. Unpublishing discards it.
 _Avoid_: publicContentJson, rendered content, cached content, live version, working copy
 
 **Post Revision**:
@@ -212,6 +212,7 @@ _Avoid_: New commit, fork update
 - The **Search Index** includes the **Category** name of a **Published Post**.
 - Creating, renaming and deleting a **Category** or **Tag** take effect at once; there is no draft of a **Category** or **Tag**. Renaming one updates the public label of the **Published Posts** in its **Public Usage**, and deleting one removes it from their **Public Content Snapshots**, without republishing.
 - Discarding a **Post**'s **Unpublished Changes** takes a **Post Revision** of the draft first.
+- Pinning a **Post** takes effect at once and is not part of its **Public Content Snapshot**; it is set from the post list, not the editor, so everything the editor changes waits for publishing.
 - A **Post Popularity Snapshot** ranks **Published Posts** for public presentation.
 - A **Post Popularity Snapshot** older than seven days does not rank **Published Posts**.
 - A **Webhook Endpoint** receives admin **Notification Events**.
