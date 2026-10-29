@@ -8,6 +8,8 @@ export type AdminPostListItem = Omit<
   | "coverMediaId"
   | "categoryId"
   | "saveToken"
+  | "draftFingerprint"
+  | "publishedFingerprint"
 >;
 
 /** Status filter options for posts list */

@@ -488,6 +488,8 @@ describe("MediaService", () => {
         new RegExp(`^/images/${media.key}\\?v=\\d+$`),
       );
       const post = await PostService.findPostById(adminContext, { id: postId });
+      // The draft's new URL is a change the snapshot does not have yet.
+      expect(post?.hasUnpublishedChanges).toBe(true);
       expect(post?.contentJson?.content?.[0]?.attrs?.src).toBe(replaced.url);
       expect(post?.publicSnapshotContentJson?.content?.[0]?.attrs?.src).toBe(
         `/images/${media.key}`,

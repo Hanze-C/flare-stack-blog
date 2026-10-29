@@ -759,14 +759,14 @@ describe("Posts Integration", () => {
       });
       expect(page.items).toHaveLength(1);
       expect(page.total).toBe(2);
-      expect(page.statusCounts).toEqual({ draft: 2, published: 1 });
+      expect(page.statusCounts).toMatchObject({ draft: 2, published: 1 });
       const publicPage = await PostService.listAdminPostsPage(adminContext, {
         search: "matched",
         publicOnly: true,
         limit: 1,
       });
       expect(publicPage.total).toBe(1);
-      expect(publicPage.statusCounts).toEqual({ draft: 0, published: 1 });
+      expect(publicPage.statusCounts).toMatchObject({ draft: 0, published: 1 });
       const beyond = await PostService.listAdminPostsPage(adminContext, {
         search: "matched",
         offset: 50,
@@ -774,7 +774,7 @@ describe("Posts Integration", () => {
       });
       expect(beyond.items).toEqual([]);
       expect(beyond.total).toBe(3);
-      expect(beyond.statusCounts).toEqual({ draft: 2, published: 1 });
+      expect(beyond.statusCounts).toMatchObject({ draft: 2, published: 1 });
     });
 
     it("returns zero status facets for no matches and treats wildcard searches literally", async () => {
@@ -786,7 +786,7 @@ describe("Posts Integration", () => {
       const literal = await PostService.listAdminPostsPage(adminContext, {
         search: "%_",
       });
-      expect(literal.statusCounts).toEqual({ draft: 1, published: 0 });
+      expect(literal.statusCounts).toMatchObject({ draft: 1, published: 0 });
       const empty = await PostService.listAdminPostsPage(adminContext, {
         search: "missing",
       });

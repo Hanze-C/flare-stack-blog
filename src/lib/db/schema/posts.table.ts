@@ -69,6 +69,14 @@ export const PostsTable = sqliteTable(
       .notNull()
       .$defaultFn(newSaveToken)
       .$onUpdate(newSaveToken),
+    // Fingerprints of the draft and of the draft as last published, over the
+    // fields that go live (title, summary, slug, content, publication date,
+    // cover, Category, Tags; not pin). They differ exactly while the Post has
+    // Unpublished Changes. Publishing writes both with the snapshot. Every
+    // other write that can change those fields clears `draftFingerprint`, and
+    // null (either column) means "compute me": the next Admin read settles it.
+    draftFingerprint: text("draft_fingerprint"),
+    publishedFingerprint: text("published_fingerprint"),
     createdAt,
     updatedAt,
   },

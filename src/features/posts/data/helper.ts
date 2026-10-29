@@ -26,6 +26,14 @@ export function adminPostTextColumns(taxonomy?: AdminTaxonomyFilter) {
     slug: sql<string>`coalesce(json_extract(${PostsTable.publicSnapshotJson}, '$.slug'), ${PostsTable.publicSlug}, ${PostsTable.slug})`,
   };
 }
+/**
+ * A Published Post whose draft fingerprint differs from the one taken at
+ * publishing. `IS NOT` compares nulls, but callers settle null fingerprints
+ * first (see unpublished-changes.service).
+ */
+export function unpublishedChangesSql(): SQL<boolean> {
+  return sql<boolean>`(${PostsTable.status} = 'published' AND ${PostsTable.draftFingerprint} IS NOT ${PostsTable.publishedFingerprint})`;
+}
 function uncategorized(): SQL {
   return sql`${PostsTable.categoryId} IS NULL`;
 }
@@ -47,6 +55,8 @@ export type PostFilters = {
   categoryId?: number;
   uncategorized?: boolean;
   tagId?: number;
+  /** Only Published Posts with Unpublished Changes. */
+  hasUnpublishedChanges?: boolean;
 };
 
 export function buildPostWhereClause(options: PostFilters) {
@@ -60,6 +70,9 @@ export function buildPostWhereClause(options: PostFilters) {
 
   if (options.status) {
     whereClauses.push(eq(PostsTable.status, options.status));
+  }
+  if (options.hasUnpublishedChanges) {
+    whereClauses.push(unpublishedChangesSql());
   }
 
   if (options.publicOnly || options.taxonomy?.scope === "public") {

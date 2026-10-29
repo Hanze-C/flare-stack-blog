@@ -3,6 +3,9 @@ import * as MediaRepo from "@/features/media/data/media.data";
 import { syncPostMedia } from "@/features/posts/data/post-media.data";
 import * as PostRevisionRepo from "@/features/posts/data/post-revisions.data";
 import * as PostRepo from "@/features/posts/data/posts.data";
+import type { DiscardPostChangesInput } from "@/features/posts/schema/posts.schema";
+import * as UnpublishedChangesService from "@/features/posts/services/unpublished-changes.service";
+import { hasUnpublishedChanges } from "@/features/posts/utils/unpublished-changes";
 import type {
   CreatePostRevisionInput,
   CreatePostRevisionResult,
@@ -226,6 +229,94 @@ export async function restorePostRevision(
     restored: true,
     revisionId: revision.id,
   });
+}
+
+/**
+ * Makes the draft of a Published Post match what was published again: the
+ * latest publish revision, Category and Tags included, is written into it
+ * after the draft as it is now is saved as a revision. The public site is not
+ * touched. With `saveToken`, a draft saved since that token was read is left
+ * as it is and answers EDIT_CONFLICT.
+ */
+export async function discardUnpublishedChanges(
+  context: DbContext,
+  data: DiscardPostChangesInput,
+) {
+  const found = await PostRepo.findPostById(context.db, data.id);
+  if (!found) {
+    return err({ reason: "POST_NOT_FOUND" });
+  }
+  if (data.saveToken !== undefined && data.saveToken !== found.saveToken) {
+    return err({ reason: "EDIT_CONFLICT", saveToken: found.saveToken });
+  }
+  if (found.status !== "published") {
+    return err({ reason: "POST_NOT_PUBLISHED" });
+  }
+
+  const settled = (
+    await UnpublishedChangesService.settleFingerprints(context.db, {
+      postId: found.id,
+    })
+  ).get(found.id);
+  const post = { ...found, ...settled };
+  if (!hasUnpublishedChanges(post)) {
+    return err({ reason: "NO_UNPUBLISHED_CHANGES" });
+  }
+
+  const [revision] = await PostRevisionRepo.findLatestPublishRevisions(
+    context.db,
+    [post.id],
+  );
+  const parsedSnapshot = PostRevisionSnapshotSchema.safeParse(
+    revision?.snapshotJson,
+  );
+  if (!revision || !parsedSnapshot.success) {
+    return err({ reason: "POST_REVISION_NOT_FOUND" });
+  }
+  // Writing the revision must leave the draft as it was published. If the
+  // publish did not leave a revision of what it published, this one is not it.
+  const publishedFingerprint =
+    await UnpublishedChangesService.fingerprintOfRevision(
+      parsedSnapshot.data,
+      await PostRepo.findAssignableIds(context.db),
+    );
+  if (publishedFingerprint !== post.publishedFingerprint) {
+    return err({ reason: "POST_REVISION_NOT_FOUND" });
+  }
+
+  const targetSnapshot = {
+    ...parsedSnapshot.data,
+    coverMediaId: parsedSnapshot.data.coverMediaId ?? null,
+  };
+  if (
+    targetSnapshot.coverMediaId != null &&
+    !(await MediaRepo.findMediaById(context.db, targetSnapshot.coverMediaId))
+  ) {
+    targetSnapshot.coverMediaId = null;
+  }
+
+  const currentSnapshot = toRevisionSnapshot(post);
+  const discarded = await PostRevisionRepo.restorePostSnapshot(context.db, {
+    postId: post.id,
+    snapshot: targetSnapshot,
+    backupRevision: {
+      reason: "restore_backup",
+      snapshotJson: currentSnapshot,
+      snapshotHash: await hashSnapshot(currentSnapshot),
+      restoredFromRevisionId: revision.id,
+    },
+    // Without a stated token, still write only the draft that was backed up.
+    saveToken: data.saveToken ?? post.saveToken,
+  });
+  if (!discarded) {
+    const saveToken = await PostRepo.findPostSaveToken(context.db, post.id);
+    return saveToken === null
+      ? err({ reason: "POST_NOT_FOUND" })
+      : err({ reason: "EDIT_CONFLICT", saveToken });
+  }
+
+  await syncPostMedia(context.db, discarded);
+  return ok({ success: true, saveToken: discarded.saveToken });
 }
 
 export async function deletePostRevisions(

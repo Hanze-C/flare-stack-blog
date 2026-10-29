@@ -4,6 +4,7 @@ import {
   AdminPostListPageSchema,
   CreatePostInputSchema,
   DeletePostInputSchema,
+  DiscardPostChangesInputSchema,
   GenerateSlugInputSchema,
   GetPostsInputSchema,
   AdminPostSchema,
@@ -101,6 +102,17 @@ const editConflictErrors = {
   },
 } as const;
 
+const discardChangesErrors = {
+  POST_NOT_PUBLISHED: {
+    status: 409,
+    message: "The post is not published, so there is nothing to discard to.",
+  },
+  NO_UNPUBLISHED_CHANGES: {
+    status: 409,
+    message: "The draft already matches the published version.",
+  },
+} as const;
+
 const adminList = adminProcedure
   .route({
     method: "GET",
@@ -129,7 +141,7 @@ const adminGet = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Get a post by id",
     description:
-      "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
+      "Returns the editable Post. hasUnpublishedChanges tells whether the draft differs from the published version. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
     tags: ["Admin Posts"],
   })
   .input(AdminFindPostByIdInputSchema)
@@ -293,6 +305,41 @@ const unpublishPost = adminProcedure
     });
   });
 
+const discardChanges = adminProcedure
+  .errors({ ...postErrors, ...discardChangesErrors, ...editConflictErrors })
+  .route({
+    method: "POST",
+    path: "/admin/posts/{id}/discard-changes",
+    summary: "Discard a post's unpublished changes",
+    description:
+      "Makes the draft of a published post that has unpublished changes (hasUnpublishedChanges) match the published version again: title, summary, slug, body, publication date, cover, category and tags. The draft as it is now is first saved as a Post Revision, so the discarded changes can be restored from the revision list. The published page is not touched. Answers 409 POST_NOT_PUBLISHED for a draft post and 409 NO_UNPUBLISHED_CHANGES when the draft already matches. With saveToken, only the draft that token was read from is discarded; if the post was saved since, it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Returns the post's new saveToken.",
+    tags: ["Admin Posts"],
+  })
+  .input(DiscardPostChangesInputSchema)
+  .output(PostWriteResultSchema)
+  .handler(({ context, input, errors }) =>
+    unwrapResult(
+      PostRevisionService.discardUnpublishedChanges(context, input),
+      {
+        POST_NOT_FOUND: () => {
+          throw errors.POST_NOT_FOUND();
+        },
+        POST_REVISION_NOT_FOUND: () => {
+          throw errors.POST_REVISION_NOT_FOUND();
+        },
+        POST_NOT_PUBLISHED: () => {
+          throw errors.POST_NOT_PUBLISHED();
+        },
+        NO_UNPUBLISHED_CHANGES: () => {
+          throw errors.NO_UNPUBLISHED_CHANGES();
+        },
+        EDIT_CONFLICT: ({ saveToken }) => {
+          throw errors.EDIT_CONFLICT({ data: { saveToken } });
+        },
+      },
+    ),
+  );
+
 const listRevisions = adminProcedure
   .route({
     method: "GET",
@@ -372,6 +419,7 @@ export default {
   remove,
   publish: publishPost,
   unpublish: unpublishPost,
+  discardChanges,
   revisions: {
     list: listRevisions,
     get: getRevision,

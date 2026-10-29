@@ -36,21 +36,60 @@ import {
   isFuturePublishDate,
   serverUtcDateString,
 } from "@/features/posts/utils/date";
-import { calculatePostHash } from "@/features/posts/utils/sync";
+import * as UnpublishedChangesService from "@/features/posts/services/unpublished-changes.service";
+import {
+  calculateDraftFingerprint,
+  calculatePostHash,
+} from "@/features/posts/utils/sync";
+import {
+  hasUnpublishedChanges,
+  needsFingerprints,
+} from "@/features/posts/utils/unpublished-changes";
 import { generateTableOfContents } from "@/features/posts/utils/toc";
 import * as SearchService from "@/features/search/service/search.service";
 import type { PublicPostSnapshot } from "@/lib/db/schema";
 import { err, ok } from "@/lib/errors";
 
 function stripPublicSnapshot<
-  T extends { publicSnapshotJson?: unknown; publicSlug?: unknown },
->(post: T): Omit<T, "publicSnapshotJson" | "publicSlug"> {
+  T extends {
+    publicSnapshotJson?: unknown;
+    publicSlug?: unknown;
+    draftFingerprint?: unknown;
+    publishedFingerprint?: unknown;
+  },
+>(
+  post: T,
+): Omit<
+  T,
+  | "publicSnapshotJson"
+  | "publicSlug"
+  | "draftFingerprint"
+  | "publishedFingerprint"
+> {
   const {
     publicSnapshotJson: _publicSnapshotJson,
     publicSlug: _publicSlug,
+    draftFingerprint: _draftFingerprint,
+    publishedFingerprint: _publishedFingerprint,
     ...rest
   } = post;
   return rest;
+}
+
+/** `post` with the fingerprints a Published Post had not computed yet. */
+async function withSettledFingerprints<
+  T extends {
+    id: number;
+    status: "draft" | "published";
+    draftFingerprint: string | null;
+    publishedFingerprint: string | null;
+  },
+>(db: DB, post: T): Promise<T> {
+  if (!needsFingerprints(post)) return post;
+  const settled = (
+    await UnpublishedChangesService.settleFingerprints(db, { postId: post.id })
+  ).get(post.id);
+  return settled ? { ...post, ...settled } : post;
 }
 
 async function resolveSnapshotCover(
@@ -329,6 +368,8 @@ export async function listAdminPostsPage(
   context: DbContext,
   data: GetPostsInput,
 ) {
+  // The list filters and counts in SQL, which compares fingerprints.
+  await UnpublishedChangesService.settleFingerprints(context.db);
   const [items, statusCounts] = await Promise.all([
     getPosts(context, data),
     PostRepo.getAdminPostStatusCounts(context.db, {
@@ -340,14 +381,18 @@ export async function listAdminPostsPage(
       tagId: data.tagId,
     }),
   ]);
+  const draftTotal = data.hasUnpublishedChanges ? 0 : statusCounts.draft;
+  const publishedTotal = data.hasUnpublishedChanges
+    ? statusCounts.unpublishedChanges
+    : statusCounts.published;
   const total =
     data.status === "draft"
-      ? statusCounts.draft
+      ? draftTotal
       : data.status === "published"
-        ? statusCounts.published
+        ? publishedTotal
         : data.status
           ? 0
-          : statusCounts.draft + statusCounts.published;
+          : draftTotal + publishedTotal;
   return { items, total, statusCounts };
 }
 
@@ -362,6 +407,7 @@ export async function getPosts(context: DbContext, data: GetPostsInput) {
     categoryId: data.categoryId,
     uncategorized: data.uncategorized,
     tagId: data.tagId,
+    hasUnpublishedChanges: data.hasUnpublishedChanges,
     sortDir: data.sortDir,
     sortBy: data.sortBy,
     includeContent: data.includeContent,
@@ -372,7 +418,11 @@ export async function getPostsCount(
   context: DbContext,
   data: GetPostsCountInput,
 ) {
+  if (data.hasUnpublishedChanges) {
+    await UnpublishedChangesService.settleFingerprints(context.db);
+  }
   return await PostRepo.getPostsCount(context.db, {
+    hasUnpublishedChanges: data.hasUnpublishedChanges,
     status: data.status,
     publicOnly: data.publicOnly,
     search: data.search,
@@ -401,8 +451,9 @@ export async function findPostById(
   context: DbContext,
   data: FindPostByIdInput,
 ) {
-  const post = await PostRepo.findPostById(context.db, data.id);
-  if (!post) return null;
+  const found = await PostRepo.findPostById(context.db, data.id);
+  if (!found) return null;
+  const post = await withSettledFingerprints(context.db, found);
 
   const coverMedia =
     post.coverMediaId == null
@@ -415,6 +466,7 @@ export async function findPostById(
     coverMediaId: coverMedia ? post.coverMediaId : null,
     cover: coverMedia ? toAdminCover(coverMedia) : null,
     hasPublicSnapshot: post.publicSnapshotJson != null,
+    hasUnpublishedChanges: hasUnpublishedChanges(post),
     publicSnapshotContentJson: post.publicSnapshotJson?.contentJson ?? null,
     serverToday: serverUtcDateString(),
   };
@@ -460,6 +512,7 @@ export async function updatePost(
   if (!updatedPost) {
     return editConflictOrNotFound(context.db, data.id);
   }
+  const savedPost = await withSettledFingerprints(context.db, updatedPost);
 
   if (
     updateData.contentJson !== undefined ||
@@ -475,7 +528,10 @@ export async function updatePost(
       }),
     );
   }
-  return ok(stripPublicSnapshot(updatedPost));
+  return ok({
+    ...stripPublicSnapshot(savedPost),
+    hasUnpublishedChanges: hasUnpublishedChanges(savedPost),
+  });
 }
 
 export async function deletePost(
@@ -554,7 +610,17 @@ export async function publishPost(
     context.db,
     publishedPost.id,
     snapshot,
-    { draft, saveToken: data.saveToken },
+    {
+      draft,
+      saveToken: data.saveToken,
+      fingerprint: {
+        value: await calculateDraftFingerprint({
+          ...publishedPost,
+          tagIds: publishedPost.tags.map((tag) => tag.id),
+        }),
+        readSaveToken: post.saveToken,
+      },
+    },
   );
   if (!published) {
     return editConflictOrNotFound(context.db, publishedPost.id);
