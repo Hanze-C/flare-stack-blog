@@ -93,7 +93,7 @@
             "method": "GET",
             "path": "/admin/posts/{id}",
             "summary": "Get a post by id",
-            "description": "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft.",
+            "description": "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
             "tags": ["Admin Posts"]
           }
         }
@@ -131,7 +131,7 @@
             "method": "POST",
             "path": "/admin/posts",
             "summary": "Create a draft post",
-            "description": "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one.",
+            "description": "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken.",
             "tags": ["Admin Posts"]
           }
         }
@@ -144,6 +144,7 @@
             "method": "PATCH",
             "path": "/admin/posts/{id}",
             "summary": "Update a post",
+            "description": "Writes only the fields in data and returns the updated Post with its new saveToken. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
             "tags": ["Admin Posts"]
           }
         }
@@ -168,7 +169,7 @@
             "method": "POST",
             "path": "/admin/posts/{id}/publish",
             "summary": "Publish a post",
-            "description": "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot.",
+            "description": "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
             "tags": ["Admin Posts"]
           }
         }
@@ -218,6 +219,7 @@
               "method": "POST",
               "path": "/admin/posts/{postId}/revisions/{revisionId}/restore",
               "summary": "Restore a post revision",
+              "description": "Writes the revision back into the draft. post.saveToken is the post's token after the restore.",
               "tags": ["Admin Posts"]
             }
           }
@@ -319,6 +321,7 @@
             "method": "PUT",
             "path": "/admin/posts/{postId}/tags",
             "summary": "Set tags on a post",
+            "description": "Replaces the post's tags. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist.",
             "tags": ["Admin Tags"]
           }
         }

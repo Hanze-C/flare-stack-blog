@@ -7,6 +7,8 @@ import {
   GenerateSlugInputSchema,
   GetPostsInputSchema,
   AdminPostSchema,
+  EditConflictDataSchema,
+  PostWriteResultSchema,
   PublishPostInputSchema,
   UnpublishPostInputSchema,
   UpdatePostInputSchema,
@@ -91,6 +93,14 @@ function throwMarkdownContentError(
   }
 }
 
+const editConflictErrors = {
+  EDIT_CONFLICT: {
+    status: 409,
+    message: "The post was saved since the stated saveToken was read.",
+    data: EditConflictDataSchema,
+  },
+} as const;
+
 const adminList = adminProcedure
   .route({
     method: "GET",
@@ -119,7 +129,7 @@ const adminGet = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Get a post by id",
     description:
-      "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft.",
+      "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
     tags: ["Admin Posts"],
   })
   .input(AdminFindPostByIdInputSchema)
@@ -164,7 +174,7 @@ const create = adminProcedure
     path: "/admin/posts",
     summary: "Create a draft post",
     description:
-      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one.",
+      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken.",
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
@@ -179,11 +189,13 @@ const create = adminProcedure
   });
 
 const update = adminProcedure
-  .errors(postErrors)
+  .errors({ ...postErrors, ...editConflictErrors })
   .route({
     method: "PATCH",
     path: "/admin/posts/{id}",
     summary: "Update a post",
+    description:
+      "Writes only the fields in data and returns the updated Post with its new saveToken. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
@@ -199,6 +211,9 @@ const update = adminProcedure
       {
         POST_NOT_FOUND: () => {
           throw errors.POST_NOT_FOUND();
+        },
+        EDIT_CONFLICT: ({ saveToken }) => {
+          throw errors.EDIT_CONFLICT({ data: { saveToken } });
         },
         MEDIA_NOT_FOUND: () => {
           throw errors.MEDIA_NOT_FOUND();
@@ -228,21 +243,27 @@ const remove = adminProcedure
   );
 
 const publishPost = adminProcedure
-  .errors(postErrors)
+  .errors({ ...postErrors, ...editConflictErrors })
   .route({
     method: "POST",
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
     description:
-      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot.",
+      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)
+  .output(PostWriteResultSchema)
   .handler(async ({ input, errors }) => {
-    const result = await (await getPostPublisher(input.id)).publish(input.id);
-    return unwrapResult<{ success: boolean }>(result, {
+    const result = await (
+      await getPostPublisher(input.id)
+    ).publish(input.id, input.saveToken);
+    return unwrapResult(result, {
       POST_NOT_FOUND: () => {
         throw errors.POST_NOT_FOUND();
+      },
+      EDIT_CONFLICT: ({ saveToken }) => {
+        throw errors.EDIT_CONFLICT({ data: { saveToken } });
       },
       PUBLISHED_AT_IN_FUTURE: () => {
         throw errors.PUBLISHED_AT_IN_FUTURE();
@@ -262,9 +283,10 @@ const unpublishPost = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(UnpublishPostInputSchema)
+  .output(PostWriteResultSchema)
   .handler(async ({ input, errors }) => {
     const result = await (await getPostPublisher(input.id)).unpublish(input.id);
-    return unwrapResult<{ success: boolean }>(result, {
+    return unwrapResult(result, {
       POST_NOT_FOUND: () => {
         throw errors.POST_NOT_FOUND();
       },
@@ -304,6 +326,8 @@ const restoreRevision = adminProcedure
     method: "POST",
     path: "/admin/posts/{postId}/revisions/{revisionId}/restore",
     summary: "Restore a post revision",
+    description:
+      "Writes the revision back into the draft. post.saveToken is the post's token after the restore.",
     tags: ["Admin Posts"],
   })
   .input(RestorePostRevisionInputSchema)

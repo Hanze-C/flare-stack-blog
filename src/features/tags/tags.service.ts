@@ -175,7 +175,10 @@ export async function deleteTag(
   return ok({ success: true });
 }
 
-/** Update shared Tag assignments; public caches refresh in the background. */
+/**
+ * Update shared Tag assignments; public caches refresh in the background.
+ * Returns the Post's new saveToken, or null when there is no such Post.
+ */
 export async function setPostTags(
   context: DbContext & { executionCtx: ExecutionContext },
   data: SetPostTagsInput,
@@ -187,4 +190,5 @@ export async function setPostTags(
       invalidate.tagChanged(context, { slugs: [post.publicSlug] }),
     );
   }
+  return { saveToken: post?.saveToken ?? null };
 }

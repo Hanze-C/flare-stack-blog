@@ -55,7 +55,21 @@ const ContentMarkdownInputSchema = z
     `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal.`,
   );
 
+const SaveTokenSchema = z
+  .string()
+  .describe(
+    "Opaque token that every write to the post replaces, including tags, category, cover, publish, unpublish and Post Revision restores. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
+  );
+
+const StatedSaveTokenSchema = z
+  .string()
+  .optional()
+  .describe(
+    "The saveToken from your latest read or write of this post. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken: read the post again before deciding what to write. Omit it to write unconditionally.",
+  );
+
 const PostSelectSchema = createSelectSchema(PostsTable, {
+  saveToken: SaveTokenSchema,
   publishedAt: coercedDateNullable,
   pinnedAt: coercedDateNullable,
   createdAt: coercedDate,
@@ -85,11 +99,13 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
     id: true,
     createdAt: true,
     updatedAt: true,
+    saveToken: true,
   })
   .extend({ contentMarkdown: ContentMarkdownInputSchema })
   .strict();
 
 export const PostItemSchema = PostSelectSchema.omit({
+  saveToken: true,
   contentJson: true,
   publicSlug: true,
   coverMediaId: true,
@@ -115,6 +131,7 @@ export const HomePostsResponseSchema = z.object({
   totalPages: z.number().int().positive(),
 });
 export const PostWithTocSchema = PostSelectSchema.omit({
+  saveToken: true,
   publicSlug: true,
   coverMediaId: true,
   categoryId: true,
@@ -276,6 +293,9 @@ const AdminPostListItemSchema = z.object({
     "Only returned when the request asks for includeContent=true outside the public taxonomy scope.",
   ),
   contentMarkdown: ContentMarkdownOutputSchema,
+  saveToken: SaveTokenSchema.optional().describe(
+    "Returned together with the body (includeContent=true). Opaque token that every write to the post replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
+  ),
 });
 
 const AdminPostStatusCountsSchema = z.object({
@@ -325,12 +345,31 @@ export const CreatePostInputSchema = z
 export const UpdatePostInputSchema = z.object({
   id: z.number(),
   data: PostUpdateSchema,
+  saveToken: StatedSaveTokenSchema,
 });
 
 export const DeletePostInputSchema = z.object({ id: z.number() });
 
 export const PublishPostInputSchema = z.object({
   id: z.number(),
+  saveToken: StatedSaveTokenSchema.describe(
+    "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
+  ),
+});
+
+export const PostWriteResultSchema = z.object({
+  success: z.boolean(),
+  saveToken: SaveTokenSchema.describe(
+    "The post's saveToken after this write. State it on your next save or publish.",
+  ),
+});
+
+export const EditConflictDataSchema = z.object({
+  saveToken: z
+    .string()
+    .describe(
+      "The post's current saveToken. Read the post again to see what changed; state this token only to overwrite it on purpose.",
+    ),
 });
 
 export const UnpublishPostInputSchema = z.object({
