@@ -814,7 +814,7 @@
   "settings_api_keys_toast_create_fail": "创建失败",
   "settings_api_keys_toast_delete_success": "密钥已删除",
   "settings_api_keys_toast_delete_fail": "删除失败",
-  "settings_api_keys_skill_hint": "安装 Agent Skill 后，AI agent 可以直接帮你撰写、发布和管理文章。{download}，解压到 agent 的 skill 目录，输入 {command} 即可使用。首次使用时需提供站点地址和 API Key。",
+  "settings_api_keys_skill_hint": "安装 Agent Skill 后，AI agent 可以直接帮你撰写、发布和管理文章。已安装 Node.js 的话，运行下面的命令即可；也可以{download}，解压到 agent 的 skill 目录。首次使用时需提供站点地址和 API Key。",
   "settings_api_keys_skill_download": "下载 Agent Skill（v{version}）",
   "settings_email_scope_admin_label": "管理员邮件通知",
   "settings_email_scope_user_label": "用户邮件通知",
