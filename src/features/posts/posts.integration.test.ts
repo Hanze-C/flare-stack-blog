@@ -62,8 +62,8 @@ describe("Posts Integration", () => {
           categoryId: null,
           cover: null,
           publishedAt,
-          pinnedAt: i < 9 ? "2026-02-01T00:00:00.000Z" : null,
         },
+        pinnedAt: i < 9 ? new Date("2026-02-01T00:00:00.000Z") : null,
       }));
       // Two inserts keep each query under D1's 100 bound parameters.
       const rows = [
@@ -1017,12 +1017,12 @@ describe("Posts Integration", () => {
           title: "Pinned Older",
           slug: "pinned-older",
           publishedAt: new Date("2023-01-01T00:00:00.000Z"),
-          pinnedAt: new Date("2024-12-31T00:00:00.000Z"),
         },
       });
       unwrap(
         await PostService.publishPost(adminContext, { id: pinnedOlderId }),
       );
+      unwrap(await PostService.pinPost(adminContext, { id: pinnedOlderId }));
 
       const { id: draftId } = await PostService.createEmptyPost(adminContext);
       await updatePost({

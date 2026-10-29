@@ -298,7 +298,6 @@ describe("Tags & Search Integration", () => {
           tagIds: [],
           categoryId: null,
           publishedAt: new Date().toISOString(),
-          pinnedAt: null,
           cover: null,
         },
       };

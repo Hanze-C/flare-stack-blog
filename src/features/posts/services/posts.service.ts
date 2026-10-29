@@ -19,7 +19,9 @@ import type {
   GetPostsCountInput,
   GetPostsCursorInput,
   GetPostsInput,
+  PinPostInput,
   PublishPostInput,
+  UnpinPostInput,
   UnpublishPostInput,
   UpdatePostInput,
 } from "@/features/posts/schema/posts.schema";
@@ -95,7 +97,6 @@ async function buildPublicSnapshot(
     tagIds: [...new Set(post.tags.map((tag) => tag.id))].sort((a, b) => a - b),
     categoryId: post.categoryId ?? null,
     publishedAt: toIsoOrNull(post.publishedAt) ?? new Date().toISOString(),
-    pinnedAt: toIsoOrNull(post.pinnedAt),
     cover: await resolveSnapshotCover(db, post.coverMediaId),
   };
 }
@@ -123,7 +124,6 @@ async function createPublishRevision(
     tagIds,
     slug: post.slug,
     publishedAt: post.publishedAt,
-    pinnedAt: post.pinnedAt,
     coverMediaId: post.coverMediaId,
     categoryId: post.categoryId ?? null,
   });
@@ -600,4 +600,35 @@ export async function unpublishPost(
   await invalidate.postDeleted(context, { slug: publicSlug });
 
   return ok({ success: true, saveToken: unpublished.saveToken });
+}
+
+async function setPostPinned(
+  context: DbContext & { executionCtx: ExecutionContext },
+  id: number,
+  pinned: boolean,
+) {
+  const written = await PostRepo.setPostPinned(context.db, id, pinned);
+  if (!written) {
+    return err({ reason: "POST_NOT_FOUND" });
+  }
+  // Pinning orders the whole public site, so a published Post purges at once;
+  // a draft's pin only matters once it is published.
+  if (written.publicSlug) {
+    await invalidate.postPublished(context, { slug: written.publicSlug });
+  }
+  return ok({ success: true, saveToken: written.saveToken });
+}
+
+export function pinPost(
+  context: DbContext & { executionCtx: ExecutionContext },
+  data: PinPostInput,
+) {
+  return setPostPinned(context, data.id, true);
+}
+
+export function unpinPost(
+  context: DbContext & { executionCtx: ExecutionContext },
+  data: UnpinPostInput,
+) {
+  return setPostPinned(context, data.id, false);
 }

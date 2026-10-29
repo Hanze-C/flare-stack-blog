@@ -41,7 +41,6 @@ export function PostEditor({
     slug: initialData.slug,
     contentJson: normalizePostContent(initialData.contentJson) ?? null,
     publishedAt: initialData.publishedAt,
-    pinnedAt: initialData.pinnedAt,
     tagIds: initialData.tagIds,
     categoryId: initialData.categoryId,
     hasPublicSnapshot: initialData.hasPublicSnapshot,

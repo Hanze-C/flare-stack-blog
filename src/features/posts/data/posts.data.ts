@@ -7,6 +7,7 @@ import {
   gt,
   inArray,
   isNotNull,
+  isNull,
   like,
   lt,
   ne,
@@ -39,7 +40,6 @@ const DEFAULT_PAGE_SIZE = 12;
 const DEFAULT_SITEMAP_BATCH_SIZE = 500;
 
 const snapshotPublishedAt = sql<string>`json_extract(${PostsTable.publicSnapshotJson}, '$.publishedAt')`;
-const snapshotPinnedAt = sql<string>`json_extract(${PostsTable.publicSnapshotJson}, '$.pinnedAt')`;
 
 async function hydratePublicPosts(
   db: DB,
@@ -48,6 +48,7 @@ async function hydratePublicPosts(
     status: PostStatus;
     createdAt: Date;
     updatedAt: Date;
+    pinnedAt: Date | null;
     publicSnapshotJson: PublicPostSnapshot | null;
   }>,
 ): Promise<Array<PostItem>> {
@@ -108,12 +109,11 @@ export async function getPosts(
   const whereClause = buildPostWhereClause(filters);
   const publicScope = filters.taxonomy?.scope === "public";
   const orderByClause = buildPostOrderByClause(sortDir, sortBy, publicScope);
-  const snapshotDate = (field: "publishedAt" | "pinnedAt") =>
-    sql<
-      string | null
-    >`json_extract(${PostsTable.publicSnapshotJson}, ${`$.${field}`})`.mapWith(
-      (value) => (value == null ? null : new Date(value)),
-    );
+  const snapshotPublishedAtDate = sql<
+    string | null
+  >`json_extract(${PostsTable.publicSnapshotJson}, '$.publishedAt')`.mapWith(
+    (value) => (value == null ? null : new Date(value)),
+  );
 
   const posts = await db
     .select({
@@ -122,9 +122,10 @@ export async function getPosts(
       publicSlug: PostsTable.publicSlug,
       status: PostsTable.status,
       publishedAt: publicScope
-        ? snapshotDate("publishedAt")
+        ? snapshotPublishedAtDate
         : PostsTable.publishedAt,
-      pinnedAt: publicScope ? snapshotDate("pinnedAt") : PostsTable.pinnedAt,
+      // Pinning takes effect at once and is not part of the snapshot.
+      pinnedAt: PostsTable.pinnedAt,
       categoryId: PostsTable.categoryId,
       createdAt: PostsTable.createdAt,
       updatedAt: PostsTable.updatedAt,
@@ -276,7 +277,7 @@ export async function getPostsCursor(
   }
 
   if (excludePinned) {
-    conditions.push(sql`${snapshotPinnedAt} IS NULL`);
+    conditions.push(isNull(PostsTable.pinnedAt));
   }
 
   const itemsWithPotentialNext = await db
@@ -285,6 +286,7 @@ export async function getPostsCursor(
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
       updatedAt: PostsTable.updatedAt,
+      pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
     .from(PostsTable)
@@ -310,12 +312,13 @@ export async function getHomePosts(db: DB, requestedPage: number) {
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
       updatedAt: PostsTable.updatedAt,
+      pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
     .from(PostsTable)
     .where(buildPostWhereClause({ publicOnly: true }))
     .orderBy(
-      desc(snapshotPinnedAt),
+      desc(PostsTable.pinnedAt),
       desc(snapshotPublishedAt),
       desc(PostsTable.id),
     )
@@ -401,16 +404,17 @@ export async function findPinnedPosts(db: DB) {
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
       updatedAt: PostsTable.updatedAt,
+      pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
     .from(PostsTable)
     .where(
       and(
         isNotNull(PostsTable.publicSnapshotJson),
-        sql`${snapshotPinnedAt} IS NOT NULL`,
+        isNotNull(PostsTable.pinnedAt),
       ),
     )
-    .orderBy(desc(snapshotPinnedAt));
+    .orderBy(desc(PostsTable.pinnedAt));
 
   return hydratePublicPosts(db, rows);
 }
@@ -424,6 +428,7 @@ export async function findPostsByIds(db: DB, ids: number[]) {
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
       updatedAt: PostsTable.updatedAt,
+      pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
     .from(PostsTable)
@@ -576,6 +581,27 @@ export async function writePublicSnapshot(
     .returning({ saveToken: PostsTable.saveToken });
   if (!written) return null;
   return await findWrittenPost(db, id, written.saveToken);
+}
+
+/**
+ * Pins or unpins the Post in one statement. Pinning an already pinned Post
+ * keeps its place. Leaves updatedAt alone; the row write replaces saveToken.
+ */
+export async function setPostPinned(db: DB, id: number, pinned: boolean) {
+  const [written] = await db
+    .update(PostsTable)
+    .set({
+      pinnedAt: pinned
+        ? sql`coalesce(${PostsTable.pinnedAt}, unixepoch())`
+        : null,
+      updatedAt: sql`${PostsTable.updatedAt}`,
+    })
+    .where(eq(PostsTable.id, id))
+    .returning({
+      publicSlug: PostsTable.publicSlug,
+      saveToken: PostsTable.saveToken,
+    });
+  return written ?? null;
 }
 
 export async function clearPublicSnapshot(db: DB, id: number) {
