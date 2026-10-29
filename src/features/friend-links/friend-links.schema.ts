@@ -23,6 +23,14 @@ const FriendLinkWithUserSchema = z.lazy(() =>
   }),
 );
 
+/** A friend link row alone, as the admin write operations return it. */
+export const FriendLinkSchema = z.lazy(() =>
+  createSelectSchema(FriendLinksTable, {
+    createdAt: coercedDate,
+    updatedAt: coercedDate,
+  }),
+);
+
 const friendLinkFields = {
   siteName: z.string().min(1).max(100),
   siteUrl: z.string().url(),
