@@ -277,6 +277,24 @@ describe("Dashboard overview", () => {
     ).toBeTruthy();
   });
 
+  it("marks recent published posts with Unpublished Changes", async () => {
+    const changed = await publishPost("changed-after-publish");
+    const unchanged = await publishPost("unchanged-after-publish");
+    unwrap(
+      await PostService.updatePost(adminContext, {
+        id: changed,
+        data: { title: "changed after publish, edited" },
+      }),
+    );
+
+    const overview = await getDashboardOverview(adminContext);
+    const flag = (id: number) =>
+      overview.recentPosts.find((post) => post.id === id)
+        ?.hasUnpublishedChanges;
+    expect(flag(changed)).toBe(true);
+    expect(flag(unchanged)).toBe(false);
+  });
+
   it("lists unreplied visitor comments on public posts and skips the rest", async () => {
     const postId = await publishPost("public-post");
     unwrap(

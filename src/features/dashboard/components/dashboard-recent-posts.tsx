@@ -4,6 +4,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeading } from "@/components/ui/page-heading";
 import type { DashboardOverview } from "@/features/dashboard/dashboard.schema";
+import { postStateOf } from "@/features/posts/components/post-state";
 import { PostStatusBadge } from "@/features/posts/components/post-status-badge";
 import { cn, formatTimeAgo } from "@/lib/utils";
 import { m } from "@/paraglide/messages";
@@ -79,7 +80,10 @@ export function DashboardRecentPosts({
                   />
                 ) : null}
                 <PostStatusBadge
-                  state={post.status === "published" ? "published" : "draft"}
+                  state={postStateOf({
+                    published: post.status === "published",
+                    hasUnpublishedChanges: post.hasUnpublishedChanges,
+                  })}
                 />
                 <time className="dashboard-time">
                   <ClientOnly fallback="—">

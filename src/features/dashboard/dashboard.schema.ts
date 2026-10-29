@@ -8,6 +8,7 @@ const DashboardRecentPostSchema = z.object({
   status: z.enum(["draft", "published"]),
   pinnedAt: coercedDate.nullable(),
   updatedAt: coercedDate,
+  hasUnpublishedChanges: z.boolean(),
 });
 
 const DashboardPendingFriendLinkSchema = z.object({
