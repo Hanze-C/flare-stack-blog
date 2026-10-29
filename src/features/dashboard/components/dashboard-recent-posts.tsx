@@ -78,7 +78,9 @@ export function DashboardRecentPosts({
                     aria-label={m.admin_posts_pinned()}
                   />
                 ) : null}
-                <PostStatusBadge published={post.status === "published"} />
+                <PostStatusBadge
+                  state={post.status === "published" ? "published" : "draft"}
+                />
                 <time className="dashboard-time">
                   <ClientOnly fallback="—">
                     {formatTimeAgo(post.updatedAt)}
