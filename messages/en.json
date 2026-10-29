@@ -821,6 +821,8 @@
   "settings_api_keys_toast_create_fail": "Could not create the key",
   "settings_api_keys_toast_delete_success": "API Key deleted",
   "settings_api_keys_toast_delete_fail": "Could not delete the key",
+  "settings_api_keys_skill_hint": "With the Agent Skill, your AI agent can write, publish and manage posts for you. {download}, unzip it into your agent's skills folder, and run {command}. You'll need your site URL and an API Key the first time.",
+  "settings_api_keys_skill_download": "Download Agent Skill (v{version})",
   "settings_email_scope_admin_label": "Admin Email Notifications",
   "settings_email_scope_user_label": "User Email Notifications",
   "settings_email_creds_host_label": "SMTP Host",
