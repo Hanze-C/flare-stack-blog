@@ -51,6 +51,15 @@ const uploadAsset = adminProcedure
       "Uploads immediately to the selected object-storage path. Discarding an unsaved settings draft does not revert uploaded image content.",
     tags: ["Admin Config"],
   })
+  .output(
+    z.object({
+      url: z
+        .string()
+        .describe(
+          "Public URL of the uploaded asset, with a version query that busts caches.",
+        ),
+    }),
+  )
   .input(
     z.object({
       file: z
