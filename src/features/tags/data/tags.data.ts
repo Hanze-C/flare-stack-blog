@@ -1,7 +1,8 @@
-import { and, asc, count, desc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { hasPublicTag } from "@/features/posts/data/public-assignments.data";
 import {
+  newSaveToken,
   PostPublicTagsTable,
   PostsTable,
   PostTagsTable,
@@ -147,35 +148,59 @@ export async function getTagsByPostId(db: DB, postId: number) {
 }
 
 /**
- * Set tags for a post (replace all existing tags).
- * Uses db.batch() to execute delete + insert in a single roundtrip.
+ * Replaces the Post's draft Tags and the Post's saveToken in one batch (one
+ * transaction). The token update is the only guarded statement: it matches the
+ * Post, and with `saveToken` only while the Post still carries it. It sets the
+ * new token explicitly, and the Tag statements run only while the Post carries
+ * that token, that is, only when the update matched, so a refused save leaves
+ * the Tags as they were. Tags deleted since they were read are skipped.
+ *
+ * Returns the Post's new saveToken, or null when nothing was written: the Post
+ * does not exist, or it no longer carries the stated `saveToken`.
  */
 export async function setPostTags(
   db: DB,
   postId: number,
   tagIds: Array<number>,
+  options: { saveToken?: string } = {},
 ) {
-  const batchQueries: Array<BatchItem<"sqlite">> = [];
+  const saveToken = newSaveToken();
+  const tokenWrite = db
+    .update(PostsTable)
+    .set({ updatedAt: new Date(), draftFingerprint: null, saveToken })
+    .where(
+      and(
+        eq(PostsTable.id, postId),
+        options.saveToken === undefined
+          ? undefined
+          : eq(PostsTable.saveToken, options.saveToken),
+      ),
+    )
+    .returning({ saveToken: PostsTable.saveToken });
+  const written = sql`EXISTS (SELECT 1 FROM ${PostsTable} WHERE ${PostsTable.id} = ${postId} AND ${PostsTable.saveToken} = ${saveToken})`;
 
-  // 1. 删除所有现有关联
-  const deleteQuery = db
-    .delete(PostTagsTable)
-    .where(eq(PostTagsTable.postId, postId));
-
-  // 2. 插入新关联
-  if (tagIds.length > 0) {
-    batchQueries.push(
-      db.insert(PostTagsTable).values(
-        tagIds.map((tagId) => ({
-          postId,
-          tagId,
-        })),
+  const tagWrites: Array<BatchItem<"sqlite">> = [
+    db
+      .delete(PostTagsTable)
+      .where(and(eq(PostTagsTable.postId, postId), written)),
+  ];
+  const ids = [...new Set(tagIds)];
+  if (ids.length > 0) {
+    tagWrites.push(
+      db.insert(PostTagsTable).select(
+        db
+          .select({
+            postId: sql<number>`${postId}`.as("post_id"),
+            tagId: TagsTable.id,
+          })
+          .from(TagsTable)
+          .where(and(inArray(TagsTable.id, ids), written)),
       ),
     );
   }
 
-  // 3. 批量执行 - 单次 roundtrip
-  await db.batch([deleteQuery, ...batchQueries]);
+  const [[row]] = await db.batch([tokenWrite, ...tagWrites]);
+  return row?.saveToken ?? null;
 }
 
 /**

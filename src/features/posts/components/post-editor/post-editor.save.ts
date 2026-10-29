@@ -4,8 +4,10 @@ import type { PostEditorSave } from "./types";
 
 /**
  * Writes the editor's post: the post itself stating `saveToken`, then its
- * tags. The tags write replaces the token as well, so it cannot run beside
- * the update. A failure between the two keeps the update's token.
+ * tags stating the token the update returned. The tags write replaces the
+ * token as well, so it cannot run beside the update. A failure between the two
+ * keeps the update's token; a newer save by someone else between them refuses
+ * the tags with an Edit Conflict like any other save.
  */
 export function savePostEdits(postId: number): PostEditorSave {
   return async (data, saveToken, acceptSaveToken) => {
@@ -26,6 +28,7 @@ export function savePostEdits(postId: number): PostEditorSave {
     const tagged = await orpcClient.tags.admin.setPostTags({
       postId,
       tagIds: persistableTagIds(data.tagIds),
+      saveToken: updated.saveToken,
     });
     if (tagged.saveToken) acceptSaveToken(tagged.saveToken);
   };

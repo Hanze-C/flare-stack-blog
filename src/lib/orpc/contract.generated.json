@@ -93,7 +93,7 @@
             "method": "GET",
             "path": "/admin/posts/{id}",
             "summary": "Get a post by id",
-            "description": "Returns the editable Post. hasUnpublishedChanges tells whether the draft differs from the published version. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
+            "description": "Returns the editable Post, or answers 404 POST_NOT_FOUND when there is none. hasUnpublishedChanges tells whether the draft differs from the published version. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
             "tags": ["Admin Posts"]
           }
         }
@@ -246,6 +246,7 @@
               "method": "GET",
               "path": "/admin/posts/{postId}/revisions/{revisionId}",
               "summary": "Get a post revision",
+              "description": "Answers 404 POST_REVISION_NOT_FOUND when the post has no such revision.",
               "tags": ["Admin Posts"]
             }
           }
@@ -360,7 +361,7 @@
             "method": "PUT",
             "path": "/admin/posts/{postId}/tags",
             "summary": "Set tags on a post",
-            "description": "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist.",
+            "description": "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without it, the write is unconditional.",
             "tags": ["Admin Tags"]
           }
         }

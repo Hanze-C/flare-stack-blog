@@ -623,18 +623,6 @@ export async function findPostSaveToken(db: DB, id: number) {
   return post?.saveToken ?? null;
 }
 
-export async function touchPostUpdatedAt(db: DB, id: number) {
-  const [post] = await db
-    .update(PostsTable)
-    .set({ updatedAt: new Date(), draftFingerprint: null })
-    .where(eq(PostsTable.id, id))
-    .returning({
-      publicSlug: PostsTable.publicSlug,
-      saveToken: PostsTable.saveToken,
-    });
-  return post;
-}
-
 /**
  * Writes the Public Content Snapshot together with the draft fields publishing
  * settles and the public Category and Tags the snapshot assigns, in one batch
