@@ -29,6 +29,32 @@ const PublicSlugSchema = z
     "Slug of the live page at /post/{publicSlug}. It can differ from slug, the draft's, until the next publish. Null while the post is not published.",
   );
 
+const MARKDOWN_RULES =
+  "CommonMark with GFM tables, strikethrough and autolinks. It carries headings, bold, italic, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, fenced code blocks with their language (a mermaid block renders as a diagram), tables with column alignment, inline math as $…$, block math with $$ alone on the lines before and after it, images and videos. A Bilibili or YouTube link alone in a paragraph is a video block. Headings stay within levels 2 to 4: when there is an H1 every heading moves one level down, and anything below level 4 becomes level 4. Images must be http(s) addresses or Media paths (/images/<key>). Table column widths are not carried, and a table cell holds a single line. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.";
+
+export const PostContentFormatSchema = z
+  .enum(["json", "markdown"])
+  .optional()
+  .describe(
+    `Format of the returned body. json, the default, returns contentJson, the editor's TipTap JSON. markdown returns contentMarkdown instead, and no contentJson. ${MARKDOWN_RULES}`,
+  );
+export type PostContentFormat = z.infer<typeof PostContentFormatSchema>;
+
+const ContentMarkdownOutputSchema = z
+  .string()
+  .nullable()
+  .optional()
+  .describe(
+    "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
+  );
+
+const ContentMarkdownInputSchema = z
+  .string()
+  .optional()
+  .describe(
+    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal.`,
+  );
+
 const PostSelectSchema = createSelectSchema(PostsTable, {
   publishedAt: coercedDateNullable,
   pinnedAt: coercedDateNullable,
@@ -60,6 +86,7 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
     createdAt: true,
     updatedAt: true,
   })
+  .extend({ contentMarkdown: ContentMarkdownInputSchema })
   .strict();
 
 export const PostItemSchema = PostSelectSchema.omit({
@@ -108,6 +135,10 @@ export const PostWithTocSchema = PostSelectSchema.omit({
   .nullable();
 
 export const AdminPostSchema = PostSelectSchema.extend({
+  contentJson: NullableJsonContentSchema.optional().describe(
+    "The editable body as TipTap JSON. Not returned when the request asks for contentFormat=markdown.",
+  ),
+  contentMarkdown: ContentMarkdownOutputSchema,
   publicSlug: PublicSlugSchema,
   tags: z.array(TagSelectSchema).optional(),
   hasPublicSnapshot: z.boolean(),
@@ -219,6 +250,7 @@ export const GetPostsInputSchema = z.object({
     .describe(
       "Include the editable TipTap body of every item. Ignored when taxonomy.scope is public, where every column is read from the Public Content Snapshot instead. Pagination, the 50 item limit and every other response field stay the same.",
     ),
+  contentFormat: PostContentFormatSchema,
 });
 
 const GetPostsCountInputSchema = GetPostsInputSchema.omit({
@@ -226,6 +258,7 @@ const GetPostsCountInputSchema = GetPostsInputSchema.omit({
   limit: true,
   sortDir: true,
   includeContent: true,
+  contentFormat: true,
 });
 
 const AdminPostListItemSchema = z.object({
@@ -242,6 +275,7 @@ const AdminPostListItemSchema = z.object({
   contentJson: NullableJsonContentSchema.optional().describe(
     "Only returned when the request asks for includeContent=true outside the public taxonomy scope.",
   ),
+  contentMarkdown: ContentMarkdownOutputSchema,
 });
 
 const AdminPostStatusCountsSchema = z.object({
@@ -260,6 +294,10 @@ export const AdminPostListPageSchema = z.object({
 
 export const FindPostByIdInputSchema = z.object({ id: z.number() });
 
+export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
+  contentFormat: PostContentFormatSchema,
+});
+
 /**
  * Content for a newly created draft. When present, `POST /api/admin/posts`
  * always creates a new draft instead of reusing an existing empty one, so
@@ -273,6 +311,7 @@ const CreatePostDataSchema = z.object({
     .describe("Draft title; a unique slug is generated from it."),
   summary: z.string().nullable().optional(),
   contentJson: NullableJsonContentSchema.optional(),
+  contentMarkdown: ContentMarkdownInputSchema,
 });
 
 export const CreatePostInputSchema = z

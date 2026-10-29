@@ -68,7 +68,7 @@ function EditPost() {
     title: post.title,
     summary: post.summary ?? "",
     slug: post.slug,
-    contentJson: post.contentJson,
+    contentJson: post.contentJson ?? null,
     publishedAt: post.publishedAt,
     tagIds: tags.map((t) => t.id),
     categoryId: post.categoryId ?? null,

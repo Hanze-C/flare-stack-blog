@@ -1,0 +1,154 @@
+import type { JSONContent } from "@tiptap/core";
+import * as PostRepo from "@/features/posts/data/posts.data";
+import type { PostContentFormat } from "@/features/posts/schema/posts.schema";
+import * as VideoMetaService from "@/features/posts/services/video-meta.service";
+import type { VideoMeta } from "@/features/posts/utils/video-source";
+import {
+  videoMetaOf,
+  videoSourceOf,
+} from "@/features/posts/utils/video-source";
+import { err, ok } from "@/lib/errors";
+
+/*
+ * The HTTP API's Markdown body (ADR 0032): reads answer `contentMarkdown` in
+ * place of `contentJson` when asked, and writes turn `contentMarkdown` into
+ * `contentJson` before the usual write path.
+ */
+
+/**
+ * The Markdown parser and serializer, loaded only by requests that ask for
+ * Markdown, so JSON reads and writes, the Admin editor's among them, do not
+ * load them.
+ */
+function loadPostMarkdown() {
+  return import("@/features/posts/utils/post-markdown");
+}
+
+function walk(node: JSONContent, visit: (node: JSONContent) => void) {
+  visit(node);
+  node.content?.forEach((child) => walk(child, visit));
+}
+
+function videoKey(attrs: Record<string, unknown> | undefined) {
+  const source = videoSourceOf(attrs);
+  return source
+    ? `${source.provider}:${source.videoId}:${source.page ?? 1}`
+    : null;
+}
+
+function hasMeta(meta: VideoMeta) {
+  return meta.title !== null || meta.cover !== null;
+}
+
+/**
+ * What Markdown cannot say about the body it replaces: the title, cover and
+ * length of each video and the size of each image.
+ */
+function knownDetails(previous: JSONContent | null) {
+  const videos = new Map<string, VideoMeta>();
+  const images = new Map<string, { width: unknown; height: unknown }>();
+  if (previous) {
+    walk(previous, (node) => {
+      if (node.type === "video") {
+        const key = videoKey(node.attrs);
+        const meta = videoMetaOf(node.attrs);
+        if (key && hasMeta(meta)) videos.set(key, meta);
+      } else if (node.type === "image" && node.attrs?.src) {
+        const { width = null, height = null } = node.attrs;
+        if (width !== null || height !== null) {
+          images.set(String(node.attrs.src), { width, height });
+        }
+      }
+    });
+  }
+  return { videos, images };
+}
+
+/**
+ * Gives every video the title, cover and length it had in `previous`, or
+ * else what its provider says. A failed lookup leaves them empty.
+ */
+async function withDetails(
+  contentJson: JSONContent,
+  previous: JSONContent | null,
+): Promise<JSONContent> {
+  const known = knownDetails(previous);
+  const lookups = new Map<string, Promise<VideoMeta | null>>();
+  walk(contentJson, (node) => {
+    if (node.type !== "video") return;
+    const key = videoKey(node.attrs);
+    const source = videoSourceOf(node.attrs);
+    if (!key || !source || known.videos.has(key) || lookups.has(key)) return;
+    lookups.set(
+      key,
+      VideoMetaService.fetchVideoMeta(source).catch(() => null),
+    );
+  });
+  for (const [key, lookup] of lookups) {
+    const meta = await lookup;
+    if (meta) known.videos.set(key, meta);
+  }
+
+  const fill = (node: JSONContent): JSONContent => {
+    if (node.type === "video") {
+      const key = videoKey(node.attrs);
+      const meta = key ? known.videos.get(key) : undefined;
+      return meta ? { ...node, attrs: { ...node.attrs, ...meta } } : node;
+    }
+    if (node.type === "image") {
+      const size = known.images.get(String(node.attrs?.src));
+      return size ? { ...node, attrs: { ...node.attrs, ...size } } : node;
+    }
+    return node.content ? { ...node, content: node.content.map(fill) } : node;
+  };
+  return fill(contentJson);
+}
+
+interface ContentFields {
+  contentJson?: JSONContent | null;
+  contentMarkdown?: string;
+}
+
+/**
+ * `data` with its `contentMarkdown` turned into `contentJson`, ready for the
+ * usual write path. `postId` names the Post being replaced, whose videos and
+ * images keep what Markdown cannot carry.
+ */
+export async function resolveMarkdownContent<T extends ContentFields>(
+  context: DbContext,
+  data: T,
+  postId?: number,
+) {
+  const { contentMarkdown, ...rest } = data;
+  if (contentMarkdown === undefined) return ok(rest);
+  if (rest.contentJson !== undefined) {
+    return err({ reason: "CONTENT_FORMAT_AMBIGUOUS" });
+  }
+
+  const { postContentFromMarkdown } = await loadPostMarkdown();
+  const { contentJson, refusedImages } =
+    postContentFromMarkdown(contentMarkdown);
+  if (refusedImages.length > 0) {
+    return err({ reason: "MARKDOWN_IMAGE_INVALID", images: refusedImages });
+  }
+
+  const previous =
+    postId === undefined
+      ? null
+      : ((await PostRepo.findPostById(context.db, postId))?.contentJson ??
+        null);
+  return ok({ ...rest, contentJson: await withDetails(contentJson, previous) });
+}
+
+/**
+ * A Post read in `format`: Markdown answers `contentMarkdown` in place of
+ * `contentJson`, and JSON, the default, leaves it as it is.
+ */
+export async function inContentFormat<
+  T extends { contentJson?: JSONContent | null },
+>(post: T, format: PostContentFormat) {
+  if (format !== "markdown" || post.contentJson === undefined) return post;
+  const { postContentToMarkdown } = await loadPostMarkdown();
+  const { contentJson, ...rest } = post;
+  return { ...rest, contentMarkdown: postContentToMarkdown(contentJson) };
+}
