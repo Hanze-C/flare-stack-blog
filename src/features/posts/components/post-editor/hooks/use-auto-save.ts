@@ -3,15 +3,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BLOB_UPLOADING_ERROR,
   contentHasBlobUrl,
+  EDIT_CONFLICT_ERROR,
+  editConflictOf,
   persistableTagIds,
 } from "../post-editor.model";
-import type { PostEditorData, SaveStatus } from "../types";
+import type {
+  EditConflict,
+  PostEditorData,
+  PostEditorSave,
+  SaveStatus,
+} from "../types";
 
 interface UseAutoSaveOptions {
   post: PostEditorData;
   getContent: () => JSONContent | null;
   contentEpoch: number;
-  onSave: (data: PostEditorData) => Promise<void>;
+  /** The post's `saveToken` as it was read. */
+  saveToken: string;
+  onSave: PostEditorSave;
   debounceMs?: number;
   enabled?: boolean;
 }
@@ -22,6 +31,14 @@ interface UseAutoSaveReturn {
   error: string | null;
   setError: (error: string | null) => void;
   isDirty: boolean;
+  /** Set once a save was refused; autosave stays stopped until it is resolved. */
+  conflict: EditConflict | null;
+  getSaveToken: () => string;
+  acceptSaveToken: (saveToken: string) => void;
+  /** Stops autosave over a conflict found by a write other than autosave. */
+  reportConflict: (conflict: EditConflict) => void;
+  /** Saves the editor's content over the conflicting write and resumes. */
+  overwrite: () => Promise<void>;
   markSaved: (post: PostEditorData, contentEpoch?: number) => void;
   flush: () => Promise<void>;
   waitForInFlightSave: () => Promise<void>;
@@ -74,6 +91,7 @@ export function useAutoSave({
   post,
   getContent,
   contentEpoch,
+  saveToken,
   onSave,
   debounceMs = 1500,
   enabled = true,
@@ -81,6 +99,7 @@ export function useAutoSave({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("SYNCED");
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<EditConflict | null>(null);
 
   const isFirstMount = useRef(true);
   const isMounted = useRef(false);
@@ -97,6 +116,8 @@ export function useAutoSave({
   const onSaveRef = useRef(onSave);
   const getContentRef = useRef(getContent);
   const saveStatusRef = useRef(saveStatus);
+  const saveTokenRef = useRef(saveToken);
+  const conflictRef = useRef<EditConflict | null>(null);
 
   onSaveRef.current = onSave;
   getContentRef.current = getContent;
@@ -124,6 +145,22 @@ export function useAutoSave({
       timerRef.current = null;
     }
   };
+
+  const getSaveToken = useCallback(() => saveTokenRef.current, []);
+  const acceptSaveToken = useCallback((token: string) => {
+    saveTokenRef.current = token;
+  }, []);
+
+  const reportConflict = useCallback(
+    (found: EditConflict) => {
+      conflictRef.current = found;
+      clearTimer(debounceTimerRef);
+      clearTimer(retryTimerRef);
+      assignStatus("ERROR");
+      setConflict(found);
+    },
+    [assignStatus],
+  );
 
   const discardInFlightSave = useCallback(() => {
     generationRef.current += 1;
@@ -153,6 +190,7 @@ export function useAutoSave({
   );
 
   const attemptSave = useCallback(async (): Promise<SaveResult> => {
+    if (conflictRef.current) return "failed";
     if (isSaving.current) {
       if (inFlightRef.current) {
         await inFlightRef.current;
@@ -196,7 +234,7 @@ export function useAutoSave({
     inFlightRef.current = gate;
 
     try {
-      await onSaveRef.current(payload);
+      await onSaveRef.current(payload, saveTokenRef.current, acceptSaveToken);
       if (generationRef.current !== gen) return "discarded";
       lastSavedSnapshot.current = toMeta(payload);
       lastSavedEpochRef.current = epochAtStart;
@@ -218,6 +256,11 @@ export function useAutoSave({
       return "synced";
     } catch (err) {
       if (generationRef.current !== gen) return "discarded";
+      const found = editConflictOf(err);
+      if (found) {
+        reportConflict(found);
+        return "failed";
+      }
       console.error("Auto-save failed:", err);
       assignStatus("ERROR");
       setError("AUTO_SAVE_FAILED");
@@ -227,11 +270,26 @@ export function useAutoSave({
       inFlightRef.current = null;
       settle();
     }
-  }, [assignStatus, debounceMs, isDirtyNow]);
+  }, [acceptSaveToken, assignStatus, debounceMs, isDirtyNow, reportConflict]);
+
+  const overwrite = useCallback(async () => {
+    const found = conflictRef.current;
+    if (!found) return;
+    saveTokenRef.current = found.saveToken;
+    conflictRef.current = null;
+    setConflict(null);
+    // The editor holds what the Admin wants stored, even if it matches the
+    // last save, so nothing counts as already saved.
+    lastSavedSnapshot.current = null;
+    await attemptSave();
+  }, [attemptSave]);
 
   const flush = useCallback(async () => {
     if (!enabledRef.current) {
       throw new Error("INSPECTING");
+    }
+    if (conflictRef.current) {
+      throw new Error(EDIT_CONFLICT_ERROR);
     }
 
     clearTimer(debounceTimerRef);
@@ -251,7 +309,9 @@ export function useAutoSave({
         throw new Error(BLOB_UPLOADING_ERROR);
       }
       if (result === "failed") {
-        throw new Error("AUTO_SAVE_FAILED");
+        throw new Error(
+          conflictRef.current ? EDIT_CONFLICT_ERROR : "AUTO_SAVE_FAILED",
+        );
       }
       if (result === "synced") {
         return;
@@ -286,6 +346,8 @@ export function useAutoSave({
       return;
     }
 
+    if (conflictRef.current) return;
+
     if (!isDirtyNow()) {
       if (!isSaving.current) assignStatus("SYNCED");
       return;
@@ -317,6 +379,11 @@ export function useAutoSave({
     error,
     setError,
     isDirty: isDirtyNow(),
+    conflict,
+    getSaveToken,
+    acceptSaveToken,
+    reportConflict,
+    overwrite,
     markSaved,
     flush,
     waitForInFlightSave,
