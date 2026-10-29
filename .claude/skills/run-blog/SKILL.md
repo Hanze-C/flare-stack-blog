@@ -1,6 +1,8 @@
 ---
 name: run-blog
 description: Launch the local blog and drive it in headless Chromium, signed in as a throwaway Admin. Use when checking a change in the real app (the admin post editor, publishing, a public post page) or taking screenshots of it.
+metadata:
+  internal: true
 ---
 
 # Run the blog locally
