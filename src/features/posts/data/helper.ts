@@ -3,6 +3,7 @@ import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import type { PostStatus } from "@/lib/db/schema";
 import type { AdminTaxonomyFilter } from "@/features/posts/schema/posts.schema";
 import { PostTagsTable, PostsTable } from "@/lib/db/schema";
+import { hasPublicTag } from "@/features/posts/data/public-assignments.data";
 
 export type SortField = "publishedAt" | "updatedAt" | "id";
 export type SortDirection = "ASC" | "DESC";
@@ -32,11 +33,19 @@ function uncategorized(): SQL {
 function hasTag(tagId: number): SQL {
   return sql`EXISTS (SELECT 1 FROM ${PostTagsTable} WHERE ${PostTagsTable.postId} = ${PostsTable.id} AND ${PostTagsTable.tagId} = ${tagId})`;
 }
+/** Public scope reads the public assignments, current scope the draft's. */
 function taxonomyWhereClause(taxonomy: AdminTaxonomyFilter): SQL {
+  const isPublic = taxonomy.scope === "public";
   if (taxonomy.kind === "category")
-    return eq(PostsTable.categoryId, taxonomy.id);
-  if (taxonomy.kind === "uncategorized") return uncategorized();
-  return hasTag(taxonomy.id);
+    return eq(
+      isPublic ? PostsTable.publicCategoryId : PostsTable.categoryId,
+      taxonomy.id,
+    );
+  if (taxonomy.kind === "uncategorized")
+    return isPublic
+      ? sql`${PostsTable.publicCategoryId} IS NULL`
+      : uncategorized();
+  return isPublic ? hasPublicTag(taxonomy.id) : hasTag(taxonomy.id);
 }
 
 export type PostFilters = {

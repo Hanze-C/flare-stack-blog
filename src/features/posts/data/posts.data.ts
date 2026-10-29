@@ -23,17 +23,20 @@ import {
   buildPostOrderByClause,
   buildPostWhereClause,
 } from "@/features/posts/data/helper";
+import {
+  clearPublicTags,
+  findPublicAssignments,
+  hasPublicCategoryNamed,
+  hasPublicTagNamed,
+  publicCategoryValue,
+  replacePublicTags,
+} from "@/features/posts/data/public-assignments.data";
 import { mapSnapshotToPublicPost } from "@/features/posts/public-snapshot";
 import type { PostItem } from "@/features/posts/schema/posts.schema";
 import { HOME_POSTS_PER_PAGE } from "@/features/posts/schema/posts.schema";
 import { isPostBodyEmpty } from "@/features/posts/utils/is-post-body-empty";
 import type { PostStatus, PublicPostSnapshot } from "@/lib/db/schema";
-import {
-  CategoriesTable,
-  PostsTable,
-  PostTagsTable,
-  TagsTable,
-} from "@/lib/db/schema";
+import { newSaveToken, PostsTable } from "@/lib/db/schema";
 
 const DEFAULT_PAGE_SIZE = 12;
 const DEFAULT_SITEMAP_BATCH_SIZE = 500;
@@ -52,23 +55,16 @@ async function hydratePublicPosts(
   }>,
 ): Promise<Array<PostItem>> {
   if (rows.length === 0) return [];
-  const assignments = await db.query.PostsTable.findMany({
-    columns: { id: true },
-    where: inArray(
-      PostsTable.id,
-      rows.map((row) => row.id),
-    ),
-    with: { category: true, postTags: { with: { tag: true } } },
-  });
-  const byId = new Map(assignments.map((post) => [post.id, post]));
+  const byId = await findPublicAssignments(
+    db,
+    rows.map((row) => row.id),
+  );
   return rows.flatMap((row) => {
     const assignment = byId.get(row.id);
     const item = mapSnapshotToPublicPost(
       row,
-      assignment?.postTags.map(({ tag }) => tag) ?? [],
-      assignment?.category
-        ? { id: assignment.category.id, name: assignment.category.name }
-        : null,
+      assignment?.tags ?? [],
+      assignment?.category ?? null,
     );
     return item ? [item] : [];
   });
@@ -125,7 +121,9 @@ export async function getPosts(
         ? snapshotDate("publishedAt")
         : PostsTable.publishedAt,
       pinnedAt: publicScope ? snapshotDate("pinnedAt") : PostsTable.pinnedAt,
-      categoryId: PostsTable.categoryId,
+      categoryId: publicScope
+        ? PostsTable.publicCategoryId
+        : PostsTable.categoryId,
       createdAt: PostsTable.createdAt,
       updatedAt: PostsTable.updatedAt,
       // contentJson is the editable draft body. In public-snapshot scope every
@@ -252,27 +250,13 @@ export async function getPostsCursor(
   }
 
   if (tagName) {
-    conditions.push(
-      sql`EXISTS (
-        SELECT 1
-        FROM ${PostTagsTable}
-        JOIN ${TagsTable} ON ${TagsTable.id} = ${PostTagsTable.tagId}
-        WHERE ${PostTagsTable.postId} = ${PostsTable.id} AND ${TagsTable.name} = ${tagName}
-      )`,
-    );
+    conditions.push(hasPublicTagNamed(tagName));
   }
 
   if (uncategorized) {
-    conditions.push(sql`${PostsTable.categoryId} IS NULL`);
+    conditions.push(sql`${PostsTable.publicCategoryId} IS NULL`);
   } else if (categoryName) {
-    conditions.push(
-      sql`EXISTS (
-        SELECT 1
-        FROM ${CategoriesTable}
-        WHERE ${CategoriesTable.id} = ${PostsTable.categoryId}
-          AND ${CategoriesTable.name} = ${categoryName}
-      )`,
-    );
+    conditions.push(hasPublicCategoryNamed(categoryName));
   }
 
   if (excludePinned) {
@@ -545,8 +529,11 @@ export async function touchPostUpdatedAt(db: DB, id: number) {
 
 /**
  * Writes the Public Content Snapshot together with the draft fields publishing
- * settles, in one statement. With `saveToken`, nothing is written unless the
- * Post still carries it, so what goes live is the draft that was read.
+ * settles and the public Category and Tags the snapshot assigns, in one batch
+ * (one transaction). With `saveToken`, nothing is written unless the Post
+ * still carries it, so what goes live is the draft that was read: the snapshot
+ * update is the only guarded statement, and the public Tags are written only
+ * when the Post then carries the new token that update set.
  */
 export async function writePublicSnapshot(
   db: DB,
@@ -560,7 +547,8 @@ export async function writePublicSnapshot(
   } = {},
 ) {
   const draft = options.draft ?? {};
-  const [written] = await db
+  const saveToken = newSaveToken();
+  const snapshotWrite = db
     .update(PostsTable)
     .set({
       ...draft,
@@ -571,24 +559,32 @@ export async function writePublicSnapshot(
       ...(Object.keys(draft).length === 0 && {
         updatedAt: sql`${PostsTable.updatedAt}`,
       }),
+      publicCategoryId: publicCategoryValue(snapshot.categoryId),
+      saveToken,
     })
     .where(postToWrite(id, options.saveToken))
     .returning({ saveToken: PostsTable.saveToken });
+  const [[written]] = await db.batch([
+    snapshotWrite,
+    ...replacePublicTags(db, id, snapshot.tagIds, saveToken),
+  ]);
   if (!written) return null;
   return await findWrittenPost(db, id, written.saveToken);
 }
 
 export async function clearPublicSnapshot(db: DB, id: number) {
-  const [written] = await db
+  const snapshotClear = db
     .update(PostsTable)
     .set({
       publicSnapshotJson: null,
       publicSlug: null,
       status: "draft",
       updatedAt: sql`${PostsTable.updatedAt}`,
+      publicCategoryId: null,
     })
     .where(eq(PostsTable.id, id))
     .returning({ saveToken: PostsTable.saveToken });
+  const [[written]] = await db.batch([snapshotClear, clearPublicTags(db, id)]);
   if (!written) return null;
   return await findWrittenPost(db, id, written.saveToken);
 }

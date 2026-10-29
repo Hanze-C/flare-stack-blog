@@ -1,6 +1,12 @@
 import { and, asc, count, desc, eq, ne, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
-import { PostsTable, PostTagsTable, TagsTable } from "@/lib/db/schema";
+import { hasPublicTag } from "@/features/posts/data/public-assignments.data";
+import {
+  PostPublicTagsTable,
+  PostsTable,
+  PostTagsTable,
+  TagsTable,
+} from "@/lib/db/schema";
 
 /**
  * Get all tags, optionally sorted
@@ -33,16 +39,18 @@ export async function getAllTagsWithCount(
   } = {},
 ) {
   const { sortBy = "name", sortDir = "asc", publicOnly = false } = options;
+  // Public Usage counts the public assignments, Current Assignment the draft's.
+  const assignments = publicOnly ? PostPublicTagsTable : PostTagsTable;
   const query = db
     .select({
       id: TagsTable.id,
       name: TagsTable.name,
       createdAt: TagsTable.createdAt,
-      postCount: count(PostTagsTable.postId).as("postCount"),
+      postCount: count(assignments.postId).as("postCount"),
     })
     .from(TagsTable)
-    .leftJoin(PostTagsTable, eq(TagsTable.id, PostTagsTable.tagId))
-    .leftJoin(PostsTable, eq(PostsTable.id, PostTagsTable.postId))
+    .leftJoin(assignments, eq(TagsTable.id, assignments.tagId))
+    .leftJoin(PostsTable, eq(PostsTable.id, assignments.postId))
     .where(
       publicOnly
         ? sql`${PostsTable.publicSnapshotJson} IS NOT NULL`
@@ -176,7 +184,8 @@ export async function nameExists(
 }
 
 /**
- * Get published posts associated with a tag (for cache invalidation)
+ * Published Posts that publicly show the Tag (its Public Usage), for cache
+ * invalidation.
  */
 export async function getPublishedPostsByTagId(db: DB, tagId: number) {
   const results = await db
@@ -189,7 +198,7 @@ export async function getPublishedPostsByTagId(db: DB, tagId: number) {
     .from(PostsTable)
     .where(
       and(
-        sql`EXISTS (SELECT 1 FROM ${PostTagsTable} WHERE ${PostTagsTable.postId} = ${PostsTable.id} AND ${PostTagsTable.tagId} = ${tagId})`,
+        hasPublicTag(tagId),
         sql`${PostsTable.publicSnapshotJson} IS NOT NULL`,
       ),
     );

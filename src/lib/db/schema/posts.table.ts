@@ -25,7 +25,8 @@ export type PublicPostSnapshot = {
   summary: string | null;
   slug: string;
   contentJson: JSONContent | null;
-  // Historical metadata; live Category/Tag assignments use the relations below.
+  // Written with the public assignments below (ADR 0033); public reads, filters
+  // and counts use those relations rather than these ids.
   tagIds: Array<number>;
   categoryId: number | null;
   publishedAt: string;
@@ -63,6 +64,12 @@ export const PostsTable = sqliteTable(
     categoryId: integer("category_id").references(() => CategoriesTable.id, {
       onDelete: "set null",
     }),
+    // The Category the Public Content Snapshot assigns, written with it on
+    // publish and cleared on unpublish (ADR 0033).
+    publicCategoryId: integer("public_category_id").references(
+      () => CategoriesTable.id,
+      { onDelete: "set null" },
+    ),
     // Opaque, replaced by every write to the row so a save can refuse an
     // Edit Conflict (ADR 0031). $onUpdate covers every Drizzle update.
     saveToken: text("save_token")
@@ -78,6 +85,7 @@ export const PostsTable = sqliteTable(
     index("created_at_idx").on(table.createdAt),
     index("posts_cover_media_id_idx").on(table.coverMediaId),
     index("posts_category_id_idx").on(table.categoryId),
+    index("posts_public_category_id_idx").on(table.publicCategoryId),
   ],
 );
 
@@ -100,6 +108,26 @@ export const PostTagsTable = sqliteTable(
   (table) => [
     primaryKey({ columns: [table.postId, table.tagId] }),
     index("post_tags_tag_idx").on(table.tagId),
+  ],
+);
+
+/**
+ * The Tags the Public Content Snapshot assigns, written with it on publish and
+ * cleared on unpublish (ADR 0033). `post_tags` holds the draft's.
+ */
+export const PostPublicTagsTable = sqliteTable(
+  "post_public_tags",
+  {
+    postId: integer("post_id")
+      .notNull()
+      .references(() => PostsTable.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => TagsTable.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.postId, table.tagId] }),
+    index("post_public_tags_tag_idx").on(table.tagId),
   ],
 );
 
