@@ -20,13 +20,13 @@ api_key = "fsb_..."
 
 `url` is the site origin, `https://<host>` with no path or trailing slash; `api_key` is an Admin API Key. When the file is missing, either value is empty, a stored key answers 401, or the human gives a new blog or key: ask the human for the origin and an API Key (an Admin issues one in the blog's admin settings; it is shown once), check it with one read-only admin call from the document, then write the file with mode `0600`, creating its directory. Done when one origin and a key that answers 200 are in hand.
 
-Keep every file a task makes (headers, request and response bodies, Markdown drafts) in one working directory of its own, created private at the task's start: `mktemp -d` on macOS and Linux; on Windows, a new folder under `$env:TEMP` with inherited permissions removed and only the current user allowed. When the task ends, succeeded or not, delete that directory. The config file stays where it is.
+Keep every file a task makes (headers, request and response bodies, Markdown drafts) in one working directory: the one the human names, or else one of its own, created private at the task's start: `mktemp -d` on macOS and Linux; on Windows, a new folder under `$env:TEMP` with inherited permissions removed and only the current user allowed. When the task ends, succeeded or not, delete the files you made there (and the directory, if you created it). The config file stays where it is.
 
 The key goes only in the `x-api-key` header, and only to the configured origin. Keep it out of command arguments, URLs, logs, saved responses and replies: with curl, write the headers (the key and a browser User-Agent) to a file in the working directory and pass `-H @<file>`; send bodies with `--data-binary @<file>`. Stop on a redirect to another origin rather than follow it with the key. In Windows PowerShell, `curl` may be an alias of `Invoke-WebRequest`: call `curl.exe`.
 
 ## 2. Discover
 
-At the start of every task, GET `<origin>/api/spec.json` with the same headers and follow it. Read its `info.description` first: it states authentication, the browser User-Agent requirement, drafts and publishing, the save guard and Edit Conflict, and Markdown content. Done when you hold the document and, for what you are about to touch, have read its operations and schemas, following every `$ref`.
+At the start of every task, GET `<origin>/api/spec.json` with the same headers and follow it. Read its `info.description` first: it states authentication, the browser User-Agent requirement, drafts and publishing, the save guard and Edit Conflict, and Markdown content. Done when you hold the document and, for what you are about to touch, have read its operations and schemas, following every `$ref`. Operation paths are relative to the document's server URL; public pages, such as a Post's public page, are on the site origin itself.
 
 When an entity has both public and admin operations, use the admin ones.
 
@@ -48,11 +48,13 @@ Follow the human's intent: publish when they ask to publish, keep the draft when
 
 After publishing, fetch the Post's public page and confirm the change shows. Public pages are cached: retry a few times over about 20 seconds before calling it failed.
 
+To throw away a Published Post's unpublished changes, discard them with the document's discard operation rather than editing them back by hand: it returns the draft to what is published and keeps the discarded draft as a Post Revision.
+
 To take a Post off the public site for now, unpublish it; the draft stays. Delete only when the human explicitly asks to delete.
 
 ## Conflicts
 
-A 409 Edit Conflict means the Post was saved after you read it, and nothing was written. Never retry without the `saveToken`, and never resend the same one.
+Every write to a Post's draft (saving it, setting its Tags, discarding its changes) and every publish states the `saveToken` of your latest read or write of it; unpublishing changes no draft and takes none. A 409 Edit Conflict means the Post was saved after you read it, and nothing was written. Never retry without the `saveToken`, and never resend the same one.
 
 1. Read the Post again.
 2. Compare it with the read your write was built on. When only your own earlier writes differ, re-apply your change to the new read and send its `saveToken`.
