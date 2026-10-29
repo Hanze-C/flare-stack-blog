@@ -17,7 +17,7 @@ A **Post** that has a **Public Content Snapshot** and therefore appears in publi
 _Avoid_: Live article, scheduled post, future post
 
 **Public Content Snapshot**:
-The published state of a **Post** that the public site reads for listing, detail, search, and caching. It includes the public title, summary, slug, content, publication date, pin state, and **Post Cover**. Editing or autosaving a **Post** does not change it. Publishing replaces it. Unpublishing discards it.
+The published state of a **Post** that the public site reads for listing, detail, search, and caching. It includes the public title, summary, slug, content, publication date, pin state, **Post Cover**, **Category** and **Tags**. Editing or autosaving a **Post** does not change it. Publishing replaces it. Unpublishing discards it.
 _Avoid_: publicContentJson, rendered content, cached content, live version, working copy
 
 **Post Revision**:
@@ -33,12 +33,16 @@ An exclusive, non-hierarchical grouping of **Posts**. A **Post** has at most one
 _Avoid_: Section, channel, folder, taxonomy, 栏目
 
 **Current Assignment**:
-The **Posts** currently associated with a **Category** or **Tag**, including both **Draft Posts** and **Published Posts**.
+The **Posts** whose draft is assigned a **Category** or **Tag**, whether or not they are published. Changing it changes the draft only.
 _Avoid_: Draft-only usage
 
 **Public Usage**:
-The **Published Posts** within a **Category** or **Tag**'s **Current Assignment**. Category and Tag assignment changes apply without republishing the Post.
-_Avoid_: Separate published assignment
+The **Published Posts** whose **Public Content Snapshot** assigns a **Category** or **Tag**. It changes when those **Posts** are published or unpublished.
+_Avoid_: Live assignment
+
+**Unpublished Changes**:
+The differences between a **Published Post**'s draft and its **Public Content Snapshot**. Publishing them replaces the snapshot; discarding them makes the draft match it again.
+_Avoid_: Out of sync, dirty, pending edits, 已同步
 
 **Comment**:
 A user-authored response attached to a **Post**, public as soon as it is created, whose body is text. The author or an **Admin** can delete it from the public post page; deletion keeps a placeholder in the **Comment Thread** instead of removing the row.
@@ -202,11 +206,12 @@ _Avoid_: New commit, fork update
 - A **Sign-in Code** for an email that has no **User** creates one; the person chooses that **User**'s public name before the sign-in completes.
 - A **Sign-in Code** is offered only when email delivery is configured in **System Config**.
 - The **Search Index** includes **Published Posts** and excludes **Draft Posts**.
-- Publishing a **Post** updates the **Search Index** from its **Public Content Snapshot** and current Category/Tag assignments. Unpublishing removes that **Post** from the **Search Index**. Category/Tag changes may remain stale in search until republishing or rebuilding the index.
-- Publishing, deleting, or retagging a **Published Post** can update the **Public Cache**.
-- The public sidebar lists **Categories** that appear on at least one **Published Post**, ordered by name. It does not list uncategorized.
+- Publishing a **Post** updates the **Search Index** from its **Public Content Snapshot**, **Category** and **Tags** included. Unpublishing removes that **Post** from the **Search Index**. Renaming a **Category** or **Tag** may remain stale in search until republishing or rebuilding the index.
+- Publishing, unpublishing or deleting a **Published Post**, and renaming or deleting a **Category** or **Tag**, can update the **Public Cache**.
+- The public sidebar lists **Categories** whose **Public Usage** is not empty, ordered by name. It does not list uncategorized.
 - The **Search Index** includes the **Category** name of a **Published Post**.
-- Renaming a **Category** updates the public label of **Published Posts** that already include that **Category**, without republishing.
+- Creating, renaming and deleting a **Category** or **Tag** take effect at once; there is no draft of a **Category** or **Tag**. Renaming one updates the public label of the **Published Posts** in its **Public Usage**, and deleting one removes it from their **Public Content Snapshots**, without republishing.
+- Discarding a **Post**'s **Unpublished Changes** takes a **Post Revision** of the draft first.
 - A **Post Popularity Snapshot** ranks **Published Posts** for public presentation.
 - A **Post Popularity Snapshot** older than seven days does not rank **Published Posts**.
 - A **Webhook Endpoint** receives admin **Notification Events**.
