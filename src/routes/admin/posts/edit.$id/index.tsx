@@ -1,18 +1,19 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { StatusPage } from "@/components/common/status-page";
 import { buttonClass } from "@/components/ui/button";
 import { PostEditor } from "@/features/posts/components/post-editor";
-import { persistableTagIds } from "@/features/posts/components/post-editor/post-editor.model";
+import { savePostEdits } from "@/features/posts/components/post-editor/post-editor.save";
 import { PostEditorSkeleton } from "@/features/posts/components/post-editor/post-editor-skeleton";
-import type { PostEditorData } from "@/features/posts/components/post-editor/types";
+import type { PostEditorSave } from "@/features/posts/components/post-editor/types";
 import { postByIdQuery } from "@/features/posts/queries";
 import { categoryOptionsQuery } from "@/features/categories/queries";
 import {
   tagsAdminQueryOptions,
   tagsByPostIdQueryOptions,
 } from "@/features/tags/queries";
-import { orpc, orpcClient } from "@/lib/orpc";
+import { orpc } from "@/lib/orpc";
 import { m } from "@/paraglide/messages";
 
 export const Route = createFileRoute("/admin/posts/edit/$id/")({
@@ -42,6 +43,8 @@ function EditPost() {
   const { id } = Route.useParams();
   const postId = Number(id);
   const queryClient = useQueryClient();
+  // Mounting the editor afresh is how it takes in the post as stored.
+  const [loadCount, setLoadCount] = useState(0);
 
   const { data: post } = useQuery(postByIdQuery(postId));
   const { data: tags } = useQuery(tagsByPostIdQueryOptions(postId));
@@ -78,28 +81,12 @@ function EditPost() {
     serverToday: post.serverToday,
     coverMediaId: post.coverMediaId,
     cover: post.cover,
+    saveToken: post.saveToken,
   };
 
-  const handleSave = async (data: PostEditorData) => {
-    await Promise.all([
-      orpcClient.posts.admin.update({
-        id: post.id,
-        data: {
-          title: data.title,
-          summary: data.summary,
-          slug: data.slug,
-          contentJson: data.contentJson,
-          publishedAt: data.publishedAt,
-          pinnedAt: data.pinnedAt,
-          coverMediaId: data.coverMediaId,
-          categoryId: data.categoryId,
-        },
-      }),
-      orpcClient.tags.admin.setPostTags({
-        postId: post.id,
-        tagIds: persistableTagIds(data.tagIds),
-      }),
-    ]);
+  const savePost = savePostEdits(post.id);
+  const handleSave: PostEditorSave = async (...args) => {
+    await savePost(...args);
 
     void queryClient.invalidateQueries({
       queryKey: orpc.posts.admin.get.key({ input: { id: postId } }),
@@ -115,12 +102,24 @@ function EditPost() {
     });
   };
 
+  const handleReload = async () => {
+    await Promise.all([
+      queryClient.fetchQuery({ ...postByIdQuery(postId), staleTime: 0 }),
+      queryClient.fetchQuery({
+        ...tagsByPostIdQueryOptions(postId),
+        staleTime: 0,
+      }),
+    ]);
+    setLoadCount((count) => count + 1);
+  };
+
   return (
     <PostEditor
-      key={post.id}
+      key={`${post.id}:${loadCount}`}
       initialData={initialData}
       publicSlug={post.publicSlug}
       onSave={handleSave}
+      onReload={handleReload}
     />
   );
 }

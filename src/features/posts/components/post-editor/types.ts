@@ -24,14 +24,32 @@ export interface PostEditorData {
   cover: PostEditorCover | null;
 }
 
+/** The current `saveToken` a save was refused over, from the 409. */
+export interface EditConflict {
+  saveToken: string;
+}
+
+/**
+ * Saves the post stating `saveToken`. Every write replaces the token, so each
+ * response's token goes to `acceptSaveToken` as soon as it is known.
+ */
+export type PostEditorSave = (
+  data: PostEditorData,
+  saveToken: string,
+  acceptSaveToken: (saveToken: string) => void,
+) => Promise<void>;
+
 export interface PostEditorProps {
   initialData: PostEditorData & {
     id: number;
+    saveToken: string;
     publicSnapshotContentJson?: JSONContent | null;
   };
   /** The live page's slug, read fresh from the server; null while unpublished. */
   publicSlug: string | null;
-  onSave: (data: PostEditorData) => Promise<void>;
+  onSave: PostEditorSave;
+  /** Reads the post again and mounts the editor afresh with what is stored. */
+  onReload: () => Promise<void>;
 }
 
 export type SaveStatus = "SYNCED" | "SAVING" | "PENDING" | "ERROR";

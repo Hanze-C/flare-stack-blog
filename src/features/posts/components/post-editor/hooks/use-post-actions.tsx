@@ -12,8 +12,11 @@ import {
 } from "../../post-manager/hooks";
 import {
   BLOB_UPLOADING_ERROR,
+  EDIT_CONFLICT_ERROR,
+  editConflictOf,
   shouldAutogenerateSlug,
 } from "../post-editor.model";
+import type { EditConflict } from "../types";
 
 interface UsePostActionsOptions {
   postId: number;
@@ -21,6 +24,11 @@ interface UsePostActionsOptions {
   setPost: React.Dispatch<React.SetStateAction<PostEditorData>>;
   setError: (error: string | null) => void;
   flush: () => Promise<void>;
+  /** Whether a save was refused; publishing waits until it is resolved. */
+  conflicted: boolean;
+  getSaveToken: () => string;
+  acceptSaveToken: (saveToken: string) => void;
+  reportConflict: (conflict: EditConflict) => void;
 }
 
 export function usePostActions({
@@ -29,6 +37,10 @@ export function usePostActions({
   setPost,
   setError,
   flush,
+  conflicted,
+  getSaveToken,
+  acceptSaveToken,
+  reportConflict,
 }: UsePostActionsOptions) {
   const queryClient = useQueryClient();
 
@@ -37,9 +49,10 @@ export function usePostActions({
   >("IDLE");
 
   const canPublish = useMemo(() => {
+    if (conflicted) return false;
     if (!post.publishedAt) return true;
     return post.publishedAt.toISOString().slice(0, 10) <= post.serverToday;
-  }, [post.publishedAt, post.serverToday]);
+  }, [conflicted, post.publishedAt, post.serverToday]);
 
   const lastAutoSlugRef = useRef<string | null>(null);
   const queuedTitleRef = useRef<string | null>(null);
@@ -57,8 +70,10 @@ export function usePostActions({
   const debouncedTitle = useDebounce(post.title, 500);
 
   const publishMutation = useMutation({
-    mutationFn: () => orpcClient.posts.admin.publish({ id: postId }),
-    onSuccess: () => {
+    mutationFn: () =>
+      orpcClient.posts.admin.publish({ id: postId, saveToken: getSaveToken() }),
+    onSuccess: (result) => {
+      acceptSaveToken(result.saveToken);
       toast.success(m.editor_header_publish());
       setPost((prev) => ({ ...prev, hasPublicSnapshot: true }));
       setProcessState("SUCCESS");
@@ -67,14 +82,17 @@ export function usePostActions({
         setProcessState("IDLE");
       }, 3000);
     },
-    onError: () => {
-      toast.error(m.editor_action_publish_failed());
+    onError: (error) => {
+      const found = editConflictOf(error);
+      if (found) reportConflict(found);
+      else toast.error(m.editor_action_publish_failed());
       setProcessState("IDLE");
     },
   });
 
   const { mutate: unpublish } = useUnpublishPost({
-    onSuccess: () => {
+    onSuccess: (result) => {
+      acceptSaveToken(result.saveToken);
       setPost((prev) => ({ ...prev, hasPublicSnapshot: false }));
       setProcessState("SUCCESS");
       setTimeout(() => {
@@ -90,22 +108,35 @@ export function usePostActions({
     try {
       await flush();
     } catch (error) {
-      const message =
-        error instanceof Error && error.message === BLOB_UPLOADING_ERROR
-          ? m.editor_action_image_uploading()
-          : m.editor_action_publish_failed();
-      toast.error(message);
+      const reason = error instanceof Error ? error.message : "";
+      if (reason !== EDIT_CONFLICT_ERROR) {
+        toast.error(
+          reason === BLOB_UPLOADING_ERROR
+            ? m.editor_action_image_uploading()
+            : m.editor_action_publish_failed(),
+        );
+      }
       setProcessState("IDLE");
       return;
     }
     publishMutation.mutate();
   }, [flush, processState, publishMutation]);
 
-  const handleUnpublish = useCallback(() => {
-    if (processState !== "IDLE") return;
+  const handleUnpublish = useCallback(async () => {
+    if (processState !== "IDLE" || conflicted) return;
     setProcessState("PROCESSING");
+    // Unpublishing replaces the token too, so edits still waiting go first.
+    try {
+      await flush();
+    } catch (error) {
+      if (!(error instanceof Error && error.message === EDIT_CONFLICT_ERROR)) {
+        toast.error(m.editor_action_unpublish_failed());
+      }
+      setProcessState("IDLE");
+      return;
+    }
     unpublish(postId);
-  }, [postId, processState, unpublish]);
+  }, [conflicted, flush, postId, processState, unpublish]);
 
   const slugMutation = useMutation({
     mutationFn: (title: string) =>

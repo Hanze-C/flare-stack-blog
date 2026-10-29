@@ -77,6 +77,11 @@ export function usePostHistory({
       });
     },
     onSuccess: async () => {
+      // The editor opens next and needs the restore's new saveToken, so its
+      // cached read must not be served again.
+      queryClient.removeQueries({
+        queryKey: orpc.posts.admin.get.key({ input: { id: postId } }),
+      });
       await invalidatePostEditorQueries(queryClient, postId);
       const title =
         selectedRevision?.snapshotJson.title.trim() || m.common_untitled();

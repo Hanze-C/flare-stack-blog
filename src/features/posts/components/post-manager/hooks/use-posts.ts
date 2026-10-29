@@ -75,18 +75,24 @@ interface MutationCallbacks {
   onError?: () => void;
 }
 
+interface UnpublishCallbacks {
+  /** The post's `saveToken` after it went back to a draft. */
+  onSuccess?: (result: { saveToken: string }) => void;
+  onError?: () => void;
+}
+
 export function useUnpublishPost({
   onSuccess,
   onError,
-}: MutationCallbacks = {}) {
+}: UnpublishCallbacks = {}) {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (id: number) => orpcClient.posts.admin.unpublish({ id }),
-    onSuccess: (_result, id) => {
+    onSuccess: (result, id) => {
       toast.success(m.editor_header_unpublish());
       void invalidatePostQueries(queryClient, id);
-      onSuccess?.();
+      onSuccess?.(result);
     },
     onError: () => {
       toast.error(m.editor_action_unpublish_failed());

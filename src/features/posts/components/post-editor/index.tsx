@@ -2,9 +2,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useNavigate } from "@tanstack/react-router";
 import type { JSONContent, Editor as TiptapEditor } from "@tiptap/react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { CircleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { useAdminChrome } from "@/components/admin/admin-chrome";
 import { Editor } from "@/components/tiptap-editor";
+import { Button } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import ConfirmationModal from "@/components/ui/confirmation-modal";
 import { extensions } from "@/features/posts/editor/config";
 import { CodeBlockHighlightProvider } from "@/features/posts/editor/extensions/code-block/code-block-highlight-context";
@@ -25,6 +28,7 @@ export function PostEditor({
   initialData,
   publicSlug,
   onSave,
+  onReload,
 }: PostEditorProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -71,12 +75,32 @@ export function PostEditor({
     flush,
     waitForInFlightSave,
     discardInFlightSave,
+    conflict,
+    getSaveToken,
+    acceptSaveToken,
+    reportConflict,
+    overwrite,
   } = useAutoSave({
     post,
     getContent,
     contentEpoch,
+    saveToken: initialData.saveToken,
     onSave,
   });
+
+  // The route mounts a fresh editor once the latest post is read, which also
+  // clears the conflict, so only a failed read needs handling here.
+  const [reloading, setReloading] = useState(false);
+  const handleLoadLatest = useCallback(async () => {
+    setReloading(true);
+    discardInFlightSave();
+    try {
+      await onReload();
+    } catch {
+      toast.error(m.editor_conflict_reload_failed());
+      setReloading(false);
+    }
+  }, [discardInFlightSave, onReload]);
 
   // Unsaved edits of a deleted post have nowhere to go, so leave unguarded.
   const deletedRef = useRef(false);
@@ -120,6 +144,10 @@ export function PostEditor({
     setPost,
     setError,
     flush,
+    conflicted: conflict !== null,
+    getSaveToken,
+    acceptSaveToken,
+    reportConflict,
   });
 
   const handleEditorCreated = useCallback((editor: TiptapEditor | null) => {
@@ -232,17 +260,48 @@ export function PostEditor({
           lastSaved={lastSaved}
           processState={processState}
           canPublish={canPublish}
+          conflicted={conflict !== null}
           hasPublicSnapshot={post.hasPublicSnapshot}
           publicSlug={post.hasPublicSnapshot ? publicSlug : null}
           title={post.title}
           onPublish={handlePublish}
-          onUnpublish={handleUnpublish}
+          onUnpublish={() => void handleUnpublish()}
           onDelete={() => void handleDelete()}
           isDeleting={settlingSave || deleteMutation.isPending}
           infoOpen={infoOpen}
           onOpenInfo={() => setInfoOpen((value) => !value)}
           onOpenHistory={() => void openHistory()}
         />
+        {conflict && (
+          <Callout
+            role="alert"
+            tone="warning"
+            icon={CircleAlert}
+            className="post-editor-conflict"
+            action={
+              <>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  loading={reloading}
+                  onClick={() => void handleLoadLatest()}
+                >
+                  {m.editor_conflict_load_latest()}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={reloading || saveStatus === "SAVING"}
+                  onClick={() => void overwrite()}
+                >
+                  {m.editor_conflict_overwrite()}
+                </Button>
+              </>
+            }
+          >
+            <strong>{m.editor_conflict_title()}</strong>
+            <p>{m.editor_conflict_desc()}</p>
+          </Callout>
+        )}
         <div className="post-editor-body">
           <CodeBlockHighlightProvider
             snapshotContent={initialData.publicSnapshotContentJson}
