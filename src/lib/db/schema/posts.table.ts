@@ -25,11 +25,13 @@ export type PublicPostSnapshot = {
   summary: string | null;
   slug: string;
   contentJson: JSONContent | null;
-  // Historical metadata; live Category/Tag assignments use the relations below.
+  // Written with the public assignments below (ADR 0033); public reads, filters
+  // and counts use those relations rather than these ids.
   tagIds: Array<number>;
   categoryId: number | null;
   publishedAt: string;
-  pinnedAt: string | null;
+  // Snapshots written before pinning left the snapshot may still carry a
+  // pinnedAt; nothing reads it.
   cover: PublicPostCover | null;
 };
 
@@ -63,12 +65,27 @@ export const PostsTable = sqliteTable(
     categoryId: integer("category_id").references(() => CategoriesTable.id, {
       onDelete: "set null",
     }),
+    // The Category the Public Content Snapshot assigns, written with it on
+    // publish and cleared on unpublish (ADR 0033).
+    publicCategoryId: integer("public_category_id").references(
+      () => CategoriesTable.id,
+      { onDelete: "set null" },
+    ),
     // Opaque, replaced by every write to the row so a save can refuse an
-    // Edit Conflict (ADR 0031). $onUpdate covers every Drizzle update.
+    // Edit Conflict (ADR 0031). $onUpdate covers every Drizzle update;
+    // pinning keeps it, since the pin is not part of the draft.
     saveToken: text("save_token")
       .notNull()
       .$defaultFn(newSaveToken)
       .$onUpdate(newSaveToken),
+    // Fingerprints of the draft and of the draft as last published, over the
+    // fields that go live (title, summary, slug, content, publication date,
+    // cover, Category, Tags; not pin). They differ exactly while the Post has
+    // Unpublished Changes. Publishing writes both with the snapshot. Every
+    // other write that can change those fields clears `draftFingerprint`, and
+    // null (either column) means "compute me": the next Admin read settles it.
+    draftFingerprint: text("draft_fingerprint"),
+    publishedFingerprint: text("published_fingerprint"),
     createdAt,
     updatedAt,
   },
@@ -78,6 +95,7 @@ export const PostsTable = sqliteTable(
     index("created_at_idx").on(table.createdAt),
     index("posts_cover_media_id_idx").on(table.coverMediaId),
     index("posts_category_id_idx").on(table.categoryId),
+    index("posts_public_category_id_idx").on(table.publicCategoryId),
   ],
 );
 
@@ -100,6 +118,26 @@ export const PostTagsTable = sqliteTable(
   (table) => [
     primaryKey({ columns: [table.postId, table.tagId] }),
     index("post_tags_tag_idx").on(table.tagId),
+  ],
+);
+
+/**
+ * The Tags the Public Content Snapshot assigns, written with it on publish and
+ * cleared on unpublish (ADR 0033). `post_tags` holds the draft's.
+ */
+export const PostPublicTagsTable = sqliteTable(
+  "post_public_tags",
+  {
+    postId: integer("post_id")
+      .notNull()
+      .references(() => PostsTable.id, { onDelete: "cascade" }),
+    tagId: integer("tag_id")
+      .notNull()
+      .references(() => TagsTable.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.postId, table.tagId] }),
+    index("post_public_tags_tag_idx").on(table.tagId),
   ],
 );
 

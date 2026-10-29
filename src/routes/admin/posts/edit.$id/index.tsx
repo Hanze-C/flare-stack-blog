@@ -75,7 +75,6 @@ function EditPost() {
     publishedAt: post.publishedAt,
     tagIds: tags.map((t) => t.id),
     categoryId: post.categoryId ?? null,
-    pinnedAt: post.pinnedAt,
     hasPublicSnapshot: post.hasPublicSnapshot,
     publicSnapshotContentJson: post.publicSnapshotContentJson,
     serverToday: post.serverToday,
@@ -88,7 +87,8 @@ function EditPost() {
   const handleSave: PostEditorSave = async (...args) => {
     await savePost(...args);
 
-    void queryClient.invalidateQueries({
+    // Waited for, so the status shown follows the save instead of lagging it.
+    await queryClient.invalidateQueries({
       queryKey: orpc.posts.admin.get.key({ input: { id: postId } }),
     });
     void queryClient.invalidateQueries({ queryKey: orpc.posts.list.key() });
@@ -118,6 +118,7 @@ function EditPost() {
       key={`${post.id}:${loadCount}`}
       initialData={initialData}
       publicSlug={post.publicSlug}
+      hasUnpublishedChanges={post.hasUnpublishedChanges}
       onSave={handleSave}
       onReload={handleReload}
     />

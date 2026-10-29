@@ -59,7 +59,14 @@ export async function getAllCategoriesWithCount(
       postCount: count(PostsTable.id).as("postCount"),
     })
     .from(CategoriesTable)
-    .leftJoin(PostsTable, eq(PostsTable.categoryId, CategoriesTable.id))
+    // Public Usage counts the public assignments, Current Assignment the draft's.
+    .leftJoin(
+      PostsTable,
+      eq(
+        publicOnly ? PostsTable.publicCategoryId : PostsTable.categoryId,
+        CategoriesTable.id,
+      ),
+    )
     .where(publicOnly ? isNotNull(PostsTable.publicSnapshotJson) : undefined)
     .groupBy(CategoriesTable.id)
     .$dynamic();
@@ -83,7 +90,7 @@ export async function countUncategorizedPosts(db: DB, publicOnly = false) {
       publicOnly
         ? and(
             isNotNull(PostsTable.publicSnapshotJson),
-            isNull(PostsTable.categoryId),
+            isNull(PostsTable.publicCategoryId),
           )
         : isNull(PostsTable.categoryId),
     );
@@ -105,16 +112,34 @@ export async function updateCategory(
 
 export async function deleteCategory(db: DB, id: number) {
   // Clear the Posts' category here rather than leave it to ON DELETE SET NULL,
-  // so the write replaces their saveToken like any other.
+  // so the write replaces their saveToken like any other. Their public
+  // Category is left to ON DELETE SET NULL: it is not part of the draft.
   await db.batch([
     db
       .update(PostsTable)
-      .set({ categoryId: null, updatedAt: sql`${PostsTable.updatedAt}` })
+      .set({
+        categoryId: null,
+        // Their Unpublished Changes are decided again without the Category.
+        draftFingerprint: null,
+        publishedFingerprint: null,
+        updatedAt: sql`${PostsTable.updatedAt}`,
+      })
       .where(eq(PostsTable.categoryId, id)),
+    // A Post that shows the Category publicly loses it there too, which
+    // changes what it was published with, even if its draft has moved on.
+    db
+      .update(PostsTable)
+      .set({
+        draftFingerprint: null,
+        publishedFingerprint: null,
+        updatedAt: sql`${PostsTable.updatedAt}`,
+      })
+      .where(eq(PostsTable.publicCategoryId, id)),
     db.delete(CategoriesTable).where(eq(CategoriesTable.id, id)),
   ]);
 }
 
+/** Published Posts that publicly show the Category (its Public Usage). */
 export async function getPublishedPostsByCategoryId(
   db: DB,
   categoryId: number,
@@ -128,7 +153,7 @@ export async function getPublishedPostsByCategoryId(
     .where(
       and(
         isNotNull(PostsTable.publicSnapshotJson),
-        eq(PostsTable.categoryId, categoryId),
+        eq(PostsTable.publicCategoryId, categoryId),
       ),
     );
 }

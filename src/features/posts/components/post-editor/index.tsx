@@ -16,6 +16,7 @@ import { postRevisionListQuery } from "@/features/posts/queries";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
 import { m } from "@/paraglide/messages";
 import { useDeletePost } from "../post-manager/hooks";
+import { postStateOf, publishActionLabel } from "../post-state";
 import { readPostListLocation } from "../post-manager/list-position";
 import { useAutoSave, usePostActions } from "./hooks";
 import { PostEditorHeader } from "./post-editor-header";
@@ -27,6 +28,7 @@ import type { PostEditorData, PostEditorProps } from "./types";
 export function PostEditor({
   initialData,
   publicSlug,
+  hasUnpublishedChanges,
   onSave,
   onReload,
 }: PostEditorProps) {
@@ -41,7 +43,6 @@ export function PostEditor({
     slug: initialData.slug,
     contentJson: normalizePostContent(initialData.contentJson) ?? null,
     publishedAt: initialData.publishedAt,
-    pinnedAt: initialData.pinnedAt,
     tagIds: initialData.tagIds,
     categoryId: initialData.categoryId,
     hasPublicSnapshot: initialData.hasPublicSnapshot,
@@ -91,16 +92,25 @@ export function PostEditor({
   // The route mounts a fresh editor once the latest post is read, which also
   // clears the conflict, so only a failed read needs handling here.
   const [reloading, setReloading] = useState(false);
+  const reloadLatest = useCallback(async () => {
+    discardInFlightSave();
+    await onReload();
+  }, [discardInFlightSave, onReload]);
   const handleLoadLatest = useCallback(async () => {
     setReloading(true);
-    discardInFlightSave();
     try {
-      await onReload();
+      await reloadLatest();
     } catch {
       toast.error(m.editor_conflict_reload_failed());
       setReloading(false);
     }
-  }, [discardInFlightSave, onReload]);
+  }, [reloadLatest]);
+
+  // Edits not saved yet count as changes, so the state does not lag the typing.
+  const state = postStateOf({
+    published: post.hasPublicSnapshot,
+    hasUnpublishedChanges: hasUnpublishedChanges || saveStatus !== "SYNCED",
+  });
 
   // Unsaved edits of a deleted post have nowhere to go, so leave unguarded.
   const deletedRef = useRef(false);
@@ -135,6 +145,7 @@ export function PostEditor({
     handleGenerateSlug,
     handlePublish,
     handleUnpublish,
+    handleDiscard,
     processState,
     canPublish,
     lockSlug,
@@ -148,6 +159,8 @@ export function PostEditor({
     getSaveToken,
     acceptSaveToken,
     reportConflict,
+    state,
+    reload: reloadLatest,
   });
 
   const handleEditorCreated = useCallback((editor: TiptapEditor | null) => {
@@ -211,7 +224,7 @@ export function PostEditor({
         label:
           processState === "PROCESSING"
             ? m.editor_header_processing()
-            : m.editor_header_publish(),
+            : publishActionLabel(state),
         onClick: () => {
           void publishRef.current();
         },
@@ -223,6 +236,7 @@ export function PostEditor({
     infoOpen,
     post.title,
     processState,
+    state,
     setMobileTitle,
     setPrimaryAction,
   ]);
@@ -262,10 +276,12 @@ export function PostEditor({
           canPublish={canPublish}
           conflicted={conflict !== null}
           hasPublicSnapshot={post.hasPublicSnapshot}
+          hasUnpublishedChanges={state === "published-changed"}
           publicSlug={post.hasPublicSnapshot ? publicSlug : null}
           title={post.title}
           onPublish={handlePublish}
           onUnpublish={() => void handleUnpublish()}
+          onDiscard={() => void handleDiscard()}
           onDelete={() => void handleDelete()}
           isDeleting={settlingSave || deleteMutation.isPending}
           infoOpen={infoOpen}

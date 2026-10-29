@@ -51,7 +51,6 @@ const POST: PostEditorData = {
   slug: "post",
   contentJson: null,
   publishedAt: null,
-  pinnedAt: null,
   tagIds: [],
   categoryId: null,
   hasPublicSnapshot: false,

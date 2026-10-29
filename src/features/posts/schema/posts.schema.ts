@@ -29,6 +29,12 @@ const PublicSlugSchema = z
     "Slug of the live page at /post/{publicSlug}. It can differ from slug, the draft's, until the next publish. Null while the post is not published.",
   );
 
+const HasUnpublishedChangesSchema = z
+  .boolean()
+  .describe(
+    "True when the post is published and its draft differs from what was published: title, summary, slug, body, publication date, cover, category or tags. Changing a field back to its published value clears it, and publishing clears it. Pinning does not count. Always false for a draft post. publish makes the changes public; discard-changes makes the draft match the published version again.",
+  );
+
 const MARKDOWN_RULES =
   "CommonMark with GFM tables, strikethrough and autolinks. It carries headings, bold, italic, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, fenced code blocks with their language (a mermaid block renders as a diagram), tables with column alignment, inline math as $…$, block math with $$ alone on the lines before and after it, images and videos. A Bilibili or YouTube link alone in a paragraph is a video block. Headings stay within levels 2 to 4: when there is an H1 every heading moves one level down, and anything below level 4 becomes level 4. Images must be http(s) addresses or Media paths (/images/<key>). Table column widths are not carried, and a table cell holds a single line. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.";
 
@@ -58,7 +64,7 @@ const ContentMarkdownInputSchema = z
 const SaveTokenSchema = z
   .string()
   .describe(
-    "Opaque token that every write to the post replaces, including tags, category, cover, publish, unpublish and Post Revision restores. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
+    "Opaque token that every save of the post's draft and every publish or unpublish replaces, including tags, category, cover and Post Revision restores; pinning keeps it. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
   );
 
 const StatedSaveTokenSchema = z
@@ -76,6 +82,9 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
   updatedAt: coercedDate,
 }).omit({
   publicSnapshotJson: true,
+  draftFingerprint: true,
+  publishedFingerprint: true,
+  publicCategoryId: true,
 });
 /**
  * Strict on purpose, and narrower than the table.
@@ -88,18 +97,25 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  * Publication is not a field either. A plain object would silently strip
  * these: a client that PATCHed `{ status: "published" }` got a 200 back and a
  * post that was still a draft. Rejecting the key says so instead.
+ *
+ * Pinning is not a field either: it takes effect at once, so it has its own
+ * endpoints and a PATCH carrying `pinnedAt` is refused.
  */
 const PostUpdateSchema = createUpdateSchema(PostsTable, {
   contentJson: NullableJsonContentSchema.optional(),
 })
   .omit({
     publicSnapshotJson: true,
+    publicCategoryId: true,
     publicSlug: true,
+    pinnedAt: true,
     status: true,
     id: true,
     createdAt: true,
     updatedAt: true,
     saveToken: true,
+    draftFingerprint: true,
+    publishedFingerprint: true,
   })
   .extend({ contentMarkdown: ContentMarkdownInputSchema })
   .strict();
@@ -159,6 +175,7 @@ export const AdminPostSchema = PostSelectSchema.extend({
   publicSlug: PublicSlugSchema,
   tags: z.array(TagSelectSchema).optional(),
   hasPublicSnapshot: z.boolean(),
+  hasUnpublishedChanges: HasUnpublishedChangesSchema,
   publicSnapshotContentJson: NullableJsonContentSchema,
   serverToday: z.string(),
   cover: AdminPostCoverSchema.nullable(),
@@ -257,6 +274,12 @@ export const GetPostsInputSchema = z.object({
   offset: z.number().optional(),
   limit: z.number().optional(),
   status: z.custom<PostStatus>().optional(),
+  hasUnpublishedChanges: z
+    .boolean()
+    .optional()
+    .describe(
+      "true: only published posts that have unpublished changes (their item has hasUnpublishedChanges true). Combines with the other filters; with status=draft nothing matches. total and pagination follow the filter, and statusCounts.unpublishedChanges is the count it selects. false or omitted: no filtering by it.",
+    ),
   publicOnly: z.boolean().optional(),
   search: z.string().optional(),
   sortDir: z.enum(["ASC", "DESC"]).optional(),
@@ -285,6 +308,7 @@ const AdminPostListItemSchema = z.object({
   slug: z.string(),
   publicSlug: PublicSlugSchema,
   status: z.enum(["draft", "published"]),
+  hasUnpublishedChanges: HasUnpublishedChangesSchema,
   publishedAt: coercedDateNullable,
   pinnedAt: coercedDateNullable,
   createdAt: coercedDate,
@@ -294,13 +318,20 @@ const AdminPostListItemSchema = z.object({
   ),
   contentMarkdown: ContentMarkdownOutputSchema,
   saveToken: SaveTokenSchema.optional().describe(
-    "Returned together with the body (includeContent=true). Opaque token that every write to the post replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
+    "Returned together with the body (includeContent=true). Opaque token that every save, publish or unpublish replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
   ),
 });
 
 const AdminPostStatusCountsSchema = z.object({
   draft: z.number().int().nonnegative(),
   published: z.number().int().nonnegative(),
+  unpublishedChanges: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe(
+      "How many of the published posts have unpublished changes. Counted within published, not in addition to it.",
+    ),
 });
 export type AdminPostStatusCounts = z.infer<typeof AdminPostStatusCountsSchema>;
 
@@ -376,6 +407,21 @@ export const UnpublishPostInputSchema = z.object({
   id: z.number(),
 });
 
+export const DiscardPostChangesInputSchema = z.object({
+  id: z.number(),
+  saveToken: StatedSaveTokenSchema.describe(
+    "The saveToken of the draft you read and mean to discard. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to discard whatever the draft is now.",
+  ),
+});
+
+export const PinPostInputSchema = z.object({
+  id: z.number(),
+});
+
+export const UnpinPostInputSchema = z.object({
+  id: z.number(),
+});
+
 export type GenerateSlugInput = z.infer<typeof GenerateSlugInputSchema>;
 export type GetPostsInput = z.infer<typeof GetPostsInputSchema>;
 export type GetPostsCountInput = z.infer<typeof GetPostsCountInputSchema>;
@@ -385,6 +431,11 @@ export type UpdatePostInput = z.infer<typeof UpdatePostInputSchema>;
 export type DeletePostInput = z.infer<typeof DeletePostInputSchema>;
 export type PublishPostInput = z.infer<typeof PublishPostInputSchema>;
 export type UnpublishPostInput = z.infer<typeof UnpublishPostInputSchema>;
+export type DiscardPostChangesInput = z.infer<
+  typeof DiscardPostChangesInputSchema
+>;
+export type PinPostInput = z.infer<typeof PinPostInputSchema>;
+export type UnpinPostInput = z.infer<typeof UnpinPostInputSchema>;
 export type PostItem = z.infer<typeof PostItemSchema>;
 export type PostWithToc = z.infer<typeof PostWithTocSchema>;
 

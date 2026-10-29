@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/client";
 import type { JSONContent } from "@tiptap/react";
+import { m } from "@/paraglide/messages";
 import type { EditConflict } from "./types";
 
 const CJK_CHAR =
@@ -24,6 +25,24 @@ export function editConflictOf(error: unknown): EditConflict | null {
     return { saveToken: data.saveToken };
   }
   return null;
+}
+
+/**
+ * What to tell the Admin when discarding Unpublished Changes was refused or
+ * failed. An Edit Conflict is handled apart from this.
+ */
+export function discardErrorMessage(error: unknown) {
+  if (error instanceof ORPCError) {
+    switch (error.code) {
+      case "NO_UNPUBLISHED_CHANGES":
+        return m.editor_action_discard_no_changes();
+      case "POST_NOT_PUBLISHED":
+        return m.editor_action_discard_not_published();
+      case "POST_REVISION_NOT_FOUND":
+        return m.editor_action_discard_no_revision();
+    }
+  }
+  return m.editor_action_discard_failed();
 }
 
 export function persistableTagIds(tagIds: Array<number>) {

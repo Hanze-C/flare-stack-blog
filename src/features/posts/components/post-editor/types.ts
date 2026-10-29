@@ -15,7 +15,6 @@ export interface PostEditorData {
   slug: string;
   contentJson: JSONContent | null;
   publishedAt: Date | null;
-  pinnedAt: Date | null;
   tagIds: Array<number>;
   categoryId: number | null;
   hasPublicSnapshot: boolean;
@@ -47,6 +46,11 @@ export interface PostEditorProps {
   };
   /** The live page's slug, read fresh from the server; null while unpublished. */
   publicSlug: string | null;
+  /**
+   * Whether the saved draft differs from the published version, read fresh
+   * from the server so it follows saves, publishing and discarding.
+   */
+  hasUnpublishedChanges: boolean;
   onSave: PostEditorSave;
   /** Reads the post again and mounts the editor afresh with what is stored. */
   onReload: () => Promise<void>;

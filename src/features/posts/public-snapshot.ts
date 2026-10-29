@@ -31,6 +31,7 @@ export function mapSnapshotToPublicPost(
     status: "draft" | "published";
     createdAt: Date;
     updatedAt: Date;
+    pinnedAt: Date | null;
     publicSnapshotJson: PublicPostSnapshot | null;
   },
   tags: Array<Tag> = [],
@@ -46,7 +47,7 @@ export function mapSnapshotToPublicPost(
     slug: snapshot.slug,
     status: "published",
     publishedAt: new Date(snapshot.publishedAt),
-    pinnedAt: snapshot.pinnedAt ? new Date(snapshot.pinnedAt) : null,
+    pinnedAt: row.pinnedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     readTimeInMinutes: estimateReadTimeMinutes(snapshot.contentJson),

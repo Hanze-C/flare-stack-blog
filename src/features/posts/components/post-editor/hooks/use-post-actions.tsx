@@ -12,10 +12,12 @@ import {
 } from "../../post-manager/hooks";
 import {
   BLOB_UPLOADING_ERROR,
+  discardErrorMessage,
   EDIT_CONFLICT_ERROR,
   editConflictOf,
   shouldAutogenerateSlug,
 } from "../post-editor.model";
+import type { PostState } from "../../post-state";
 import type { EditConflict } from "../types";
 
 interface UsePostActionsOptions {
@@ -29,6 +31,10 @@ interface UsePostActionsOptions {
   getSaveToken: () => string;
   acceptSaveToken: (saveToken: string) => void;
   reportConflict: (conflict: EditConflict) => void;
+  /** How the post stands now; publishing says what it just made public. */
+  state: PostState;
+  /** Mounts the editor afresh with the post as stored. */
+  reload: () => Promise<void>;
 }
 
 export function usePostActions({
@@ -41,8 +47,12 @@ export function usePostActions({
   getSaveToken,
   acceptSaveToken,
   reportConflict,
+  state,
+  reload,
 }: UsePostActionsOptions) {
   const queryClient = useQueryClient();
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   const [processState, setProcessState] = useState<
     "IDLE" | "PROCESSING" | "SUCCESS"
@@ -74,7 +84,11 @@ export function usePostActions({
       orpcClient.posts.admin.publish({ id: postId, saveToken: getSaveToken() }),
     onSuccess: (result) => {
       acceptSaveToken(result.saveToken);
-      toast.success(m.editor_header_publish());
+      toast.success(
+        stateRef.current === "published-changed"
+          ? m.editor_toast_published_changes()
+          : m.editor_toast_published(),
+      );
       setPost((prev) => ({ ...prev, hasPublicSnapshot: true }));
       setProcessState("SUCCESS");
       void invalidatePostQueries(queryClient, postId);
@@ -137,6 +151,58 @@ export function usePostActions({
     }
     unpublish(postId);
   }, [conflicted, flush, postId, processState, unpublish]);
+
+  const handleDiscard = useCallback(async () => {
+    if (processState !== "IDLE" || conflicted) return;
+    setProcessState("PROCESSING");
+    // Edits still waiting are saved first, so the token stated is the current
+    // one and they land in the version kept before the discard.
+    try {
+      await flush();
+    } catch (error) {
+      if (!(error instanceof Error && error.message === EDIT_CONFLICT_ERROR)) {
+        toast.error(m.editor_action_discard_failed());
+      }
+      setProcessState("IDLE");
+      return;
+    }
+    let discarded: { saveToken: string };
+    try {
+      discarded = await orpcClient.posts.admin.discardChanges({
+        id: postId,
+        saveToken: getSaveToken(),
+      });
+    } catch (error) {
+      const found = editConflictOf(error);
+      if (found) reportConflict(found);
+      else toast.error(discardErrorMessage(error));
+      // Whatever the server refused over, what is shown may be out of date.
+      void invalidatePostQueries(queryClient, postId);
+      setProcessState("IDLE");
+      return;
+    }
+    acceptSaveToken(discarded.saveToken);
+    void invalidatePostQueries(queryClient, postId);
+    try {
+      await reload();
+    } catch {
+      toast.error(m.editor_conflict_reload_failed());
+      setProcessState("IDLE");
+      return;
+    }
+    toast.success(m.editor_discard_toast_done());
+    setProcessState("IDLE");
+  }, [
+    acceptSaveToken,
+    conflicted,
+    flush,
+    getSaveToken,
+    postId,
+    processState,
+    queryClient,
+    reload,
+    reportConflict,
+  ]);
 
   const slugMutation = useMutation({
     mutationFn: (title: string) =>
@@ -227,6 +293,7 @@ export function usePostActions({
     handleGenerateSlug,
     handlePublish,
     handleUnpublish,
+    handleDiscard,
     processState,
     canPublish,
     lockSlug,

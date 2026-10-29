@@ -3,6 +3,7 @@ import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import type { PostStatus } from "@/lib/db/schema";
 import type { AdminTaxonomyFilter } from "@/features/posts/schema/posts.schema";
 import { PostTagsTable, PostsTable } from "@/lib/db/schema";
+import { hasPublicTag } from "@/features/posts/data/public-assignments.data";
 
 export type SortField = "publishedAt" | "updatedAt" | "id";
 export type SortDirection = "ASC" | "DESC";
@@ -26,17 +27,33 @@ export function adminPostTextColumns(taxonomy?: AdminTaxonomyFilter) {
     slug: sql<string>`coalesce(json_extract(${PostsTable.publicSnapshotJson}, '$.slug'), ${PostsTable.publicSlug}, ${PostsTable.slug})`,
   };
 }
+/**
+ * A Published Post whose draft fingerprint differs from the one taken at
+ * publishing. `IS NOT` compares nulls, but callers settle null fingerprints
+ * first (see unpublished-changes.service).
+ */
+export function unpublishedChangesSql(): SQL<boolean> {
+  return sql<boolean>`(${PostsTable.status} = 'published' AND ${PostsTable.draftFingerprint} IS NOT ${PostsTable.publishedFingerprint})`;
+}
 function uncategorized(): SQL {
   return sql`${PostsTable.categoryId} IS NULL`;
 }
 function hasTag(tagId: number): SQL {
   return sql`EXISTS (SELECT 1 FROM ${PostTagsTable} WHERE ${PostTagsTable.postId} = ${PostsTable.id} AND ${PostTagsTable.tagId} = ${tagId})`;
 }
+/** Public scope reads the public assignments, current scope the draft's. */
 function taxonomyWhereClause(taxonomy: AdminTaxonomyFilter): SQL {
+  const isPublic = taxonomy.scope === "public";
   if (taxonomy.kind === "category")
-    return eq(PostsTable.categoryId, taxonomy.id);
-  if (taxonomy.kind === "uncategorized") return uncategorized();
-  return hasTag(taxonomy.id);
+    return eq(
+      isPublic ? PostsTable.publicCategoryId : PostsTable.categoryId,
+      taxonomy.id,
+    );
+  if (taxonomy.kind === "uncategorized")
+    return isPublic
+      ? sql`${PostsTable.publicCategoryId} IS NULL`
+      : uncategorized();
+  return isPublic ? hasPublicTag(taxonomy.id) : hasTag(taxonomy.id);
 }
 
 export type PostFilters = {
@@ -47,6 +64,8 @@ export type PostFilters = {
   categoryId?: number;
   uncategorized?: boolean;
   tagId?: number;
+  /** Only Published Posts with Unpublished Changes. */
+  hasUnpublishedChanges?: boolean;
 };
 
 export function buildPostWhereClause(options: PostFilters) {
@@ -60,6 +79,9 @@ export function buildPostWhereClause(options: PostFilters) {
 
   if (options.status) {
     whereClauses.push(eq(PostsTable.status, options.status));
+  }
+  if (options.hasUnpublishedChanges) {
+    whereClauses.push(unpublishedChangesSql());
   }
 
   if (options.publicOnly || options.taxonomy?.scope === "public") {
