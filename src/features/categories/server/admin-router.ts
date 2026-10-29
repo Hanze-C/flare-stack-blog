@@ -1,8 +1,11 @@
 import { z } from "zod";
 import {
+  AdminCategoryListSchema,
   CategoryOptionSchema,
+  CategorySelectSchema,
   CreateCategoryInputSchema,
   DeleteCategoryInputSchema,
+  DeleteCategoryResultSchema,
   GetCategoriesInputSchema,
   UpdateCategoryInputSchema,
 } from "@/features/categories/categories.schema";
@@ -26,6 +29,7 @@ const adminList = adminProcedure
     tags: ["Admin Categories"],
   })
   .input(GetCategoriesInputSchema)
+  .output(AdminCategoryListSchema)
   .handler(({ context, input }) =>
     CategoryService.getCategories(context, input),
   );
@@ -49,6 +53,7 @@ const create = adminProcedure
     tags: ["Admin Categories"],
   })
   .input(CreateCategoryInputSchema)
+  .output(CategorySelectSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(CategoryService.createCategory(context, input), {
       CATEGORY_NAME_ALREADY_EXISTS: () => {
@@ -66,6 +71,7 @@ const update = adminProcedure
     tags: ["Admin Categories"],
   })
   .input(UpdateCategoryInputSchema)
+  .output(CategorySelectSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(CategoryService.updateCategory(context, input), {
       CATEGORY_NOT_FOUND: () => {
@@ -86,6 +92,7 @@ const remove = adminProcedure
     tags: ["Admin Categories"],
   })
   .input(DeleteCategoryInputSchema)
+  .output(DeleteCategoryResultSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(CategoryService.deleteCategory(context, input), {
       CATEGORY_NOT_FOUND: () => {

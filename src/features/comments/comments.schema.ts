@@ -1,7 +1,6 @@
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import type { CommentStatus } from "@/lib/db/schema";
-import { CommentsTable } from "@/lib/db/schema";
+import { COMMENT_STATUSES, CommentsTable } from "@/lib/db/schema";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
@@ -104,7 +103,7 @@ export const GetThreadByCommentIdInputSchema = z.object({
 export const GetMyCommentsInputSchema = z.object({
   offset: z.number().optional(),
   limit: z.number().optional(),
-  status: z.custom<CommentStatus>().optional(),
+  status: z.enum(COMMENT_STATUSES).optional(),
 });
 
 // Admin API Schemas

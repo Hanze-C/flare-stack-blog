@@ -3,17 +3,23 @@ import {
   AdminFindPostByIdInputSchema,
   AdminPostListPageSchema,
   CreatePostInputSchema,
+  CreatePostResultSchema,
   DeletePostInputSchema,
+  DeletePostResultSchema,
+  DeletePostRevisionsResultSchema,
   DiscardPostChangesInputSchema,
   GenerateSlugInputSchema,
+  GenerateSlugResultSchema,
   GetPostsInputSchema,
   PinPostInputSchema,
   AdminPostSchema,
   EditConflictDataSchema,
   PostWriteResultSchema,
   PublishPostInputSchema,
+  RestorePostRevisionResultSchema,
   UnpinPostInputSchema,
   UnpublishPostInputSchema,
+  UpdatedPostSchema,
   UpdatePostInputSchema,
   VideoMetaInputSchema,
   VideoMetaSchema,
@@ -162,6 +168,7 @@ const generateSlug = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(GenerateSlugInputSchema)
+  .output(GenerateSlugResultSchema)
   .handler(({ context, input }) => PostService.generateSlug(context, input));
 
 const videoMeta = adminProcedure
@@ -191,6 +198,7 @@ const create = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
+  .output(CreatePostResultSchema)
   .handler(async ({ context, input, errors }) => {
     if (!input?.data) return PostService.createEmptyPost(context);
     const data = await PostMarkdownService.resolveMarkdownContent(
@@ -212,6 +220,7 @@ const update = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
+  .output(UpdatedPostSchema)
   .handler(async ({ context, input, errors }) => {
     const data = await PostMarkdownService.resolveMarkdownContent(
       context,
@@ -247,6 +256,7 @@ const remove = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(DeletePostInputSchema)
+  .output(DeletePostResultSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(PostService.deletePost(context, input), {
       POST_NOT_FOUND: () => {
@@ -426,6 +436,7 @@ const restoreRevision = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(RestorePostRevisionInputSchema)
+  .output(RestorePostRevisionResultSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(PostRevisionService.restorePostRevision(context, input), {
       POST_NOT_FOUND: () => {
@@ -449,6 +460,7 @@ const deleteRevisions = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(DeletePostRevisionsInputSchema)
+  .output(DeletePostRevisionsResultSchema)
   .handler(({ context, input, errors }) =>
     unwrapResult(PostRevisionService.deletePostRevisions(context, input), {
       POST_NOT_FOUND: () => {
