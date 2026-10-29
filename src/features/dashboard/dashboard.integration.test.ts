@@ -269,12 +269,7 @@ describe("Dashboard overview", () => {
 
   it("includes pinnedAt on recent posts", async () => {
     const id = await publishPost("pinned-one");
-    unwrap(
-      await PostService.updatePost(adminContext, {
-        id,
-        data: { pinnedAt: new Date() },
-      }),
-    );
+    unwrap(await PostService.pinPost(adminContext, { id }));
 
     const overview = await getDashboardOverview(adminContext);
     expect(

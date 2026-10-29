@@ -29,7 +29,8 @@ export type PublicPostSnapshot = {
   tagIds: Array<number>;
   categoryId: number | null;
   publishedAt: string;
-  pinnedAt: string | null;
+  // Snapshots written before pinning left the snapshot may still carry a
+  // pinnedAt; nothing reads it.
   cover: PublicPostCover | null;
 };
 

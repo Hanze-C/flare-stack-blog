@@ -4,7 +4,6 @@ import TextareaAutosize from "react-textarea-autosize";
 import DatePicker from "@/components/ui/date-picker";
 import { FormField } from "@/components/ui/form-field";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import { CategorySelect } from "@/features/categories/components/category-select";
 import { TagSelector } from "@/features/tags/components/tag-selector";
 import { m } from "@/paraglide/messages";
@@ -55,35 +54,23 @@ export function PostEditorMetadata({
           />
         </FormField>
 
-        <div className="flex items-end gap-3">
-          <FormField label={m.editor_meta_date()} className="min-w-0 flex-1">
-            <DatePicker
-              today={post.serverToday}
-              maxDate={post.serverToday}
-              value={
-                post.publishedAt
-                  ? post.publishedAt.toISOString().slice(0, 10)
-                  : ""
-              }
-              onChange={(dateStr) => {
-                if (dateStr && dateStr > post.serverToday) return;
-                onPostChange({
-                  publishedAt: dateStr
-                    ? new Date(`${dateStr}T12:00:00Z`)
-                    : null,
-                });
-              }}
-            />
-          </FormField>
-          <Switch
-            label={m.editor_meta_pin()}
-            checked={Boolean(post.pinnedAt)}
-            onCheckedChange={(pinned) =>
-              onPostChange({ pinnedAt: pinned ? new Date() : null })
+        <FormField label={m.editor_meta_date()}>
+          <DatePicker
+            today={post.serverToday}
+            maxDate={post.serverToday}
+            value={
+              post.publishedAt
+                ? post.publishedAt.toISOString().slice(0, 10)
+                : ""
             }
-            className="min-h-10 w-auto text-sm"
+            onChange={(dateStr) => {
+              if (dateStr && dateStr > post.serverToday) return;
+              onPostChange({
+                publishedAt: dateStr ? new Date(`${dateStr}T12:00:00Z`) : null,
+              });
+            }}
           />
-        </div>
+        </FormField>
 
         <FormField label={m.editor_meta_summary()}>
           <TextareaAutosize

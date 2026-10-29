@@ -75,7 +75,6 @@ function EditPost() {
     publishedAt: post.publishedAt,
     tagIds: tags.map((t) => t.id),
     categoryId: post.categoryId ?? null,
-    pinnedAt: post.pinnedAt,
     hasPublicSnapshot: post.hasPublicSnapshot,
     publicSnapshotContentJson: post.publicSnapshotContentJson,
     serverToday: post.serverToday,

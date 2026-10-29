@@ -258,7 +258,6 @@ describe("Admin posts API for external editors", () => {
           slug: "edited-by-editor",
           contentJson: paragraph("new body"),
           publishedAt: null,
-          pinnedAt: null,
           coverMediaId: null,
           categoryId: null,
         },

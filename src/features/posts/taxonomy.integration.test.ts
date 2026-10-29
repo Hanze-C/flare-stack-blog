@@ -29,7 +29,6 @@ function snapshot(
     summary: null,
     contentJson: null,
     publishedAt: `2026-09-0${day}T12:00:00Z`,
-    pinnedAt: null,
     cover: null,
   };
 }
