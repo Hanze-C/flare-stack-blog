@@ -64,7 +64,7 @@ const ContentMarkdownInputSchema = z
 const SaveTokenSchema = z
   .string()
   .describe(
-    "Opaque token that every write to the post replaces, including tags, category, cover, publish, unpublish and Post Revision restores. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
+    "Opaque token that every save of the post's draft and every publish or unpublish replaces, including tags, category, cover and Post Revision restores; pinning keeps it. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
   );
 
 const StatedSaveTokenSchema = z
@@ -84,6 +84,7 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
   publicSnapshotJson: true,
   draftFingerprint: true,
   publishedFingerprint: true,
+  publicCategoryId: true,
 });
 /**
  * Strict on purpose, and narrower than the table.
@@ -96,13 +97,18 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  * Publication is not a field either. A plain object would silently strip
  * these: a client that PATCHed `{ status: "published" }` got a 200 back and a
  * post that was still a draft. Rejecting the key says so instead.
+ *
+ * Pinning is not a field either: it takes effect at once, so it has its own
+ * endpoints and a PATCH carrying `pinnedAt` is refused.
  */
 const PostUpdateSchema = createUpdateSchema(PostsTable, {
   contentJson: NullableJsonContentSchema.optional(),
 })
   .omit({
     publicSnapshotJson: true,
+    publicCategoryId: true,
     publicSlug: true,
+    pinnedAt: true,
     status: true,
     id: true,
     createdAt: true,
@@ -312,7 +318,7 @@ const AdminPostListItemSchema = z.object({
   ),
   contentMarkdown: ContentMarkdownOutputSchema,
   saveToken: SaveTokenSchema.optional().describe(
-    "Returned together with the body (includeContent=true). Opaque token that every write to the post replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
+    "Returned together with the body (includeContent=true). Opaque token that every save, publish or unpublish replaces; state it as saveToken when saving or publishing to refuse an Edit Conflict.",
   ),
 });
 
@@ -408,6 +414,14 @@ export const DiscardPostChangesInputSchema = z.object({
   ),
 });
 
+export const PinPostInputSchema = z.object({
+  id: z.number(),
+});
+
+export const UnpinPostInputSchema = z.object({
+  id: z.number(),
+});
+
 export type GenerateSlugInput = z.infer<typeof GenerateSlugInputSchema>;
 export type GetPostsInput = z.infer<typeof GetPostsInputSchema>;
 export type GetPostsCountInput = z.infer<typeof GetPostsCountInputSchema>;
@@ -420,6 +434,8 @@ export type UnpublishPostInput = z.infer<typeof UnpublishPostInputSchema>;
 export type DiscardPostChangesInput = z.infer<
   typeof DiscardPostChangesInputSchema
 >;
+export type PinPostInput = z.infer<typeof PinPostInputSchema>;
+export type UnpinPostInput = z.infer<typeof UnpinPostInputSchema>;
 export type PostItem = z.infer<typeof PostItemSchema>;
 export type PostWithToc = z.infer<typeof PostWithTocSchema>;
 

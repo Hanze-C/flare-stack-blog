@@ -18,7 +18,6 @@ export function savePostEdits(postId: number): PostEditorSave {
         slug: data.slug,
         contentJson: data.contentJson,
         publishedAt: data.publishedAt,
-        pinnedAt: data.pinnedAt,
         coverMediaId: data.coverMediaId,
         categoryId: data.categoryId,
       },

@@ -63,7 +63,6 @@ const INITIAL: PostEditorProps["initialData"] = {
     ],
   },
   publishedAt: null,
-  pinnedAt: null,
   tagIds: [],
   categoryId: null,
   hasPublicSnapshot: false,

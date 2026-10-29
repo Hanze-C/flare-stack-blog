@@ -1,8 +1,8 @@
-import { invalidate } from "@/features/cache/public-cache";
 import * as MediaRepo from "@/features/media/data/media.data";
 import { syncPostMedia } from "@/features/posts/data/post-media.data";
 import * as PostRevisionRepo from "@/features/posts/data/post-revisions.data";
 import * as PostRepo from "@/features/posts/data/posts.data";
+import * as PublicAssignmentRepo from "@/features/posts/data/public-assignments.data";
 import type { DiscardPostChangesInput } from "@/features/posts/schema/posts.schema";
 import * as UnpublishedChangesService from "@/features/posts/services/unpublished-changes.service";
 import { hasUnpublishedChanges } from "@/features/posts/utils/unpublished-changes";
@@ -215,14 +215,9 @@ export async function restorePostRevision(
     return err({ reason: "POST_NOT_FOUND" });
   }
 
+  // Restoring changes the draft only, its Category and Tags included
+  // (ADR 0033), so no public cache needs purging.
   await syncPostMedia(context.db, restoredPost);
-  if (restoredPost.publicSnapshotJson) {
-    context.executionCtx.waitUntil(
-      invalidate.postPublished(context, {
-        slug: restoredPost.publicSnapshotJson.slug,
-      }),
-    );
-  }
 
   return ok({
     post: restoredPost,
@@ -233,8 +228,9 @@ export async function restorePostRevision(
 
 /**
  * Makes the draft of a Published Post match what was published again: the
- * latest publish revision, Category and Tags included, is written into it
- * after the draft as it is now is saved as a revision. The public site is not
+ * content of the latest publish revision and the Category and Tags the public
+ * site shows are written into it, after the draft as it is now is saved as a
+ * revision. The public site is not
  * touched. With `saveToken`, a draft saved since that token was read is left
  * as it is and answers EDIT_CONFLICT.
  */
@@ -273,12 +269,19 @@ export async function discardUnpublishedChanges(
   if (!revision || !parsedSnapshot.success) {
     return err({ reason: "POST_REVISION_NOT_FOUND" });
   }
-  // Writing the revision must leave the draft as it was published. If the
-  // publish did not leave a revision of what it published, this one is not it.
+  // Category and Tags are the public ones, not the revision's: they are what
+  // the public site shows, and may have changed since the revision was taken.
+  const publicIds = UnpublishedChangesService.publicIdsOf(
+    (
+      await PublicAssignmentRepo.findPublicAssignments(context.db, [post.id])
+    ).get(post.id),
+  );
+  // Writing them must leave the draft as it was published. If the publish did
+  // not leave a revision of what it published, this one is not it.
   const publishedFingerprint =
-    await UnpublishedChangesService.fingerprintOfRevision(
+    await UnpublishedChangesService.fingerprintOfPublished(
       parsedSnapshot.data,
-      await PostRepo.findAssignableIds(context.db),
+      publicIds,
     );
   if (publishedFingerprint !== post.publishedFingerprint) {
     return err({ reason: "POST_REVISION_NOT_FOUND" });
@@ -286,6 +289,8 @@ export async function discardUnpublishedChanges(
 
   const targetSnapshot = {
     ...parsedSnapshot.data,
+    categoryId: publicIds.categoryId,
+    tagIds: publicIds.tagIds,
     coverMediaId: parsedSnapshot.data.coverMediaId ?? null,
   };
   if (

@@ -50,7 +50,6 @@ type MetaSnapshot = {
   summary: string;
   slug: string;
   publishedAt: number | null;
-  pinnedAt: number | null;
   tagIds: string;
   categoryId: number | null;
   coverMediaId: number | null;
@@ -64,7 +63,6 @@ function toMeta(post: PostEditorData): MetaSnapshot {
     summary: post.summary,
     slug: post.slug,
     publishedAt: post.publishedAt ? post.publishedAt.valueOf() : null,
-    pinnedAt: post.pinnedAt ? post.pinnedAt.valueOf() : null,
     tagIds: persistableTagIds(post.tagIds)
       .sort((left, right) => left - right)
       .join(","),
@@ -80,7 +78,6 @@ function isMetaDirty(curr: MetaSnapshot, prev: MetaSnapshot | null) {
     prev.summary !== curr.summary ||
     prev.slug !== curr.slug ||
     prev.publishedAt !== curr.publishedAt ||
-    prev.pinnedAt !== curr.pinnedAt ||
     prev.tagIds !== curr.tagIds ||
     prev.categoryId !== curr.categoryId ||
     prev.coverMediaId !== curr.coverMediaId

@@ -176,19 +176,13 @@ export async function deleteTag(
 }
 
 /**
- * Update shared Tag assignments; public caches refresh in the background.
- * Returns the Post's new saveToken, or null when there is no such Post.
+ * Replaces the Post's draft Tags. The public site keeps the Tags of its Public
+ * Content Snapshot until the Post is published (ADR 0033), so no public cache
+ * needs purging. Returns the Post's new saveToken, or null when there is no
+ * such Post.
  */
-export async function setPostTags(
-  context: DbContext & { executionCtx: ExecutionContext },
-  data: SetPostTagsInput,
-) {
+export async function setPostTags(context: DbContext, data: SetPostTagsInput) {
   await TagRepo.setPostTags(context.db, data.postId, data.tagIds);
   const post = await PostRepo.touchPostUpdatedAt(context.db, data.postId);
-  if (post?.publicSlug) {
-    context.executionCtx.waitUntil(
-      invalidate.tagChanged(context, { slugs: [post.publicSlug] }),
-    );
-  }
   return { saveToken: post?.saveToken ?? null };
 }

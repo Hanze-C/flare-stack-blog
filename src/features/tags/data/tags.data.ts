@@ -1,6 +1,12 @@
 import { and, asc, count, desc, eq, ne, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
-import { PostsTable, PostTagsTable, TagsTable } from "@/lib/db/schema";
+import { hasPublicTag } from "@/features/posts/data/public-assignments.data";
+import {
+  PostPublicTagsTable,
+  PostsTable,
+  PostTagsTable,
+  TagsTable,
+} from "@/lib/db/schema";
 
 /**
  * Get all tags, optionally sorted
@@ -33,16 +39,18 @@ export async function getAllTagsWithCount(
   } = {},
 ) {
   const { sortBy = "name", sortDir = "asc", publicOnly = false } = options;
+  // Public Usage counts the public assignments, Current Assignment the draft's.
+  const assignments = publicOnly ? PostPublicTagsTable : PostTagsTable;
   const query = db
     .select({
       id: TagsTable.id,
       name: TagsTable.name,
       createdAt: TagsTable.createdAt,
-      postCount: count(PostTagsTable.postId).as("postCount"),
+      postCount: count(assignments.postId).as("postCount"),
     })
     .from(TagsTable)
-    .leftJoin(PostTagsTable, eq(TagsTable.id, PostTagsTable.tagId))
-    .leftJoin(PostsTable, eq(PostsTable.id, PostTagsTable.postId))
+    .leftJoin(assignments, eq(TagsTable.id, assignments.tagId))
+    .leftJoin(PostsTable, eq(PostsTable.id, assignments.postId))
     .where(
       publicOnly
         ? sql`${PostsTable.publicSnapshotJson} IS NOT NULL`
@@ -101,8 +109,8 @@ export async function updateTag(
  * Delete a tag
  */
 export async function deleteTag(db: DB, id: number) {
-  // The Tag leaves the Posts that carry it, so their Unpublished Changes are
-  // decided again without it. Touching them replaces their saveToken like
+  // The Tag leaves the Posts that carry it, in the draft or publicly, so their
+  // Unpublished Changes are decided again without it. Touching them replaces their saveToken like
   // any other write; updatedAt stays.
   await db.batch([
     db
@@ -113,7 +121,8 @@ export async function deleteTag(db: DB, id: number) {
         updatedAt: sql`${PostsTable.updatedAt}`,
       })
       .where(
-        sql`${PostsTable.id} IN (SELECT ${PostTagsTable.postId} FROM ${PostTagsTable} WHERE ${PostTagsTable.tagId} = ${id})`,
+        sql`${PostsTable.id} IN (SELECT ${PostTagsTable.postId} FROM ${PostTagsTable} WHERE ${PostTagsTable.tagId} = ${id})
+          OR ${PostsTable.id} IN (SELECT ${PostPublicTagsTable.postId} FROM ${PostPublicTagsTable} WHERE ${PostPublicTagsTable.tagId} = ${id})`,
       ),
     db.delete(TagsTable).where(eq(TagsTable.id, id)),
   ]);
@@ -191,7 +200,8 @@ export async function nameExists(
 }
 
 /**
- * Get published posts associated with a tag (for cache invalidation)
+ * Published Posts that publicly show the Tag (its Public Usage), for cache
+ * invalidation.
  */
 export async function getPublishedPostsByTagId(db: DB, tagId: number) {
   const results = await db
@@ -204,7 +214,7 @@ export async function getPublishedPostsByTagId(db: DB, tagId: number) {
     .from(PostsTable)
     .where(
       and(
-        sql`EXISTS (SELECT 1 FROM ${PostTagsTable} WHERE ${PostTagsTable.postId} = ${PostsTable.id} AND ${PostTagsTable.tagId} = ${tagId})`,
+        hasPublicTag(tagId),
         sql`${PostsTable.publicSnapshotJson} IS NOT NULL`,
       ),
     );

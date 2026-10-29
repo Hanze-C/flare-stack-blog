@@ -1,4 +1,5 @@
 import { isNotNull } from "drizzle-orm";
+import * as PublicAssignmentRepo from "@/features/posts/data/public-assignments.data";
 import { convertToPlainText } from "@/features/posts/utils/content";
 import * as SearchRepo from "@/features/search/data/search.data";
 import {
@@ -107,24 +108,25 @@ export async function rebuildIndex(context: DbContext) {
   const { db } = context;
   const start = Date.now();
 
-  const posts = await db.query.PostsTable.findMany({
-    where: isNotNull(PostsTable.publicSnapshotJson),
-    with: {
-      category: true,
-      postTags: {
-        with: {
-          tag: true,
-        },
-      },
-    },
-  });
+  const [posts, assignments] = await Promise.all([
+    db
+      .select({
+        id: PostsTable.id,
+        publicSnapshotJson: PostsTable.publicSnapshotJson,
+      })
+      .from(PostsTable)
+      .where(isNotNull(PostsTable.publicSnapshotJson)),
+    // The public Category and Tags, which publish with the Post (ADR 0033).
+    PublicAssignmentRepo.findPublicAssignments(db),
+  ]);
 
   const documents = [];
   for (const post of posts) {
     const snapshot = post.publicSnapshotJson;
     if (!snapshot?.title || !snapshot.slug) continue;
-    const tags = post.postTags.map((pt) => pt.tag.name);
-    const categoryName = post.category?.name ?? null;
+    const assignment = assignments.get(post.id);
+    const tags = assignment?.tags.map((tag) => tag.name) ?? [];
+    const categoryName = assignment?.category?.name ?? null;
 
     documents.push(
       toIndexedDocument({

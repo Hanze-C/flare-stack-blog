@@ -15,7 +15,6 @@ export interface PostEditorData {
   slug: string;
   contentJson: JSONContent | null;
   publishedAt: Date | null;
-  pinnedAt: Date | null;
   tagIds: Array<number>;
   categoryId: number | null;
   hasPublicSnapshot: boolean;

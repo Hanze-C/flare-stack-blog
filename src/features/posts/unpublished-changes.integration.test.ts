@@ -10,6 +10,7 @@ import * as CategoryService from "@/features/categories/categories.service";
 import * as TagService from "@/features/tags/tags.service";
 import {
   CategoriesTable,
+  PostPublicTagsTable,
   PostRevisionsTable,
   PostsTable,
   TagsTable,
@@ -438,6 +439,89 @@ describe("posts published before fingerprints existed", () => {
       published: 2,
       unpublishedChanges: 1,
     });
+  });
+
+  // What migration 0025 did for a post published under the old model, where
+  // Category and Tags were live: the public assignments are the live ones.
+  async function backfillPublicAssignments(
+    id: number,
+    categoryId: number | null,
+    tagIds: Array<number>,
+  ) {
+    const { db } = createAdminTestContext();
+    await db
+      .update(PostsTable)
+      .set({ publicCategoryId: categoryId })
+      .where(eq(PostsTable.id, id));
+    await db
+      .delete(PostPublicTagsTable)
+      .where(eq(PostPublicTagsTable.postId, id));
+    if (tagIds.length > 0) {
+      await db
+        .insert(PostPublicTagsTable)
+        .values(tagIds.map((tagId) => ({ postId: id, tagId })));
+    }
+  }
+
+  it("with only Category and Tag edits since publishing have no changes", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { category, otherCategory, tag, otherTag } =
+      await seedTaxonomy("uc-live");
+    const id = await createPost(apiKey, "uc-live");
+    await patchPost(apiKey, id, { categoryId: category.id });
+    await setTags(apiKey, id, [tag.id]);
+    await publish(apiKey, id);
+    await patchPost(apiKey, id, { categoryId: otherCategory.id });
+    await setTags(apiKey, id, [tag.id, otherTag.id]);
+    await backfillPublicAssignments(id, otherCategory.id, [
+      tag.id,
+      otherTag.id,
+    ]);
+    await forgetFingerprints(id);
+
+    expect((await readPost(apiKey, id)).hasUnpublishedChanges).toBe(false);
+    const page = await listPosts(
+      apiKey,
+      "search=uc-live&hasUnpublishedChanges=true",
+    );
+    expect(page.items).toEqual([]);
+
+    // The next edit is a change as usual.
+    await patchPost(apiKey, id, { title: "uc-live edited" });
+    expect((await readPost(apiKey, id)).hasUnpublishedChanges).toBe(true);
+  });
+
+  it("discard restores the public Category and Tags, not the revision's", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { category, otherCategory, tag, otherTag } =
+      await seedTaxonomy("uc-public");
+    const id = await createPost(apiKey, "uc-public");
+    await patchPost(apiKey, id, { categoryId: category.id });
+    await setTags(apiKey, id, [tag.id]);
+    await publish(apiKey, id);
+    await patchPost(apiKey, id, { categoryId: otherCategory.id });
+    await setTags(apiKey, id, [tag.id, otherTag.id]);
+    await backfillPublicAssignments(id, otherCategory.id, [
+      tag.id,
+      otherTag.id,
+    ]);
+    await patchPost(apiKey, id, {
+      title: "uc-public edited",
+      categoryId: null,
+    });
+    await setTags(apiKey, id, [otherTag.id]);
+    await forgetFingerprints(id);
+
+    const response = await discard(apiKey, id);
+
+    expect(response.status).toBe(200);
+    const after = await readPost(apiKey, id);
+    expect(after.title).toBe("uc-public");
+    expect(after.categoryId).toBe(otherCategory.id);
+    expect(after.tags.map((t) => t.id).sort((a, b) => a - b)).toEqual(
+      [tag.id, otherTag.id].sort((a, b) => a - b),
+    );
+    expect(after.hasUnpublishedChanges).toBe(false);
   });
 
   it("without a publish revision are compared by the snapshot's fields", async () => {

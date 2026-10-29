@@ -7,10 +7,12 @@ import {
   DiscardPostChangesInputSchema,
   GenerateSlugInputSchema,
   GetPostsInputSchema,
+  PinPostInputSchema,
   AdminPostSchema,
   EditConflictDataSchema,
   PostWriteResultSchema,
   PublishPostInputSchema,
+  UnpinPostInputSchema,
   UnpublishPostInputSchema,
   UpdatePostInputSchema,
   VideoMetaInputSchema,
@@ -340,6 +342,46 @@ const discardChanges = adminProcedure
     ),
   );
 
+const pinPost = adminProcedure
+  .errors(postErrors)
+  .route({
+    method: "POST",
+    path: "/admin/posts/{id}/pin",
+    summary: "Pin a post",
+    description:
+      "Pins the post to the top of the homepage. Takes effect at once, without publishing: the public site reads the post's own pin, not the Public Content Snapshot, and its caches are purged. Pinning an already pinned post keeps its place. A draft can be pinned too; the pin shows once it is published. The pin is not part of the draft, so the post's saveToken stays as it was.",
+    tags: ["Admin Posts"],
+  })
+  .input(PinPostInputSchema)
+  .output(PostWriteResultSchema)
+  .handler(({ context, input, errors }) =>
+    unwrapResult(PostService.pinPost(context, input), {
+      POST_NOT_FOUND: () => {
+        throw errors.POST_NOT_FOUND();
+      },
+    }),
+  );
+
+const unpinPost = adminProcedure
+  .errors(postErrors)
+  .route({
+    method: "POST",
+    path: "/admin/posts/{id}/unpin",
+    summary: "Unpin a post",
+    description:
+      "Removes the post's pin. Takes effect at once, without publishing, and purges the public caches. The pin is not part of the draft, so the post's saveToken stays as it was.",
+    tags: ["Admin Posts"],
+  })
+  .input(UnpinPostInputSchema)
+  .output(PostWriteResultSchema)
+  .handler(({ context, input, errors }) =>
+    unwrapResult(PostService.unpinPost(context, input), {
+      POST_NOT_FOUND: () => {
+        throw errors.POST_NOT_FOUND();
+      },
+    }),
+  );
+
 const listRevisions = adminProcedure
   .route({
     method: "GET",
@@ -420,6 +462,8 @@ export default {
   publish: publishPost,
   unpublish: unpublishPost,
   discardChanges,
+  pin: pinPost,
+  unpin: unpinPost,
   revisions: {
     list: listRevisions,
     get: getRevision,

@@ -199,6 +199,32 @@
           }
         }
       },
+      "pin": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {},
+          "route": {
+            "method": "POST",
+            "path": "/admin/posts/{id}/pin",
+            "summary": "Pin a post",
+            "description": "Pins the post to the top of the homepage. Takes effect at once, without publishing: the public site reads the post's own pin, not the Public Content Snapshot, and its caches are purged. Pinning an already pinned post keeps its place. A draft can be pinned too; the pin shows once it is published. The pin is not part of the draft, so the post's saveToken stays as it was.",
+            "tags": ["Admin Posts"]
+          }
+        }
+      },
+      "unpin": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {},
+          "route": {
+            "method": "POST",
+            "path": "/admin/posts/{id}/unpin",
+            "summary": "Unpin a post",
+            "description": "Removes the post's pin. Takes effect at once, without publishing, and purges the public caches. The pin is not part of the draft, so the post's saveToken stays as it was.",
+            "tags": ["Admin Posts"]
+          }
+        }
+      },
       "revisions": {
         "list": {
           "~orpc": {
@@ -334,7 +360,7 @@
             "method": "PUT",
             "path": "/admin/posts/{postId}/tags",
             "summary": "Set tags on a post",
-            "description": "Replaces the post's tags. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist.",
+            "description": "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist.",
             "tags": ["Admin Tags"]
           }
         }
