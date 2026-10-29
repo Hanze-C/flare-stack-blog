@@ -1,9 +1,9 @@
 import { z } from "zod";
 import {
+  AdminFindPostByIdInputSchema,
   AdminPostListPageSchema,
   CreatePostInputSchema,
   DeletePostInputSchema,
-  FindPostByIdInputSchema,
   GenerateSlugInputSchema,
   GetPostsInputSchema,
   AdminPostSchema,
@@ -21,6 +21,7 @@ import {
   PostRevisionSelectSchema,
   RestorePostRevisionInputSchema,
 } from "@/features/posts/schema/post-revisions.schema";
+import * as PostMarkdownService from "@/features/posts/services/post-markdown.service";
 import * as PostRevisionService from "@/features/posts/services/post-revisions.service";
 import * as PostService from "@/features/posts/services/posts.service";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
@@ -46,7 +47,49 @@ const postErrors = {
   },
   MEDIA_NOT_FOUND: { status: 404, message: "Media not found." },
   CATEGORY_NOT_FOUND: { status: 404, message: "Category not found." },
+  CONTENT_FORMAT_AMBIGUOUS: {
+    status: 400,
+    message: "Send contentJson or contentMarkdown, not both.",
+  },
+  MARKDOWN_IMAGE_INVALID: {
+    status: 400,
+    message:
+      "Markdown images must be http(s) addresses or Media paths (/images/<key>).",
+    data: z.object({
+      images: z.array(z.string()).describe("The refused image addresses."),
+    }),
+  },
 } as const;
+
+type MarkdownContentError =
+  | { reason: "CONTENT_FORMAT_AMBIGUOUS" }
+  | { reason: "MARKDOWN_IMAGE_INVALID"; images: Array<string> };
+
+function throwMarkdownContentError(
+  error: MarkdownContentError,
+  errors: {
+    CONTENT_FORMAT_AMBIGUOUS: () => Error;
+    MARKDOWN_IMAGE_INVALID: (options: {
+      message: string;
+      data: { images: Array<string> };
+    }) => Error;
+  },
+): never {
+  switch (error.reason) {
+    case "CONTENT_FORMAT_AMBIGUOUS":
+      throw errors.CONTENT_FORMAT_AMBIGUOUS();
+    case "MARKDOWN_IMAGE_INVALID": {
+      const list = error.images.map((src) => `"${src}"`).join(", ");
+      throw errors.MARKDOWN_IMAGE_INVALID({
+        message: `${error.images.length > 1 ? "Images" : "Image"} ${list} must be an http(s) address or a Media path (/images/<key>). Upload local images as Media and use their path.`,
+        data: { images: error.images },
+      });
+    }
+    default:
+      error satisfies never;
+      throw new Error("Unknown Markdown content error");
+  }
+}
 
 const adminList = adminProcedure
   .route({
@@ -57,9 +100,17 @@ const adminList = adminProcedure
   })
   .input(GetPostsInputSchema)
   .output(AdminPostListPageSchema)
-  .handler(({ context, input }) =>
-    PostService.listAdminPostsPage(context, input),
-  );
+  .handler(async ({ context, input }) => {
+    const page = await PostService.listAdminPostsPage(context, input);
+    return {
+      ...page,
+      items: await Promise.all(
+        page.items.map((item) =>
+          PostMarkdownService.inContentFormat(item, input.contentFormat),
+        ),
+      ),
+    };
+  });
 
 const adminGet = adminProcedure
   .errors(postErrors)
@@ -71,9 +122,14 @@ const adminGet = adminProcedure
       "Returns the editable Post. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft.",
     tags: ["Admin Posts"],
   })
-  .input(FindPostByIdInputSchema)
+  .input(AdminFindPostByIdInputSchema)
   .output(AdminPostSchema)
-  .handler(({ context, input }) => PostService.findPostById(context, input));
+  .handler(async ({ context, input }) => {
+    const post = await PostService.findPostById(context, input);
+    return (
+      post && PostMarkdownService.inContentFormat(post, input.contentFormat)
+    );
+  });
 
 const generateSlug = adminProcedure
   .route({
@@ -102,6 +158,7 @@ const videoMeta = adminProcedure
   });
 
 const create = adminProcedure
+  .errors(postErrors)
   .route({
     method: "POST",
     path: "/admin/posts",
@@ -111,11 +168,15 @@ const create = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
-  .handler(({ context, input }) =>
-    input?.data
-      ? PostService.createDraft(context, input.data)
-      : PostService.createEmptyPost(context),
-  );
+  .handler(async ({ context, input, errors }) => {
+    if (!input?.data) return PostService.createEmptyPost(context);
+    const data = await PostMarkdownService.resolveMarkdownContent(
+      context,
+      input.data,
+    );
+    if (data.error) throwMarkdownContentError(data.error, errors);
+    return PostService.createDraft(context, data.data);
+  });
 
 const update = adminProcedure
   .errors(postErrors)
@@ -126,19 +187,28 @@ const update = adminProcedure
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
-  .handler(({ context, input, errors }) =>
-    unwrapResult(PostService.updatePost(context, input), {
-      POST_NOT_FOUND: () => {
-        throw errors.POST_NOT_FOUND();
+  .handler(async ({ context, input, errors }) => {
+    const data = await PostMarkdownService.resolveMarkdownContent(
+      context,
+      input.data,
+      input.id,
+    );
+    if (data.error) throwMarkdownContentError(data.error, errors);
+    return unwrapResult(
+      PostService.updatePost(context, { ...input, data: data.data }),
+      {
+        POST_NOT_FOUND: () => {
+          throw errors.POST_NOT_FOUND();
+        },
+        MEDIA_NOT_FOUND: () => {
+          throw errors.MEDIA_NOT_FOUND();
+        },
+        CATEGORY_NOT_FOUND: () => {
+          throw errors.CATEGORY_NOT_FOUND();
+        },
       },
-      MEDIA_NOT_FOUND: () => {
-        throw errors.MEDIA_NOT_FOUND();
-      },
-      CATEGORY_NOT_FOUND: () => {
-        throw errors.CATEGORY_NOT_FOUND();
-      },
-    }),
-  );
+    );
+  });
 
 const remove = adminProcedure
   .errors(postErrors)
