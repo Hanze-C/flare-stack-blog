@@ -1,101 +1,67 @@
 ---
 name: flare-stack-blog
-description: Operate a running Flare Stack Blog as Admin over its HTTP API.
-disable-model-invocation: true
+description: Manage a Flare Stack Blog over its HTTP API with an Admin API Key. Use to connect a blog and its key, and for any change to or question about its posts, categories, tags, media and publishing.
 ---
 
-# Flare Stack Blog
+# Manage a Flare Stack Blog
 
-Operate a deployed Flare Stack Blog instance as an Admin over its HTTP API. The OpenAPI specification (`/api/spec.json`) defines available endpoints, schemas, and parameters; this guide covers credentials, common authoring workflows, and domain rules.
+This Skill serves any Flare Stack Blog. Each blog describes itself at run time: its OpenAPI document gives every path, parameter, field, error and the API-wide rules. This Skill holds only what the document cannot: how to connect, the order of work, and the rules. Take every shape from the live document, never from memory or from another blog.
 
-## 1. Credentials
+The human's instruction authorizes the work. Ask only for intent that is missing or ambiguous (which Post, what change, draft or published); decide wording yourself when it is delegated. When the target already matches the request, write nothing.
 
-Configuration file path: `$XDG_CONFIG_HOME/flare-stack-blog/config.toml` (or `~/.config/flare-stack-blog/config.toml` if `XDG_CONFIG_HOME` is unset).
+## 1. Connect
+
+The blog and its key live in `$XDG_CONFIG_HOME/flare-stack-blog/config.toml` (`~/.config/flare-stack-blog/config.toml` when `XDG_CONFIG_HOME` is unset):
 
 ```toml
-url = "https://example.com"
+url = "https://blog.example.com"
 api_key = "fsb_..."
 ```
 
-- `url`: Site origin (`scheme://host`), without a path or trailing slash.
-- `api_key`: Admin API Key starting with `fsb_`.
+`url` is the site origin, `https://<host>` with no path or trailing slash; `api_key` is an Admin API Key. When the file is missing, either value is empty, a stored key answers 401, or the human gives a new blog or key: ask the human for the origin and an API Key (an Admin issues one in the blog's admin settings; it is shown once), check it with one read-only admin call from the document, then write the file with mode `0600`, creating its directory. Done when one origin and a key that answers 200 are in hand.
 
-If the file is missing or either field is empty, prompt the user for the site origin and Admin API Key, create the parent directory if needed, write the file with `0600` permissions, and proceed. If the user provides a new origin or key later, update the file.
+Keep every file a task makes (headers, request and response bodies, Markdown drafts) in one working directory of its own, created private at the task's start: `mktemp -d` on macOS and Linux; on Windows, a new folder under `$env:TEMP` with inherited permissions removed and only the current user allowed. When the task ends, succeeded or not, delete that directory. The config file stays where it is.
 
-**Security**:
-- The key appears only in the `x-api-key` HTTP header. Keep it out of URLs, argv, logs, and user-facing text.
+The key goes only in the `x-api-key` header, and only to the configured origin. Keep it out of command arguments, URLs, logs, saved responses and replies: with curl, write the headers (the key and a browser User-Agent) to a file in the working directory and pass `-H @<file>`; send bodies with `--data-binary @<file>`. Stop on a redirect to another origin rather than follow it with the key. In Windows PowerShell, `curl` may be an alias of `Invoke-WebRequest`: call `curl.exe`.
 
-Do not proceed with API calls until both fields are resolved from the configuration file.
+## 2. Discover
 
-## 2. Contract
+At the start of every task, GET `<origin>/api/spec.json` with the same headers and follow it. Read its `info.description` first: it states authentication, the browser User-Agent requirement, drafts and publishing, the save guard and Edit Conflict, and Markdown content. Done when you hold the document and, for what you are about to touch, have read its operations and schemas, following every `$ref`.
 
-At the start of each session, fetch `{url}/api/spec.json` to inspect available operations:
+When an entity has both public and admin operations, use the admin ones.
 
-1. **URL Construction**: Resolve target URLs using the base URL from the `servers` array combined with each route's `path`.
-2. **Authentication**: Attach the `x-api-key` header to every request, even if an operation definition omits an explicit security declaration.
-3. **Client fingerprint**: Send a browser `User-Agent` on every request, including `/api/spec.json`. A `403` whose body is Cloudflare Error 1010 / `browser_signature_banned` is the WAF blocking the HTTP client — retry with a browser `User-Agent` and the same API key.
-4. **Schema Compliance**: Adhere strictly to each operation's HTTP method, path/query parameters, request body schema, and description.
-5. **Admin Preference**: When both public and admin endpoints exist for the same entity (e.g. posts, tags, categories), always use the admin endpoint.
+## 3. Change the draft
 
-All callable operations are defined within the runtime OpenAPI specification. The bundled client already applies (1)–(3).
+Every save changes the draft; readers see nothing until it is published.
 
-## 3. Common operations
+- **Resolve the target** by id, or by a search on the title or slug; several matches means ask which.
+- **Read right before each write.** The Admin edits the same Posts in the browser, which autosaves as they type. Read the Post immediately before each save, build the save on what you just read, and send that read's `saveToken`. A Post saved in between is then kept and the save answers 409 instead of overwriting it. See [Conflicts](#conflicts).
+- **Send only what changes.** Leave out every field you are not changing.
+- **Content** is Markdown, read and written as the document's description states. Keep the images, videos and links you were not asked to change, and read the Post back after writing.
+- A 400 names each problem: correct those values and resend; make no other change to get past it.
 
-Scripts live in `scripts/` beside this file. They read the config file and print `{ "http", "body" }`.
+Make one human-intended change at a time, carried through to its end state, unless the human asked for several together.
 
-```bash
-python scripts/fsb.py posts list
-python scripts/fsb.py posts new
-python scripts/fsb.py posts save ID \
-  --title "..." --summary "..." --md draft.md \
-  --category Cloudflare --tags "Cloudflare,Cloudflare Workers"
-python scripts/fsb.py posts get ID --md
-python scripts/fsb.py media upload photo.png
-python scripts/fsb.py posts publish ID
-```
+## 4. Publish and verify
 
-`posts new` returns an existing empty **Draft Post** when one exists; fill that id. `fsb.py -h` lists the rest (tags, categories, unpublish, raw `request`). Use `request` only after reading the spec.
+Follow the human's intent: publish when they ask to publish, keep the draft when they ask for a draft, and ask when it is unclear. Publishing takes the whole draft, so a change someone else left unpublished goes live with yours: when the draft holds changes you did not make, name them to the human first. Publish with the `saveToken` of the read the human approved, so what goes live is that draft.
 
-**Content (`contentJson`)**: TipTap / ProseMirror JSON, not Markdown and not a raw HTML string. Write a Markdown subset and encode it:
+After publishing, fetch the Post's public page and confirm the change shows. Public pages are cached: retry a few times over about 20 seconds before calling it failed.
 
-```bash
-python scripts/tiptap.py encode draft.md
-```
+To take a Post off the public site for now, unpublish it; the draft stays. Delete only when the human explicitly asks to delete.
 
-`posts save --md` does that encoding. `posts get ID --md` dumps the draft. PATCH `contentJson`; GET also returns `publicSnapshotContentJson` (the live snapshot, including generated code highlighting) — that is not the write field.
+## Conflicts
 
-Markdown subset: headings 2–4, paragraphs, lists, quotes, fences, links, images, tables, `**bold**` `*italic*` `~~strike~~` `` `code` ``, `$inline math$`, and block math with `$$` alone on the lines before and after the LaTeX. Run `tiptap.py -h` for the exact surface.
+A 409 Edit Conflict means the Post was saved after you read it, and nothing was written. Never retry without the `saveToken`, and never resend the same one.
 
-## 4. Domain Rules & Invariants
+1. Read the Post again.
+2. Compare it with the read your write was built on. When only your own earlier writes differ, re-apply your change to the new read and send its `saveToken`.
+3. When someone else changed what you are changing, or you cannot tell, tell the human what changed under you and ask before writing. The Admin may still be typing: after a second 409 in a row, stop and ask.
 
-- **Publishing Intent**: Saving or updating a **Post** modifies the draft; a post only appears on the public site after being published to create or update its **Public Content Snapshot**. Follow the user's intent directly—publish if they ask to publish, keep as a draft if they ask for a draft, and proactively ask for clarification if their intent is unclear.
-- **Media Protection**: Media referenced by any post cannot be deleted.
-- **Execution & Reporting**: Quote error response bodies verbatim when an operation fails. Conclude each requested action with an HTTP status summary or a clear error report, using the domain terms below.
+## Errors
 
-## Domain Glossary
+Quote the error body when an operation fails. 401: run the connect flow again. 403 with Cloudflare error 1010: the request lacked a browser User-Agent. After a timeout or a 5xx, re-read before retrying: the write may have landed.
 
-**Post.** The editable content entity. Saving updates the draft; publication updates the public site.
+## Report
 
-**Draft Post.** A **Post** without a **Public Content Snapshot**. Editable in admin workflows; never visible on the public site.
-
-**Published Post.** A **Post** with an active **Public Content Snapshot**. Immediately visible on the public site, in public listings, and in search indexing. Publication is immediate.
-
-**Public Content Snapshot.** The published state read by readers and public caches. Publishing replaces it; unpublishing discards it.
-
-**Post Revision.** A historical snapshot created automatically upon publish and immediately prior to restoring an earlier revision. Saving or autosaving a draft does not create a revision. Restoring a revision updates the draft post and leaves the live snapshot untouched until published again.
-
-**Category.** An exclusive, non-hierarchical classification for **Posts** (a post has at most one category).
-
-**Tag.** A reusable, non-hierarchical label grouping multiple **Posts**. Managed independently and associated with posts.
-
-**Comment.** User-authored plain text attached to a post, visible immediately upon creation. Deletion retains a placeholder in the **Comment Thread** when replies exist.
-
-**Muted User.** A user blocked by an Admin from creating comments. Remains a registered user with profile and friend-link capabilities. Admins cannot be muted.
-
-**Friend Link.** An external site recommendation displayed on the public friend-links page once approved by an Admin.
-
-**Media.** Uploaded image assets tracked by the CMS. Cannot be deleted while referenced by any post.
-
-**System Config.** CMS-wide operational settings, including **Site Config** (branding and presentation) and notification settings (email, webhook endpoint).
-
-**API Key.** A secret credential issued by an Admin granting programmatic access over the HTTP API. Issue and revoke keys in the admin dashboard.
+Report the target, each change as before → after, where it stands (draft, published, unpublished), the HTTP status of each write, and the public URLs you checked.
