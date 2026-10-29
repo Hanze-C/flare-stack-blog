@@ -44,29 +44,31 @@ function isUntyped(schema: Schema | undefined): boolean {
   );
 }
 
-const typedPrefixes = [
-  "/admin/posts",
-  "/admin/tags",
-  "/admin/categories",
-  "/admin/media",
-];
+/** A schema no value satisfies, which is what an unconvertible zod type becomes. */
+function isNeverValid(schema: unknown): boolean {
+  return JSON.stringify(schema) === JSON.stringify({ not: {} });
+}
 
-describe("OpenAPI responses of the post, tag, category and media operations", () => {
-  const typed = operations.filter(({ path }) =>
-    typedPrefixes.some(
-      (prefix) => path === prefix || path.startsWith(`${prefix}/`),
-    ),
-  );
+/** Every property of a request body, walked into objects, as `name: schema`. */
+function bodyProperties(
+  schema: Schema | undefined,
+  at = "",
+): Array<[string, Schema]> {
+  const properties = (schema?.properties ?? {}) as Record<string, Schema>;
+  return Object.entries(properties).flatMap(([name, property]) => [
+    [`${at}${name}`, property] as [string, Schema],
+    ...bodyProperties(property, `${at}${name}.`),
+  ]);
+}
 
-  it("covers the operations of all four features", () => {
-    for (const prefix of typedPrefixes) {
-      expect(
-        typed.filter(({ path }) => path.startsWith(prefix)).length,
-      ).toBeGreaterThan(0);
-    }
+describe("OpenAPI responses of the admin operations", () => {
+  const admin = operations.filter(({ path }) => path.startsWith("/admin/"));
+
+  it("finds the admin operations", () => {
+    expect(admin.length).toBeGreaterThan(50);
   });
 
-  it.each(typed.map(({ name, operation }) => [name, operation] as const))(
+  it.each(admin.map(({ name, operation }) => [name, operation] as const))(
     "%s declares what its 200 response carries",
     (_name, operation) => {
       const ok = operation.responses?.["200"];
@@ -80,6 +82,27 @@ describe("OpenAPI responses of the post, tag, category and media operations", ()
       }
     },
   );
+});
+
+describe("OpenAPI inputs", () => {
+  it("has no parameter or body field that no value satisfies", () => {
+    const neverValid = operations.flatMap(({ name, operation }) => {
+      const body = (
+        operation as {
+          requestBody?: { content?: Record<string, { schema?: Schema }> };
+        }
+      ).requestBody?.content?.["application/json"]?.schema;
+      return [
+        ...(operation.parameters ?? [])
+          .filter((parameter) => isNeverValid(parameter.schema))
+          .map((parameter) => `${name} ?${parameter.name}`),
+        ...bodyProperties(body)
+          .filter(([, schema]) => isNeverValid(schema))
+          .map(([field]) => `${name} body.${field}`),
+      ];
+    });
+    expect(neverValid).toEqual([]);
+  });
 });
 
 describe("status filters", () => {
