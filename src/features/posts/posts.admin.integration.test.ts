@@ -475,7 +475,7 @@ describe("Admin posts list for external editors", () => {
 
     expect(page.items).toHaveLength(50);
     expect(page.total).toBe(55);
-    expect(page.statusCounts).toEqual({ draft: 55, published: 0 });
+    expect(page.statusCounts).toMatchObject({ draft: 55, published: 0 });
   });
 
   it("supports id sorting in both directions", async () => {
@@ -533,6 +533,6 @@ describe("Admin posts list for external editors", () => {
     expect(byTag.items.map((item) => item.id)).toEqual([tagged.id]);
     expect(uncategorized.items.map((item) => item.id)).toEqual([tagged.id]);
     expect(both.total).toBe(0);
-    expect(both.statusCounts).toEqual({ draft: 0, published: 0 });
+    expect(both.statusCounts).toMatchObject({ draft: 0, published: 0 });
   });
 });

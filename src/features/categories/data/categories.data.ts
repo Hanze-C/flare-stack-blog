@@ -117,8 +117,24 @@ export async function deleteCategory(db: DB, id: number) {
   await db.batch([
     db
       .update(PostsTable)
-      .set({ categoryId: null, updatedAt: sql`${PostsTable.updatedAt}` })
+      .set({
+        categoryId: null,
+        // Their Unpublished Changes are decided again without the Category.
+        draftFingerprint: null,
+        publishedFingerprint: null,
+        updatedAt: sql`${PostsTable.updatedAt}`,
+      })
       .where(eq(PostsTable.categoryId, id)),
+    // A Post that shows the Category publicly loses it there too, which
+    // changes what it was published with, even if its draft has moved on.
+    db
+      .update(PostsTable)
+      .set({
+        draftFingerprint: null,
+        publishedFingerprint: null,
+        updatedAt: sql`${PostsTable.updatedAt}`,
+      })
+      .where(eq(PostsTable.publicCategoryId, id)),
     db.delete(CategoriesTable).where(eq(CategoriesTable.id, id)),
   ]);
 }

@@ -126,7 +126,7 @@ describe("Admin taxonomy scopes", () => {
       expect(
         current.items.map((item) => item.id).sort((a, b) => a - b),
       ).toEqual([draft.id, shared.id].sort((a, b) => a - b));
-      expect(current.statusCounts).toEqual({ draft: 1, published: 1 });
+      expect(current.statusCounts).toMatchObject({ draft: 1, published: 1 });
       expect(current.total).toBe(2);
       const published = await Posts.listAdminPostsPage(context, {
         taxonomy: { kind, id, scope: "public" },
@@ -134,7 +134,7 @@ describe("Admin taxonomy scopes", () => {
       expect(
         published.items.map((item) => item.id).sort((a, b) => a - b),
       ).toEqual([moved.id, shared.id].sort((a, b) => a - b));
-      expect(published.statusCounts).toEqual({ draft: 0, published: 2 });
+      expect(published.statusCounts).toMatchObject({ draft: 0, published: 2 });
       expect(published.total).toBe(2);
       expect(
         await Posts.getPostsCount(context, {
@@ -279,7 +279,7 @@ describe("Admin post list category and tag filters", () => {
       categoryId: notes.id,
     });
     expect(ids(inNotes)).toEqual(sorted(rustNote.id, goNote.id));
-    expect(inNotes.statusCounts).toEqual({ draft: 1, published: 1 });
+    expect(inNotes.statusCounts).toMatchObject({ draft: 1, published: 1 });
     expect(inNotes.total).toBe(2);
 
     const rustPosts = await Posts.listAdminPostsPage(context, {
@@ -288,7 +288,7 @@ describe("Admin post list category and tag filters", () => {
     expect(ids(rustPosts)).toEqual(
       sorted(rustNote.id, rustEssay.id, looseRust.id),
     );
-    expect(rustPosts.statusCounts).toEqual({ draft: 2, published: 1 });
+    expect(rustPosts.statusCounts).toMatchObject({ draft: 2, published: 1 });
 
     const rustNotes = await Posts.listAdminPostsPage(context, {
       categoryId: notes.id,
@@ -300,7 +300,10 @@ describe("Admin post list category and tag filters", () => {
       uncategorized: true,
     });
     expect(ids(uncategorized)).toEqual(sorted(looseRust.id, loose.id));
-    expect(uncategorized.statusCounts).toEqual({ draft: 1, published: 1 });
+    expect(uncategorized.statusCounts).toMatchObject({
+      draft: 1,
+      published: 1,
+    });
 
     const draftUncategorizedGo = await Posts.listAdminPostsPage(context, {
       uncategorized: true,
@@ -315,14 +318,17 @@ describe("Admin post list category and tag filters", () => {
       search: "essay",
     });
     expect(ids(searched)).toEqual([rustEssay.id]);
-    expect(searched.statusCounts).toEqual({ draft: 1, published: 0 });
+    expect(searched.statusCounts).toMatchObject({ draft: 1, published: 0 });
 
     const publishedEssays = await Posts.listAdminPostsPage(context, {
       categoryId: essays.id,
       status: "published",
     });
     expect(publishedEssays.items).toEqual([]);
-    expect(publishedEssays.statusCounts).toEqual({ draft: 1, published: 0 });
+    expect(publishedEssays.statusCounts).toMatchObject({
+      draft: 1,
+      published: 0,
+    });
     expect(
       await Posts.getPostsCount(context, {
         categoryId: notes.id,

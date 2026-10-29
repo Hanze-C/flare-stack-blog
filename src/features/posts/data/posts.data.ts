@@ -23,6 +23,7 @@ import {
   adminPostTextColumns,
   buildPostOrderByClause,
   buildPostWhereClause,
+  unpublishedChangesSql,
 } from "@/features/posts/data/helper";
 import {
   clearPublicTags,
@@ -117,6 +118,7 @@ export async function getPosts(
       ...adminPostTextColumns(filters.taxonomy),
       publicSlug: PostsTable.publicSlug,
       status: PostsTable.status,
+      hasUnpublishedChanges: unpublishedChangesSql().mapWith(Boolean),
       publishedAt: publicScope
         ? snapshotPublishedAtDate
         : PostsTable.publishedAt,
@@ -157,16 +159,22 @@ export async function getPostsCount(db: DB, options: PostFilters = {}) {
 /** Status facets use the same search predicate as the paginated Admin list. */
 export async function getAdminPostStatusCounts(
   db: DB,
-  options: Omit<PostFilters, "status"> = {},
+  options: Omit<PostFilters, "status" | "hasUnpublishedChanges"> = {},
 ) {
   const rows = await db
-    .select({ status: PostsTable.status, count: count() })
+    .select({
+      status: PostsTable.status,
+      count: count(),
+      unpublishedChanges: sql<number>`coalesce(sum(${unpublishedChangesSql()}), 0)`,
+    })
     .from(PostsTable)
     .where(buildPostWhereClause(options))
     .groupBy(PostsTable.status);
+  const published = rows.find((row) => row.status === "published");
   return {
     draft: rows.find((row) => row.status === "draft")?.count ?? 0,
-    published: rows.find((row) => row.status === "published")?.count ?? 0,
+    published: published?.count ?? 0,
+    unpublishedChanges: Number(published?.unpublishedChanges ?? 0),
   };
 }
 
@@ -491,6 +499,21 @@ async function findWrittenPost(db: DB, id: number, saveToken: string) {
   return post && { ...post, saveToken };
 }
 
+const FINGERPRINTED_FIELDS = [
+  "title",
+  "summary",
+  "slug",
+  "contentJson",
+  "publishedAt",
+  "coverMediaId",
+  "categoryId",
+] as const;
+
+/** Whether a write touches a field Unpublished Changes are decided by. */
+function changesFingerprintedFields(data: object) {
+  return FINGERPRINTED_FIELDS.some((field) => field in data);
+}
+
 /**
  * Returns null when no Post was written: it does not exist, or it no longer
  * carries the stated `saveToken`.
@@ -499,17 +522,97 @@ export async function updatePost(
   db: DB,
   id: number,
   data: Partial<
-    Omit<typeof PostsTable.$inferInsert, "id" | "createdAt" | "saveToken">
+    Omit<
+      typeof PostsTable.$inferInsert,
+      | "id"
+      | "createdAt"
+      | "saveToken"
+      | "draftFingerprint"
+      | "publishedFingerprint"
+    >
   >,
   options: { saveToken?: string } = {},
 ) {
   const [written] = await db
     .update(PostsTable)
-    .set(data)
+    .set({
+      ...data,
+      ...(changesFingerprintedFields(data) && { draftFingerprint: null }),
+    })
     .where(postToWrite(id, options.saveToken))
     .returning({ saveToken: PostsTable.saveToken });
   if (!written) return null;
   return await findWrittenPost(db, id, written.saveToken);
+}
+
+const fingerprintMissing = and(
+  eq(PostsTable.status, "published"),
+  or(
+    sql`${PostsTable.draftFingerprint} IS NULL`,
+    sql`${PostsTable.publishedFingerprint} IS NULL`,
+  ),
+);
+
+/** Whether a Published Post has a fingerprint not computed yet. */
+export async function hasPostsWithoutFingerprints(db: DB) {
+  const [row] = await db
+    .select({ id: PostsTable.id })
+    .from(PostsTable)
+    .where(fingerprintMissing)
+    .limit(1);
+  return row !== undefined;
+}
+
+/** Published Posts with a fingerprint not computed yet, by ascending id. */
+export async function findPostsWithoutFingerprints(
+  db: DB,
+  options: { postId?: number; afterId?: number; limit: number },
+) {
+  return await db.query.PostsTable.findMany({
+    where: and(
+      fingerprintMissing,
+      options.postId === undefined
+        ? undefined
+        : eq(PostsTable.id, options.postId),
+      options.afterId === undefined
+        ? undefined
+        : gt(PostsTable.id, options.afterId),
+    ),
+    orderBy: asc(PostsTable.id),
+    limit: options.limit,
+    with: { postTags: true },
+  });
+}
+
+/**
+ * Stores computed fingerprints, each only where the column is still null and
+ * only while the Post carries the token it was computed from. Leaves the
+ * token and updatedAt as they are: computing a fingerprint is not a save.
+ */
+export async function writeFingerprints(
+  db: DB,
+  rows: Array<{
+    id: number;
+    saveToken: string;
+    draftFingerprint: string | null;
+    publishedFingerprint: string | null;
+  }>,
+) {
+  const [head, ...rest] = rows.map((row) =>
+    db
+      .update(PostsTable)
+      .set({
+        draftFingerprint: sql`coalesce(${PostsTable.draftFingerprint}, ${row.draftFingerprint})`,
+        publishedFingerprint: sql`coalesce(${PostsTable.publishedFingerprint}, ${row.publishedFingerprint})`,
+        saveToken: sql`${PostsTable.saveToken}`,
+        updatedAt: sql`${PostsTable.updatedAt}`,
+      })
+      .where(
+        and(eq(PostsTable.id, row.id), eq(PostsTable.saveToken, row.saveToken)),
+      ),
+  );
+  if (!head) return;
+  await db.batch([head, ...rest]);
 }
 
 export async function findPostSaveToken(db: DB, id: number) {
@@ -523,7 +626,7 @@ export async function findPostSaveToken(db: DB, id: number) {
 export async function touchPostUpdatedAt(db: DB, id: number) {
   const [post] = await db
     .update(PostsTable)
-    .set({ updatedAt: new Date() })
+    .set({ updatedAt: new Date(), draftFingerprint: null })
     .where(eq(PostsTable.id, id))
     .returning({
       publicSlug: PostsTable.publicSlug,
@@ -549,6 +652,11 @@ export async function writePublicSnapshot(
       Pick<typeof PostsTable.$inferInsert, "publishedAt" | "contentJson">
     >;
     saveToken?: string;
+    /**
+     * Fingerprint of the draft as read, which the snapshot was built from.
+     * `readSaveToken` is the token that read carried.
+     */
+    fingerprint?: { value: string; readSaveToken: string };
   } = {},
 ) {
   const draft = options.draft ?? {};
@@ -560,6 +668,12 @@ export async function writePublicSnapshot(
       publicSnapshotJson: snapshot,
       publicSlug: snapshot.slug,
       status: "published",
+      ...(options.fingerprint && {
+        publishedFingerprint: options.fingerprint.value,
+        // The draft is that read only if nothing saved it since; otherwise
+        // leave it to be computed again.
+        draftFingerprint: sql`CASE WHEN ${PostsTable.saveToken} = ${options.fingerprint.readSaveToken} THEN ${options.fingerprint.value} END`,
+      }),
       // Publishing alone leaves updatedAt; settling a draft field moves it.
       ...(Object.keys(draft).length === 0 && {
         updatedAt: sql`${PostsTable.updatedAt}`,
@@ -606,6 +720,7 @@ export async function clearPublicSnapshot(db: DB, id: number) {
     .set({
       publicSnapshotJson: null,
       publicSlug: null,
+      publishedFingerprint: null,
       status: "draft",
       updatedAt: sql`${PostsTable.updatedAt}`,
       publicCategoryId: null,

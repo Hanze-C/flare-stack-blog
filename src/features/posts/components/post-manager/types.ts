@@ -9,6 +9,8 @@ export type AdminPostListItem = Omit<
   | "categoryId"
   | "publicCategoryId"
   | "saveToken"
+  | "draftFingerprint"
+  | "publishedFingerprint"
 >;
 
 /** Status filter options for posts list */

@@ -108,7 +108,11 @@ export async function pointDraftImagesAt(
     statements.push(
       db
         .update(PostsTable)
-        .set({ contentJson, updatedAt: sql`${PostsTable.updatedAt}` })
+        .set({
+          contentJson,
+          draftFingerprint: null,
+          updatedAt: sql`${PostsTable.updatedAt}`,
+        })
         .where(eq(PostsTable.id, row.id)),
     );
   }

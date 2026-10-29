@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import {
   type PostRevisionReason,
@@ -76,6 +76,32 @@ export async function findLatestPostRevision(
   });
 }
 
+/**
+ * The latest publish revision of each Post, which holds the draft as it was
+ * published. A Post that was never published through a revision has none.
+ */
+export async function findLatestPublishRevisions(
+  db: DB,
+  postIds: Array<number>,
+) {
+  if (postIds.length === 0) return [];
+  return await db.query.PostRevisionsTable.findMany({
+    where: inArray(
+      PostRevisionsTable.id,
+      db
+        .select({ id: max(PostRevisionsTable.id) })
+        .from(PostRevisionsTable)
+        .where(
+          and(
+            eq(PostRevisionsTable.reason, "publish"),
+            inArray(PostRevisionsTable.postId, postIds),
+          ),
+        )
+        .groupBy(PostRevisionsTable.postId),
+    ),
+  });
+}
+
 export async function trimAutoRevisions(
   db: DB,
   postId: number,
@@ -106,6 +132,13 @@ export async function trimAutoRevisions(
     .where(inArray(PostRevisionsTable.id, staleRevisionIds));
 }
 
+/**
+ * Writes `snapshot` into the draft after saving `backupRevision`, in one
+ * batch. With `saveToken`, nothing is written unless the Post still carries
+ * it: the update is conditional, and the other statements apply only once it
+ * has replaced the token. A Tag or Category deleted since the snapshot was
+ * taken is left out. Returns null when no Post was written.
+ */
 export async function restorePostSnapshot(
   db: DB,
   data: {
@@ -117,21 +150,15 @@ export async function restorePostSnapshot(
       snapshotHash: string;
       restoredFromRevisionId?: number | null;
     };
+    saveToken?: string;
   },
 ) {
   const tagIds = normalizeTagIds(data.snapshot.tagIds);
   // Set here rather than by $onUpdate so the restore hands out its own token,
   // even if another write lands before the Post is read back.
   const saveToken = newSaveToken();
+  const restored = sql`EXISTS (SELECT 1 FROM posts WHERE id = ${data.postId} AND save_token = ${saveToken})`;
   const batchQueries: [BatchItem<"sqlite">, ...Array<BatchItem<"sqlite">>] = [
-    db.insert(PostRevisionsTable).values({
-      postId: data.postId,
-      reason: data.backupRevision.reason,
-      snapshotJson: data.backupRevision.snapshotJson,
-      snapshotHash: data.backupRevision.snapshotHash,
-      restoredFromRevisionId:
-        data.backupRevision.restoredFromRevisionId ?? null,
-    }),
     db
       .update(PostsTable)
       .set({
@@ -143,25 +170,48 @@ export async function restorePostSnapshot(
           : null,
         contentJson: data.snapshot.contentJson,
         coverMediaId: data.snapshot.coverMediaId ?? null,
-        categoryId: data.snapshot.categoryId ?? null,
+        categoryId:
+          data.snapshot.categoryId === null
+            ? null
+            : sql`(SELECT id FROM categories WHERE id = ${data.snapshot.categoryId})`,
+        draftFingerprint: null,
         saveToken,
       })
-      .where(eq(PostsTable.id, data.postId)),
-    db.delete(PostTagsTable).where(eq(PostTagsTable.postId, data.postId)),
+      .where(
+        and(
+          eq(PostsTable.id, data.postId),
+          data.saveToken === undefined
+            ? undefined
+            : eq(PostsTable.saveToken, data.saveToken),
+        ),
+      )
+      .returning({ id: PostsTable.id }),
+    // insert ... select, so the backup is written only once the Post has been
+    // updated. Its columns, in order: id, post_id, reason, snapshot_json,
+    // snapshot_hash, restored_from_revision_id, created_at.
+    db
+      .insert(PostRevisionsTable)
+      .select(
+        sql`SELECT NULL, ${data.postId}, ${data.backupRevision.reason}, ${JSON.stringify(data.backupRevision.snapshotJson)}, ${data.backupRevision.snapshotHash}, ${data.backupRevision.restoredFromRevisionId ?? null}, unixepoch() WHERE ${restored}`,
+      ),
+    db
+      .delete(PostTagsTable)
+      .where(and(eq(PostTagsTable.postId, data.postId), restored)),
   ];
 
   if (tagIds.length > 0) {
     batchQueries.push(
-      db.insert(PostTagsTable).values(
-        tagIds.map((tagId) => ({
-          postId: data.postId,
-          tagId,
-        })),
+      db.insert(PostTagsTable).select(
+        sql`SELECT ${data.postId}, id FROM tags WHERE id IN (${sql.join(
+          tagIds.map((tagId) => sql`${tagId}`),
+          sql`, `,
+        )}) AND ${restored}`,
       ),
     );
   }
 
-  await db.batch(batchQueries);
+  const [updated] = await db.batch(batchQueries);
+  if (updated.length === 0) return null;
   const post = await findPostById(db, data.postId);
   return post && { ...post, saveToken };
 }

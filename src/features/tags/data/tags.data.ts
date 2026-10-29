@@ -109,7 +109,23 @@ export async function updateTag(
  * Delete a tag
  */
 export async function deleteTag(db: DB, id: number) {
-  await db.delete(TagsTable).where(eq(TagsTable.id, id));
+  // The Tag leaves the Posts that carry it, in the draft or publicly, so their
+  // Unpublished Changes are decided again without it. Touching them replaces their saveToken like
+  // any other write; updatedAt stays.
+  await db.batch([
+    db
+      .update(PostsTable)
+      .set({
+        draftFingerprint: null,
+        publishedFingerprint: null,
+        updatedAt: sql`${PostsTable.updatedAt}`,
+      })
+      .where(
+        sql`${PostsTable.id} IN (SELECT ${PostTagsTable.postId} FROM ${PostTagsTable} WHERE ${PostTagsTable.tagId} = ${id})
+          OR ${PostsTable.id} IN (SELECT ${PostPublicTagsTable.postId} FROM ${PostPublicTagsTable} WHERE ${PostPublicTagsTable.tagId} = ${id})`,
+      ),
+    db.delete(TagsTable).where(eq(TagsTable.id, id)),
+  ]);
 }
 
 /**
