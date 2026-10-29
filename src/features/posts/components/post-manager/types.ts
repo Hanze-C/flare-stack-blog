@@ -3,7 +3,11 @@ import type { Post } from "@/lib/db/schema";
 /** Post fields used by admin list rows. */
 export type AdminPostListItem = Omit<
   Post,
-  "contentJson" | "publicSnapshotJson" | "coverMediaId" | "categoryId"
+  | "contentJson"
+  | "publicSnapshotJson"
+  | "coverMediaId"
+  | "categoryId"
+  | "saveToken"
 >;
 
 /** Status filter options for posts list */

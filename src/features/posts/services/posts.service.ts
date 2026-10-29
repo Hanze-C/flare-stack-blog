@@ -100,6 +100,15 @@ async function buildPublicSnapshot(
   };
 }
 
+/** A conditional write matched nothing: tell a missing Post from a newer save. */
+async function editConflictOrNotFound(db: DB, id: number) {
+  const saveToken = await PostRepo.findPostSaveToken(db, id);
+  if (saveToken === null) {
+    return err({ reason: "POST_NOT_FOUND" });
+  }
+  return err({ reason: "EDIT_CONFLICT", saveToken });
+}
+
 async function createPublishRevision(
   context: DbContext,
   post: NonNullable<Awaited<ReturnType<typeof PostRepo.findPostById>>>,
@@ -288,14 +297,14 @@ export async function createDraft(context: DbContext, data: CreatePostData) {
 
   await syncPostMedia(context.db, post);
 
-  return { id: post.id };
+  return { id: post.id, saveToken: post.saveToken };
 }
 
 export async function createEmptyPost(context: DbContext) {
   try {
     const existing = await PostRepo.findReusableEmptyDraft(context.db);
     if (existing) {
-      return { id: existing.id };
+      return { id: existing.id, saveToken: existing.saveToken };
     }
   } catch (error) {
     console.warn(
@@ -313,7 +322,7 @@ export async function createEmptyPost(context: DbContext) {
     contentJson: null,
   });
 
-  return { id: post.id };
+  return { id: post.id, saveToken: post.saveToken };
 }
 
 export async function listAdminPostsPage(
@@ -446,9 +455,10 @@ export async function updatePost(
     context.db,
     data.id,
     updateData,
+    { saveToken: data.saveToken },
   );
   if (!updatedPost) {
-    return err({ reason: "POST_NOT_FOUND" });
+    return editConflictOrNotFound(context.db, data.id);
   }
 
   if (
@@ -496,41 +506,35 @@ export async function publishPost(
   if (!post) {
     return err({ reason: "POST_NOT_FOUND" });
   }
+  if (data.saveToken !== undefined && data.saveToken !== post.saveToken) {
+    return err({ reason: "EDIT_CONFLICT", saveToken: post.saveToken });
+  }
 
-  let publishedPost = post;
-  if (!publishedPost.publishedAt) {
-    const now = new Date();
-    const updated = await PostRepo.updatePost(context.db, post.id, {
-      publishedAt: now,
-    });
-    if (!updated) {
-      return err({ reason: "POST_NOT_FOUND" });
-    }
-    publishedPost = updated;
-  } else if (isFuturePublishDate(publishedPost.publishedAt.toISOString())) {
+  // Draft fields publishing settles. They are written together with the
+  // snapshot below, so a refused publish leaves the draft untouched.
+  const draft: { publishedAt?: Date; contentJson?: typeof post.contentJson } =
+    {};
+  if (!post.publishedAt) {
+    draft.publishedAt = new Date();
+  } else if (isFuturePublishDate(post.publishedAt.toISOString())) {
     return err({ reason: "PUBLISHED_AT_IN_FUTURE" });
   }
 
-  const slugTaken = await PostRepo.publicSlugExists(
-    context.db,
-    publishedPost.slug,
-    { excludeId: publishedPost.id },
-  );
+  const slugTaken = await PostRepo.publicSlugExists(context.db, post.slug, {
+    excludeId: post.id,
+  });
   if (slugTaken) {
     return err({ reason: "PUBLIC_SLUG_TAKEN" });
   }
 
-  const normalizedContent = normalizePostContent(publishedPost.contentJson);
-  if (normalizedContent) {
-    const updated = await PostRepo.updatePost(context.db, publishedPost.id, {
-      contentJson: normalizedContent,
-    });
-    if (updated) {
-      publishedPost = updated;
-    }
+  const normalizedContent = normalizePostContent(post.contentJson);
+  if (
+    normalizedContent &&
+    JSON.stringify(normalizedContent) !== JSON.stringify(post.contentJson)
+  ) {
+    draft.contentJson = normalizedContent;
   }
-
-  await createPublishRevision(context, publishedPost);
+  const publishedPost = { ...post, ...draft };
 
   const { highlightSnapshotContent } =
     await import("@/features/posts/utils/highlight-code-blocks");
@@ -544,14 +548,18 @@ export async function publishPost(
     snapshotContent,
   );
   const previousPublicSlug = publishedPost.publicSlug;
+  // A save landing while the snapshot was built changes the token, so a stated
+  // token refuses it here rather than publishing a draft nobody read.
   const published = await PostRepo.writePublicSnapshot(
     context.db,
     publishedPost.id,
     snapshot,
+    { draft, saveToken: data.saveToken },
   );
   if (!published) {
-    return err({ reason: "POST_NOT_FOUND" });
+    return editConflictOrNotFound(context.db, publishedPost.id);
   }
+  await createPublishRevision(context, publishedPost);
   await syncPostMedia(context.db, published);
 
   await SearchService.upsert(context, {
@@ -569,7 +577,7 @@ export async function publishPost(
   }
   await invalidate.postPublished(context, { slug: snapshot.slug });
 
-  return ok({ success: true });
+  return ok({ success: true, saveToken: published.saveToken });
 }
 
 export async function unpublishPost(
@@ -591,5 +599,5 @@ export async function unpublishPost(
   await SearchService.deleteIndex(context, { id: post.id });
   await invalidate.postDeleted(context, { slug: publicSlug });
 
-  return ok({ success: true });
+  return ok({ success: true, saveToken: unpublished.saveToken });
 }
