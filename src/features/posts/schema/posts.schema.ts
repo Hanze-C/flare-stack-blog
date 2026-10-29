@@ -179,7 +179,7 @@ export const AdminPostSchema = PostSelectSchema.extend({
   publicSnapshotContentJson: NullableJsonContentSchema,
   serverToday: z.string(),
   cover: AdminPostCoverSchema.nullable(),
-}).nullable();
+});
 
 export function normalizePostTagName(
   tagName: string | undefined,

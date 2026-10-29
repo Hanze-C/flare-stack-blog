@@ -39,6 +39,12 @@ export const GetTagsInputSchema = z.object({
 export const SetPostTagsInputSchema = z.object({
   postId: z.number(),
   tagIds: z.array(z.number()),
+  saveToken: z
+    .string()
+    .optional()
+    .describe(
+      "The saveToken from your latest read or write of this post. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken: read the post again before deciding what to write. Omit it to write unconditionally.",
+    ),
 });
 
 export const GetTagsByPostIdInputSchema = z.object({

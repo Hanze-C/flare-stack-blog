@@ -143,16 +143,15 @@ const adminGet = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Get a post by id",
     description:
-      "Returns the editable Post. hasUnpublishedChanges tells whether the draft differs from the published version. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
+      "Returns the editable Post, or answers 404 POST_NOT_FOUND when there is none. hasUnpublishedChanges tells whether the draft differs from the published version. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
     tags: ["Admin Posts"],
   })
   .input(AdminFindPostByIdInputSchema)
   .output(AdminPostSchema)
-  .handler(async ({ context, input }) => {
+  .handler(async ({ context, input, errors }) => {
     const post = await PostService.findPostById(context, input);
-    return (
-      post && PostMarkdownService.inContentFormat(post, input.contentFormat)
-    );
+    if (!post) throw errors.POST_NOT_FOUND();
+    return PostMarkdownService.inContentFormat(post, input.contentFormat);
   });
 
 const generateSlug = adminProcedure
@@ -396,18 +395,25 @@ const listRevisions = adminProcedure
   );
 
 const getRevision = adminProcedure
+  .errors(postErrors)
   .route({
     method: "GET",
     path: "/admin/posts/{postId}/revisions/{revisionId}",
     summary: "Get a post revision",
+    description:
+      "Answers 404 POST_REVISION_NOT_FOUND when the post has no such revision.",
     tags: ["Admin Posts"],
   })
   .input(FindPostRevisionByIdInputSchema)
-  .output(PostRevisionSelectSchema.nullable())
-  .handler(
-    async ({ context, input }) =>
-      (await PostRevisionService.findPostRevisionById(context, input)) ?? null,
-  );
+  .output(PostRevisionSelectSchema)
+  .handler(async ({ context, input, errors }) => {
+    const revision = await PostRevisionService.findPostRevisionById(
+      context,
+      input,
+    );
+    if (!revision) throw errors.POST_REVISION_NOT_FOUND();
+    return revision;
+  });
 
 const restoreRevision = adminProcedure
   .errors(postErrors)

@@ -1,3 +1,4 @@
+import { EditConflictDataSchema } from "@/features/posts/schema/posts.schema";
 import {
   CreateTagInputSchema,
   DeleteTagInputSchema,
@@ -13,6 +14,14 @@ import { unwrapResult } from "@/lib/orpc/unwrap-result";
 const tagErrors = {
   TAG_NOT_FOUND: { status: 404, message: "Tag not found." },
   TAG_NAME_ALREADY_EXISTS: { status: 409, message: "Tag name already exists." },
+} as const;
+
+const editConflictErrors = {
+  EDIT_CONFLICT: {
+    status: 409,
+    message: "The post was saved since the stated saveToken was read.",
+    data: EditConflictDataSchema,
+  },
 } as const;
 
 const adminList = adminProcedure
@@ -90,16 +99,23 @@ const remove = adminProcedure
   );
 
 const setPostTags = adminProcedure
+  .errors(editConflictErrors)
   .route({
     method: "PUT",
     path: "/admin/posts/{postId}/tags",
     summary: "Set tags on a post",
     description:
-      "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist.",
+      "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken; the response carries the new one, or null when the post does not exist. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without it, the write is unconditional.",
     tags: ["Admin Tags"],
   })
   .input(SetPostTagsInputSchema)
-  .handler(({ context, input }) => TagService.setPostTags(context, input));
+  .handler(({ context, input, errors }) =>
+    unwrapResult(TagService.setPostTags(context, input), {
+      EDIT_CONFLICT: ({ saveToken }) => {
+        throw errors.EDIT_CONFLICT({ data: { saveToken } });
+      },
+    }),
+  );
 
 const byPostId = adminProcedure
   .route({

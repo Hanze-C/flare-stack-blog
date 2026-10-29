@@ -4,12 +4,23 @@ import { editConflictOf } from "./post-editor.model";
 import { savePostEdits } from "./post-editor.save";
 import type { PostEditorData } from "./types";
 
-/** Every write replaces the token; only the update can state one. */
+/** Every write replaces the token; a write stating a stale one is refused. */
 const server = vi.hoisted(() => ({
   token: "token-1",
   counter: 1,
   tagWrites: 0,
+  statedOnTags: [] as Array<string | undefined>,
   failTags: false,
+  /** Refuses a write stating a token that is no longer current. */
+  refuse(saveToken: string | undefined) {
+    if (saveToken !== undefined && saveToken !== server.token) {
+      throw new ORPCError("EDIT_CONFLICT", {
+        status: 409,
+        defined: true,
+        data: { saveToken: server.token },
+      });
+    }
+  },
   rotate() {
     server.counter += 1;
     server.token = `token-${server.counter}`;
@@ -22,21 +33,17 @@ vi.mock("@/lib/orpc", () => ({
     posts: {
       admin: {
         update: async ({ saveToken }: { saveToken?: string }) => {
-          if (saveToken !== undefined && saveToken !== server.token) {
-            throw new ORPCError("EDIT_CONFLICT", {
-              status: 409,
-              defined: true,
-              data: { saveToken: server.token },
-            });
-          }
+          server.refuse(saveToken);
           return { saveToken: server.rotate() };
         },
       },
     },
     tags: {
       admin: {
-        setPostTags: async () => {
+        setPostTags: async ({ saveToken }: { saveToken?: string }) => {
           if (server.failTags) throw new Error("network");
+          server.statedOnTags.push(saveToken);
+          server.refuse(saveToken);
           server.tagWrites += 1;
           return { saveToken: server.rotate() };
         },
@@ -63,6 +70,7 @@ beforeEach(() => {
   server.token = "token-1";
   server.counter = 1;
   server.tagWrites = 0;
+  server.statedOnTags = [];
   server.failTags = false;
 });
 
@@ -116,4 +124,34 @@ it("is refused with the current token after another client saved", async () => {
 
   expect(editConflictOf(error)).toEqual({ saveToken: server.token });
   expect(server.tagWrites).toBe(0);
+});
+
+it("states the token the update returned when it saves the tags", async () => {
+  const session = editorSession();
+
+  await session.save({ ...POST, tagIds: [3] });
+
+  // The update rotated token-1 to token-2, and the tags were saved against it.
+  expect(server.statedOnTags).toEqual(["token-2"]);
+  expect(session.token()).toBe("token-3");
+});
+
+it("is refused on the tags with the current token when another client saved after the update", async () => {
+  const session = editorSession();
+  const original = server.refuse;
+  // Another client saves right after the editor's update.
+  server.refuse = (saveToken) => {
+    if (saveToken === "token-2") server.rotate();
+    original(saveToken);
+  };
+
+  const error = await session
+    .save({ ...POST, tagIds: [3] })
+    .catch((caught: unknown) => caught);
+  server.refuse = original;
+
+  expect(editConflictOf(error)).toEqual({ saveToken: "token-3" });
+  expect(server.tagWrites).toBe(0);
+  // The update's token is kept, so the Admin resolves the conflict from there.
+  expect(session.token()).toBe("token-2");
 });
