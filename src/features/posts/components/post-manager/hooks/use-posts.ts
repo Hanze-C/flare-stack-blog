@@ -26,7 +26,7 @@ export function adminPostsListParams({
   return {
     offset: (page - 1) * ADMIN_ITEMS_PER_PAGE,
     limit: ADMIN_ITEMS_PER_PAGE,
-    status: statusFilterToApi(status),
+    ...statusFilterToApi(status),
     sortDir: "DESC",
     sortBy,
     search: search || undefined,
@@ -90,7 +90,7 @@ export function useUnpublishPost({
   return useMutation({
     mutationFn: (id: number) => orpcClient.posts.admin.unpublish({ id }),
     onSuccess: (result, id) => {
-      toast.success(m.editor_header_unpublish());
+      toast.success(m.editor_toast_unpublished());
       void invalidatePostQueries(queryClient, id);
       onSuccess?.(result);
     },

@@ -8,10 +8,13 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { createElement, useState } from "react";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
+import { findInPopover } from "tests/popover";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AdminChromeProvider } from "@/components/admin/admin-chrome";
 import { installDomShims } from "@/features/posts/editor/test-utils";
@@ -20,13 +23,16 @@ import { PostEditor } from ".";
 import type { PostEditorData, PostEditorProps, PostEditorSave } from "./types";
 
 const publish = vi.hoisted(() => vi.fn());
+const discardChanges = vi.hoisted(() => vi.fn());
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("@/lib/orpc", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/orpc")>();
   return {
     ...original,
     orpcClient: {
-      posts: { admin: { publish } },
+      posts: { admin: { publish, discardChanges } },
     },
   };
 });
@@ -46,6 +52,9 @@ vi.mock("@/hooks/use-motion", async (importOriginal) => ({
 
 beforeEach(() => {
   publish.mockReset();
+  discardChanges.mockReset();
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
 });
 
 afterEach(cleanup);
@@ -117,15 +126,18 @@ function createServer(token = "token-1") {
 function Host({
   onSave,
   stored,
+  unpublishedChanges,
 }: {
   onSave: PostEditorSave;
   stored: () => PostEditorProps["initialData"];
+  unpublishedChanges: () => boolean;
 }) {
   const [mounts, setMounts] = useState(0);
   return createElement(PostEditor, {
     key: mounts,
     initialData: stored(),
     publicSlug: null,
+    hasUnpublishedChanges: unpublishedChanges(),
     onSave,
     onReload: async () => setMounts((count) => count + 1),
   });
@@ -134,6 +146,7 @@ function Host({
 async function renderPostEditorPage(
   onSave: PostEditorSave,
   stored: () => PostEditorProps["initialData"] = () => INITIAL,
+  unpublishedChanges: () => boolean = () => false,
 ) {
   installDomShims();
   render(
@@ -147,7 +160,7 @@ async function renderPostEditorPage(
       createElement(
         AdminChromeProvider,
         null,
-        createElement(Host, { onSave, stored }),
+        createElement(Host, { onSave, stored, unpublishedChanges }),
       ),
     ),
   );
@@ -343,4 +356,217 @@ it("surfaces the conflict when publishing is refused", async () => {
   })) {
     expect((button as HTMLButtonElement).disabled).toBe(true);
   }
+});
+
+const PUBLISHED: PostEditorProps["initialData"] = {
+  ...INITIAL,
+  hasPublicSnapshot: true,
+};
+
+function headerStatus() {
+  return screen.getByRole("status").textContent;
+}
+
+function publishButton() {
+  return screen.getAllByRole("button", {
+    name: new RegExp(
+      `^(${[
+        m.editor_header_publish(),
+        m.editor_header_publish_changes(),
+        m.editor_header_republish(),
+      ].join("|")})$`,
+    ),
+  })[0] as HTMLButtonElement;
+}
+
+async function chooseFromMoreMenu(name: string) {
+  fireEvent.click(
+    screen.getByRole("button", { name: m.editor_more_actions() }),
+  );
+  fireEvent.click(await findInPopover("menuitem", { name }));
+}
+
+it("names the draft state and offers to publish it", async () => {
+  await renderPostEditorPage(createServer().save);
+
+  expect(screen.getByText(m.admin_posts_status_draft())).toBeDefined();
+  expect(publishButton().textContent).toBe(m.editor_header_publish());
+  fireEvent.click(
+    screen.getByRole("button", { name: m.editor_more_actions() }),
+  );
+  await findInPopover("menuitem", { name: m.admin_posts_action_delete_post() });
+  expect(
+    screen.queryByRole("menuitem", { name: m.editor_header_discard() }),
+  ).toBeNull();
+});
+
+it("names a published post with unpublished changes and offers to publish and discard them", async () => {
+  await renderPostEditorPage(
+    createServer().save,
+    () => PUBLISHED,
+    () => true,
+  );
+
+  expect(
+    screen.getByText(m.admin_posts_status_published_changed()),
+  ).toBeDefined();
+  expect(publishButton().textContent).toBe(m.editor_header_publish_changes());
+  expect(publishButton().disabled).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: m.editor_more_actions() }),
+  );
+  await findInPopover("menuitem", { name: m.editor_header_discard() });
+});
+
+it("names a published post that matches its draft and keeps republishing available", async () => {
+  await renderPostEditorPage(createServer().save, () => PUBLISHED);
+
+  expect(screen.getByText(m.admin_posts_status_published())).toBeDefined();
+  expect(publishButton().textContent).toBe(m.editor_header_republish());
+  expect(publishButton().disabled).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: m.editor_more_actions() }),
+  );
+  await findInPopover("menuitem", { name: m.editor_header_unpublish() });
+  expect(
+    screen.queryByRole("menuitem", { name: m.editor_header_discard() }),
+  ).toBeNull();
+});
+
+it("shows a published post as changed as soon as it is edited", async () => {
+  const editor = await renderPostEditorPage(
+    createServer().save,
+    () => PUBLISHED,
+  );
+
+  typeInto(editor, "more");
+  expect(
+    screen.getByText(m.admin_posts_status_published_changed()),
+  ).toBeDefined();
+  expect(publishButton().textContent).toBe(m.editor_header_publish_changes());
+});
+
+it("discards with the current token, loads the restored post and takes the new token", async () => {
+  const server = createServer();
+  const save = vi.fn(server.save);
+  let stored: PostEditorProps["initialData"] = PUBLISHED;
+  let changed = true;
+  const editor = await renderPostEditorPage(
+    save,
+    () => stored,
+    () => changed,
+  );
+  typeInto(editor, "draft only");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1), AUTOSAVE_WAIT);
+  discardChanges.mockImplementation(async () => {
+    stored = {
+      ...PUBLISHED,
+      title: "Published title",
+      saveToken: "discarded-1",
+      contentJson: {
+        type: "doc",
+        content: [
+          { type: "paragraph", content: [{ type: "text", text: "published" }] },
+        ],
+      },
+    };
+    changed = false;
+    server.token = "discarded-1";
+    return { success: true, saveToken: "discarded-1" };
+  });
+
+  await chooseFromMoreMenu(m.editor_header_discard());
+  const dialog = await screen.findByRole("dialog", {
+    name: m.editor_discard_confirm_title(),
+  });
+  expect(discardChanges).not.toHaveBeenCalled();
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: m.editor_header_discard() }),
+  );
+
+  await waitFor(() => expect(discardChanges).toHaveBeenCalled());
+  expect(discardChanges).toHaveBeenCalledWith({
+    id: 1,
+    saveToken: server.issued[0],
+  });
+  const reloaded = await waitFor(async () => {
+    const next = await currentEditor();
+    expect(next.getText()).toContain("published");
+    return next;
+  });
+  expect(reloaded.getText()).not.toContain("draft only");
+  expect(toast.success).toHaveBeenCalledWith(m.editor_discard_toast_done());
+  expect(screen.getByText(m.admin_posts_status_published())).toBeDefined();
+  expect(screen.queryByRole("alert")).toBeNull();
+
+  typeInto(reloaded, " next");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2), AUTOSAVE_WAIT);
+  expect(save.mock.calls[1]?.[1]).toBe("discarded-1");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("shows the conflict notice when discarding is refused over the token", async () => {
+  await renderPostEditorPage(
+    createServer().save,
+    () => PUBLISHED,
+    () => true,
+  );
+  discardChanges.mockRejectedValue(editConflict("elsewhere-1"));
+
+  await chooseFromMoreMenu(m.editor_header_discard());
+  const dialog = await screen.findByRole("dialog", {
+    name: m.editor_discard_confirm_title(),
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: m.editor_header_discard() }),
+  );
+
+  const notice = await screen.findByRole("alert", {}, AUTOSAVE_WAIT);
+  expect(notice.textContent).toContain(m.editor_conflict_title());
+  expect(toast.error).not.toHaveBeenCalled();
+  expect(toast.success).not.toHaveBeenCalled();
+});
+
+it("reports any other discard failure as a message and leaves the editor as it was", async () => {
+  await renderPostEditorPage(
+    createServer().save,
+    () => PUBLISHED,
+    () => true,
+  );
+  discardChanges.mockRejectedValue(
+    new ORPCError("NO_UNPUBLISHED_CHANGES", { status: 409, defined: true }),
+  );
+
+  await chooseFromMoreMenu(m.editor_header_discard());
+  const dialog = await screen.findByRole("dialog", {
+    name: m.editor_discard_confirm_title(),
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: m.editor_header_discard() }),
+  );
+
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      m.editor_action_discard_no_changes(),
+    ),
+  );
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("says autosave is paused, not that saving failed, during an Edit Conflict", async () => {
+  const server = createServer();
+  const editor = await renderPostEditorPage(server.save);
+
+  server.saveElsewhere();
+  typeInto(editor, "mine");
+  await screen.findByRole("alert", {}, AUTOSAVE_WAIT);
+
+  expect(headerStatus()).toBe(m.editor_status_paused());
+  expect(screen.queryByText(m.editor_status_save_error())).toBeNull();
+});
+
+it("says the draft is saved, not that it is live, when nothing is waiting", async () => {
+  await renderPostEditorPage(createServer().save, () => PUBLISHED);
+
+  expect(headerStatus()).toBe(m.editor_status_draft_saved());
 });
