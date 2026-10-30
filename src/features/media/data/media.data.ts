@@ -22,6 +22,7 @@ const unreferenced = sql`not exists (select 1 from ${PostMediaTable} where ${Pos
 
 export type MediaListItem = Media & {
   postCount: number;
+  revisionOnlyPostCount: number;
   isCover: boolean;
 };
 
@@ -230,12 +231,17 @@ async function withUsage(
       ),
   ]);
 
-  const postIdsById = new Map<number, Set<number>>();
-  for (const row of [...postRows, ...revisionRows]) {
-    const postIds = postIdsById.get(row.mediaId) ?? new Set<number>();
-    postIds.add(row.postId);
-    postIdsById.set(row.mediaId, postIds);
-  }
+  const groupByMedia = (rows: Array<{ mediaId: number; postId: number }>) => {
+    const postIdsById = new Map<number, Set<number>>();
+    for (const row of rows) {
+      const postIds = postIdsById.get(row.mediaId) ?? new Set<number>();
+      postIds.add(row.postId);
+      postIdsById.set(row.mediaId, postIds);
+    }
+    return postIdsById;
+  };
+  const currentPostIds = groupByMedia(postRows);
+  const revisionPostIds = groupByMedia(revisionRows);
   const coverIds = new Set<number>();
   for (const row of coverRows) {
     if (row.coverMediaId != null) coverIds.add(row.coverMediaId);
@@ -246,7 +252,12 @@ async function withUsage(
 
   return items.map((item) => ({
     ...item,
-    postCount: postIdsById.get(item.id)?.size ?? 0,
+    postCount: currentPostIds.get(item.id)?.size ?? 0,
+    // A post that also uses the image in its draft or published version is
+    // already in postCount.
+    revisionOnlyPostCount: [...(revisionPostIds.get(item.id) ?? [])].filter(
+      (postId) => !currentPostIds.get(item.id)?.has(postId),
+    ).length,
     isCover: coverIds.has(item.id),
   }));
 }

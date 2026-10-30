@@ -5,12 +5,12 @@ import {
 import { createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { z } from "zod";
-import { NotFound } from "@/components/common/not-found";
 import { siteConfigQuery, siteDomainQuery } from "@/features/config/queries";
 import {
   POSTS_PER_PAGE,
   PostsPage,
 } from "@/features/posts/components/posts-page";
+import { PostsFilterNotFound } from "@/features/posts/components/posts-filter-not-found";
 import { PostsPageSkeleton } from "@/features/posts/components/posts-page-skeleton";
 import { categoriesQueryOptions } from "@/features/categories/queries";
 import { postsInfiniteQueryOptions } from "@/features/posts/queries";
@@ -19,6 +19,7 @@ import {
   PostTagNameSchema,
 } from "@/features/posts/schema/posts.schema";
 import {
+  findMissingPublicFilter,
   resolvePublicName,
   withTagFilter,
 } from "@/features/posts/utils/post-public-search";
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/_public/posts")({
       .optional(),
   }),
   component: RouteComponent,
-  notFoundComponent: NotFound,
+  notFoundComponent: PostsFilterNotFound,
   pendingComponent: PostsSkeleton,
   loaderDeps: ({ search }) => ({
     tagName: search.tagName,
@@ -52,7 +53,8 @@ export const Route = createFileRoute("/_public/posts")({
     ]);
 
     // A name is addressed in any case; one that is no Tag or Category of a
-    // published post is a page that does not exist, not an empty list.
+    // published post is a page that does not exist, not an empty list. The
+    // not-found page names it.
     const tagName = resolvePublicName(
       tags.map((tag) => tag.name),
       deps.tagName,
@@ -63,7 +65,11 @@ export const Route = createFileRoute("/_public/posts")({
           categories.map((category) => category.name),
           deps.categoryName,
         );
-    if (tagName === null || categoryName === null) throw notFound();
+    if (tagName === null || categoryName === null) {
+      throw notFound({
+        data: findMissingPublicFilter({ tagName, categoryName }, deps),
+      });
+    }
 
     await context.queryClient.prefetchInfiniteQuery(
       postsInfiniteQueryOptions({

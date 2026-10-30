@@ -340,7 +340,7 @@ describe("Media operations", () => {
     const list = await call(apiKey, "/admin/media");
     expect(list.status).toBe(200);
     expect(list.json).toMatchObject({
-      items: [{ key, postCount: 0, isCover: false }],
+      items: [{ key, postCount: 0, revisionOnlyPostCount: 0, isCover: false }],
       nextCursor: null,
     });
 
@@ -455,7 +455,7 @@ describe("Media operations", () => {
 
     const list = await call(apiKey, "/admin/media");
     expect(list.json).toMatchObject({
-      items: [{ key, postCount: 1, isCover: true }],
+      items: [{ key, postCount: 1, revisionOnlyPostCount: 0, isCover: true }],
     });
   });
 });

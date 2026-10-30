@@ -47,7 +47,12 @@ export const MediaListItemSchema = MediaSelectSchema.extend({
   postCount: z
     .number()
     .describe(
-      "How many posts use the image in their body or as their cover, in the draft, the published version or a Post Revision. Media with a count above 0 cannot be deleted.",
+      "How many posts use the image in their body or as their cover, in the draft or the published version. A post that only has a Post Revision using the image is not counted here, see revisionOnlyPostCount.",
+    ),
+  revisionOnlyPostCount: z
+    .number()
+    .describe(
+      "How many posts use the image only in a Post Revision, not in the draft or the published version. Restoring such a revision brings the image back, so an image with postCount or revisionOnlyPostCount above 0 cannot be deleted.",
     ),
   isCover: z
     .boolean()
