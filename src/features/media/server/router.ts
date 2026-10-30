@@ -227,19 +227,24 @@ const remove = adminProcedure
   );
 
 const linkedPosts = adminProcedure
+  .errors({ MEDIA_NOT_FOUND: mediaErrors.MEDIA_NOT_FOUND })
   .route({
     method: "GET",
     path: "/admin/media/{key}/posts",
     summary: "List posts linked to media",
     description:
-      "Lists the posts that use the image in their body or as their cover, in the draft, the published version or a Post Revision. revisionsOnly marks a post whose Post Revisions alone use it. An unknown key lists nothing.",
+      "Lists the posts that use the image in their body or as their cover, in the draft, the published version or a Post Revision. revisionsOnly marks a post whose Post Revisions alone use it. A key no Media has answers 404 MEDIA_NOT_FOUND; Media no post uses answers an empty list.",
     tags: ["Admin Media"],
   })
   .input(MediaKeyInputSchema)
   .output(z.array(LinkedPostSchema))
-  .handler(({ context, input }) =>
-    MediaService.getLinkedPosts(context, input.key.trim()),
-  );
+  .handler(async ({ context, input, errors }) => {
+    const key = input.key.trim();
+    if (!(await MediaService.mediaExists(context, key))) {
+      throw errors.MEDIA_NOT_FOUND();
+    }
+    return MediaService.getLinkedPosts(context, key);
+  });
 
 const replace = adminProcedure
   .errors({

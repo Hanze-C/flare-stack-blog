@@ -110,9 +110,9 @@ describe("errors declared by post operations", () => {
         "409 EDIT_CONFLICT",
       ],
     ],
-    ["delete", "/admin/posts/{postId}/revisions", []],
+    ["delete", "/admin/posts/{postId}/revisions", ["404 POST_NOT_FOUND"]],
     ["get", "/admin/posts", []],
-    ["get", "/admin/posts/{postId}/revisions", []],
+    ["get", "/admin/posts/{postId}/revisions", ["404 POST_NOT_FOUND"]],
   ] as Array<[string, string, Array<string>]>)("%s %s", (method, path, own) => {
     const { actual, expected } = adminErrors(method, path, ...own);
     expect(actual).toEqual(expected);
@@ -134,6 +134,7 @@ describe("errors declared by tag, category and media operations", () => {
       "/admin/posts/{postId}/tags",
       ["404 POST_NOT_FOUND", "404 TAG_NOT_FOUND", "409 EDIT_CONFLICT"],
     ],
+    ["get", "/admin/posts/{postId}/tags", ["404 POST_NOT_FOUND"]],
     ["post", "/admin/categories", ["409 CATEGORY_NAME_ALREADY_EXISTS"]],
     [
       "patch",
@@ -163,6 +164,7 @@ describe("errors declared by tag, category and media operations", () => {
       ["404 MEDIA_NOT_FOUND", "409 MEDIA_IN_USE"],
     ],
     ["patch", "/admin/media/{key}", ["404 MEDIA_NOT_FOUND"]],
+    ["get", "/admin/media/{key}/posts", ["404 MEDIA_NOT_FOUND"]],
     [
       "post",
       "/admin/media/{key}/replace",

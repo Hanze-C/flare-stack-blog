@@ -1,6 +1,6 @@
 import { ORPCError } from "@orpc/client";
 import { expect, it } from "vitest";
-import { nullOnNotFound } from "./null-on-not-found";
+import { emptyListOnNotFound, nullOnNotFound } from "./null-on-not-found";
 
 const context = {} as never;
 
@@ -35,4 +35,24 @@ it("still fails the query for any other error", async () => {
 
   await expect(otherCode.queryFn(context)).rejects.toThrow();
   await expect(plain.queryFn(context)).rejects.toThrow("network");
+});
+
+it("reads the stated 404 of a list as an empty list", async () => {
+  const options = emptyListOnNotFound(
+    { queryFn: failing("GONE", 404) as () => Promise<Array<number>> },
+    "GONE",
+  );
+
+  await expect(options.queryFn(context)).resolves.toEqual([]);
+});
+
+it("keeps the items a list query resolves to, and fails for any other error", async () => {
+  const kept = emptyListOnNotFound({ queryFn: async () => [1, 2] }, "GONE");
+  const other = emptyListOnNotFound(
+    { queryFn: failing("OTHER", 404) as () => Promise<Array<number>> },
+    "GONE",
+  );
+
+  await expect(kept.queryFn(context)).resolves.toEqual([1, 2]);
+  await expect(other.queryFn(context)).rejects.toThrow();
 });

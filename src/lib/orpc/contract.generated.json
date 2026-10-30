@@ -145,7 +145,7 @@
             "method": "PATCH",
             "path": "/admin/posts/{id}",
             "summary": "Update a post",
-            "description": "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data), whichever format it was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+            "description": "Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data), whichever format it was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
             "tags": ["Admin Posts"]
           }
         }
@@ -183,6 +183,7 @@
             "method": "POST",
             "path": "/admin/posts/{id}/unpublish",
             "summary": "Unpublish a post",
+            "description": "Discards the Public Content Snapshot, so the post becomes a draft post and leaves the public site. A post that is already a draft is left as it is: it answers 200 with its current saveToken, unchanged.",
             "tags": ["Admin Posts"]
           }
         }
@@ -235,6 +236,7 @@
               "method": "GET",
               "path": "/admin/posts/{postId}/revisions",
               "summary": "List post revisions",
+              "description": "A post that does not exist answers 404 POST_NOT_FOUND; a post without revisions answers an empty list.",
               "tags": ["Admin Posts"]
             }
           }
@@ -273,6 +275,7 @@
               "method": "DELETE",
               "path": "/admin/posts/{postId}/revisions",
               "summary": "Delete post revisions",
+              "description": "A post that does not exist answers 404 POST_NOT_FOUND. Ids the post has no revision for are left out of deletedIds.",
               "tags": ["Admin Posts"]
             }
           }
@@ -363,7 +366,7 @@
             "method": "PUT",
             "path": "/admin/posts/{postId}/tags",
             "summary": "Set tags on a post",
-            "description": "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken; the response carries the new one. A post that does not exist answers 404 POST_NOT_FOUND, and a tag id no tag has answers 404 TAG_NOT_FOUND; either way nothing is written. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without it, the write is unconditional.",
+            "description": "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken and the response carries the new one, except that setting the tags the post already has writes nothing and answers its current saveToken. A post that does not exist answers 404 POST_NOT_FOUND, and a tag id no tag has answers 404 TAG_NOT_FOUND; either way nothing is written. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without it, the write is unconditional.",
             "tags": ["Admin Tags"]
           }
         }
@@ -376,6 +379,7 @@
             "method": "GET",
             "path": "/admin/posts/{postId}/tags",
             "summary": "List tags for a post",
+            "description": "Lists the tags the post's draft carries. A post that does not exist answers 404 POST_NOT_FOUND; a post without tags answers an empty list.",
             "tags": ["Admin Tags"]
           }
         }
@@ -688,7 +692,7 @@
           "method": "GET",
           "path": "/admin/media/{key}/posts",
           "summary": "List posts linked to media",
-          "description": "Lists the posts that use the image in their body or as their cover, in the draft, the published version or a Post Revision. revisionsOnly marks a post whose Post Revisions alone use it. An unknown key lists nothing.",
+          "description": "Lists the posts that use the image in their body or as their cover, in the draft, the published version or a Post Revision. revisionsOnly marks a post whose Post Revisions alone use it. A key no Media has answers 404 MEDIA_NOT_FOUND; Media no post uses answers an empty list.",
           "tags": ["Admin Media"]
         }
       }

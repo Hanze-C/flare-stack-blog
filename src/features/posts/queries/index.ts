@@ -4,7 +4,10 @@ import {
   type GetPostsInput,
 } from "@/features/posts/schema/posts.schema";
 import { orpc } from "@/lib/orpc";
-import { nullOnNotFound } from "@/lib/orpc/null-on-not-found";
+import {
+  emptyListOnNotFound,
+  nullOnNotFound,
+} from "@/lib/orpc/null-on-not-found";
 
 export function homePostsQuery(page: number) {
   return orpc.posts.home.queryOptions({ input: { page } });
@@ -59,10 +62,14 @@ export function adjacentPostsQuery(slug: string) {
   return orpc.posts.adjacent.queryOptions({ input: { slug } });
 }
 
+/** Resolves to no revisions for a post that does not exist (the server answers 404). */
 export function postRevisionListQuery(postId: number) {
-  return orpc.posts.admin.revisions.list.queryOptions({
-    input: { postId },
-  });
+  return emptyListOnNotFound(
+    orpc.posts.admin.revisions.list.queryOptions({
+      input: { postId },
+    }),
+    "POST_NOT_FOUND",
+  );
 }
 
 /** Resolves to null for a revision the post does not have (the server answers 404). */

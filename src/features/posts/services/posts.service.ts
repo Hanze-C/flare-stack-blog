@@ -35,6 +35,7 @@ import type { PublicPostCover } from "@/lib/db/schema";
 import { slugify } from "@/features/posts/utils/content";
 import { truncateGeneratedSlug } from "@/features/posts/utils/post-fields";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
+import { sameJson } from "@/features/posts/utils/same-json";
 import {
   isFuturePublishDate,
   serverUtcDateString,
@@ -487,6 +488,40 @@ export async function findPostById(
   };
 }
 
+export async function postExists(context: DbContext, id: number) {
+  return (await PostRepo.findPostSaveToken(context.db, id)) !== null;
+}
+
+/**
+ * Whether saving `data` would leave the draft as it is: every field it states
+ * already holds that value. Dates compare to the whole second, which is all
+ * the column keeps.
+ */
+function leavesDraftUnchanged(
+  post: NonNullable<Awaited<ReturnType<typeof PostRepo.findPostById>>>,
+  data: UpdatePostInput["data"],
+) {
+  const seconds = (date: Date | null | undefined) =>
+    date == null ? null : Math.floor(date.getTime() / 1000);
+  return Object.entries(data).every(([field, value]) => {
+    if (value === undefined) return true;
+    switch (field) {
+      case "title":
+      case "summary":
+      case "slug":
+      case "coverMediaId":
+      case "categoryId":
+        return post[field] === value;
+      case "contentJson":
+        return sameJson(post.contentJson, value);
+      case "publishedAt":
+        return seconds(post.publishedAt) === seconds(value as Date | null);
+      default:
+        return false;
+    }
+  });
+}
+
 export async function updatePost(
   context: DbContext & { executionCtx: ExecutionContext; env?: Env },
   data: UpdatePostInput,
@@ -525,6 +560,21 @@ export async function updatePost(
           contentJson: normalizePostContent(data.data.contentJson),
         }
       : data.data;
+
+  // A save that changes nothing writes nothing, so it keeps the saveToken an
+  // open editor holds. A stated token still has to be the current one.
+  const current = await PostRepo.findPostById(context.db, data.id);
+  if (current && leavesDraftUnchanged(current, updateData)) {
+    if (data.saveToken !== undefined && data.saveToken !== current.saveToken) {
+      return err({ reason: "EDIT_CONFLICT", saveToken: current.saveToken });
+    }
+    const unchanged = await withSettledFingerprints(context.db, current);
+    return ok({
+      ...stripPublicSnapshot(unchanged),
+      hasUnpublishedChanges: hasUnpublishedChanges(unchanged),
+    });
+  }
+
   let updatedPost;
   try {
     updatedPost = await PostRepo.updatePost(context.db, data.id, updateData, {
@@ -680,6 +730,11 @@ export async function unpublishPost(
   const post = await PostRepo.findPostById(context.db, data.id);
   if (!post) {
     return err({ reason: "POST_NOT_FOUND" });
+  }
+
+  // A draft has no snapshot to discard, so it is left as it is, token and all.
+  if (post.status === "draft" && post.publicSnapshotJson == null) {
+    return ok({ success: true, saveToken: post.saveToken });
   }
 
   const publicSlug =

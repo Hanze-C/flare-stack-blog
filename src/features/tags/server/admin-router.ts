@@ -124,7 +124,7 @@ const setPostTags = adminProcedure
     path: "/admin/posts/{postId}/tags",
     summary: "Set tags on a post",
     description:
-      "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken; the response carries the new one. A post that does not exist answers 404 POST_NOT_FOUND, and a tag id no tag has answers 404 TAG_NOT_FOUND; either way nothing is written. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without it, the write is unconditional.",
+      "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken and the response carries the new one, except that setting the tags the post already has writes nothing and answers its current saveToken. A post that does not exist answers 404 POST_NOT_FOUND, and a tag id no tag has answers 404 TAG_NOT_FOUND; either way nothing is written. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without it, the write is unconditional.",
     tags: ["Admin Tags"],
   })
   .input(SetPostTagsInputSchema)
@@ -144,15 +144,24 @@ const setPostTags = adminProcedure
   );
 
 const byPostId = adminProcedure
+  .errors(postNotFoundErrors)
   .route({
     method: "GET",
     path: "/admin/posts/{postId}/tags",
     summary: "List tags for a post",
+    description:
+      "Lists the tags the post's draft carries. A post that does not exist answers 404 POST_NOT_FOUND; a post without tags answers an empty list.",
     tags: ["Admin Tags"],
   })
   .input(GetTagsByPostIdInputSchema)
   .output(z.array(TagSelectSchema))
-  .handler(({ context, input }) => TagService.getTagsByPostId(context, input));
+  .handler(({ context, input, errors }) =>
+    unwrapResult(TagService.getTagsByPostId(context, input), {
+      POST_NOT_FOUND: () => {
+        throw errors.POST_NOT_FOUND();
+      },
+    }),
+  );
 
 export default {
   list: adminList,
