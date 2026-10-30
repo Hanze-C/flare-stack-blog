@@ -473,7 +473,7 @@ const restoreRevision = adminProcedure
     path: "/admin/posts/{postId}/revisions/{revisionId}/restore",
     summary: "Restore a post revision",
     description:
-      "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+      "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without saveToken it restores over whatever the draft is when the restore starts, and answers 409 EDIT_CONFLICT in the same way if a save lands while it runs, so no save is overwritten without being kept in the revision of the draft.",
     tags: ["Admin Posts"],
   })
   .input(RestorePostRevisionInputSchema)

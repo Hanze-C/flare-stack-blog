@@ -70,7 +70,7 @@ export const RestorePostRevisionInputSchema = z.object({
   postId: z.number(),
   revisionId: z.number(),
   saveToken: StatedSaveTokenSchema.describe(
-    "The saveToken of the draft you read and mean to replace. If the post was saved since, nothing is written, not even the revision of the current draft, and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to restore over whatever the draft is now.",
+    "The saveToken of the draft you read and mean to replace. If the post was saved since, nothing is written, not even the revision of the current draft, and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to restore over whatever the draft is now; the restore still answers 409 EDIT_CONFLICT if a save lands while it runs, since that save would not be in the revision it keeps of the draft.",
   ),
 });
 

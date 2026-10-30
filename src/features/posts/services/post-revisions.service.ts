@@ -218,7 +218,8 @@ export async function restorePostRevision(
       snapshotHash: currentHash,
       restoredFromRevisionId: revision.id,
     },
-    saveToken: data.saveToken,
+    // Without a stated token, still write only the draft that was backed up.
+    saveToken: data.saveToken ?? post.saveToken,
   });
 
   if (!restoredPost) {
