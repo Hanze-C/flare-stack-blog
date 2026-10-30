@@ -488,6 +488,7 @@
   "editor_history_error_post_not_found": "文章已经不存在。",
   "editor_history_error_revision_not_found": "该版本已不存在。",
   "editor_history_error_invalid_snapshot": "这份版本无法恢复。",
+  "editor_history_error_edit_conflict": "这篇文章在你打开历史记录后又被保存过。再次恢复会替换那次保存，被替换的内容会先存为一个版本。",
   "editor_leave_title": "离开页面？",
   "editor_leave_message": "您有正在保存的更改。离开可能会导致部分数据丢失。",
   "editor_leave_confirm": "确认离开",

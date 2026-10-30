@@ -106,6 +106,7 @@ describe("errors declared by post operations", () => {
         "400 POST_REVISION_INVALID_SNAPSHOT",
         "404 POST_NOT_FOUND",
         "404 POST_REVISION_NOT_FOUND",
+        "409 EDIT_CONFLICT",
       ],
     ],
     ["delete", "/admin/posts/{postId}/revisions", []],
