@@ -204,7 +204,7 @@ export async function setPostTags(
 }
 
 /**
- * Check if a tag name exists
+ * Check if a tag name exists, ignoring the case of ASCII letters
  */
 export async function nameExists(
   db: DB,
@@ -212,7 +212,7 @@ export async function nameExists(
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
   const { excludeId } = options;
-  const conditions = [eq(TagsTable.name, name)];
+  const conditions = [sql`lower(${TagsTable.name}) = lower(${name})`];
   if (excludeId) {
     conditions.push(ne(TagsTable.id, excludeId));
   }

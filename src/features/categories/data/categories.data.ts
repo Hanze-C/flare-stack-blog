@@ -25,12 +25,13 @@ export async function findCategoryById(db: DB, id: number) {
   });
 }
 
+/** Whether a Category has `name`, ignoring the case of ASCII letters. */
 export async function nameExists(
   db: DB,
   name: string,
   options: { excludeId?: number } = {},
 ) {
-  const conditions = [eq(CategoriesTable.name, name)];
+  const conditions = [sql`lower(${CategoriesTable.name}) = lower(${name})`];
   if (options.excludeId != null) {
     conditions.push(ne(CategoriesTable.id, options.excludeId));
   }

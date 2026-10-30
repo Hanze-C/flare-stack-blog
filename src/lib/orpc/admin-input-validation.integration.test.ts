@@ -335,3 +335,57 @@ describe("publication date", () => {
     expect(new Date(admin.publishedAt).getMilliseconds()).toBe(0);
   });
 });
+
+describe("category and tag names", () => {
+  it.each([
+    ["/admin/tags", "TAG_NAME_ALREADY_EXISTS"],
+    ["/admin/categories", "CATEGORY_NAME_ALREADY_EXISTS"],
+  ])(
+    "%s trims names and refuses one differing only in case",
+    async (path, code) => {
+      const apiKey = await seedAdminApiKey();
+      const created = await callApi(apiKey, path, {
+        method: "POST",
+        body: { name: "  AUDIT tag1  " },
+      });
+      expect(created.status).toBe(200);
+      const { id, name } = (await created.json()) as {
+        id: number;
+        name: string;
+      };
+      expect(name).toBe("AUDIT tag1");
+
+      const duplicate = await callApi(apiKey, path, {
+        method: "POST",
+        body: { name: "audit TAG1" },
+      });
+      expect(duplicate.status).toBe(409);
+      expect(await codeOf(duplicate)).toBe(code);
+
+      for (const blank of ["", "   "]) {
+        const response = await callApi(apiKey, path, {
+          method: "POST",
+          body: { name: blank },
+        });
+        expect(response.status).toBe(400);
+      }
+
+      const other = (await (
+        await callApi(apiKey, path, { method: "POST", body: { name: "Other" } })
+      ).json()) as { id: number };
+      const rename = await callApi(apiKey, `${path}/${other.id}`, {
+        method: "PATCH",
+        body: { data: { name: "Audit Tag1" } },
+      });
+      expect(rename.status).toBe(409);
+      expect(await codeOf(rename)).toBe(code);
+
+      // Changing only the case of its own name is fine.
+      const recase = await callApi(apiKey, `${path}/${id}`, {
+        method: "PATCH",
+        body: { data: { name: "audit tag1" } },
+      });
+      expect(recase.status).toBe(200);
+    },
+  );
+});

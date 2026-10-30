@@ -45,14 +45,23 @@ export const SetPostTagsResultSchema = z.object({
 });
 
 // API Input Schemas
+const TagNameInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(50)
+  .describe(
+    "Name, trimmed: not empty, at most 50 characters. No other tag may have it, ignoring case: that answers 409 TAG_NAME_ALREADY_EXISTS.",
+  );
+
 export const CreateTagInputSchema = z.strictObject({
-  name: z.string().min(1).max(50),
+  name: TagNameInputSchema,
 });
 
 export const UpdateTagInputSchema = z.strictObject({
   id: z.number(),
   data: z.strictObject({
-    name: z.string().min(1).max(50).optional(),
+    name: TagNameInputSchema.optional(),
   }),
 });
 
