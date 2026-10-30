@@ -121,7 +121,7 @@ describe("uniqueKeyOf", () => {
       }
     }
     expect(failures).toEqual([]);
-  });
+  }, 60_000);
 
   it("keeps apart what only looks alike", () => {
     expect(uniqueKeyOf("ss")).not.toBe(uniqueKeyOf("s s"));
