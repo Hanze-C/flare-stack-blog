@@ -45,21 +45,51 @@ export function withoutControlCharacters(
   });
 }
 
+// Default_Ignorable_Code_Point: characters that show nothing and are meant to
+// be skipped, such as variation selectors (U+FE0F), the combining grapheme
+// joiner, Hangul fillers, and the Cf ones above.
+const DEFAULT_IGNORABLE_ALL = /\p{Default_Ignorable_Code_Point}/gu;
+
+// Folding can expose more to fold: NFKC of an uppercased letter, a filler
+// that becomes ignorable. It settles within a few passes, and the key is the
+// settled text, so folding a key again changes nothing.
+const MAX_FOLD_PASSES = 4;
+
+function foldOnce(text: string) {
+  return (
+    text
+      .normalize("NFKC")
+      .replace(CONTROL_OR_FORMAT_ALL, "")
+      .replace(DEFAULT_IGNORABLE_ALL, "")
+      // Lower, upper, lower: the full case folding. Upper case alone leaves
+      // ẞ (U+1E9E) as it is, and lower case alone leaves ß apart from ss;
+      // lower first makes ẞ ß, upper makes ß SS, lower makes ss.
+      .toLowerCase()
+      .toUpperCase()
+      .toLowerCase()
+      .normalize("NFKC")
+  );
+}
+
 /**
  * What two names are compared by when they must be unique: NFKC, so
  * fullwidth letters, ligatures and no-break spaces equal their plain forms,
- * without control and format characters, and with case folded. Upper then
- * lower case folds what lower case alone keeps apart, such as ß and ss.
+ * without control and format characters or any other character Unicode marks
+ * Default_Ignorable (a variation selector after an emoji, a Hangul filler),
+ * and with case fully folded, so ß, ẞ and ss are one.
  *
  * It is only compared, never shown: names and slugs are stored as written.
  * For text of printable ASCII and CJK ideographs alone it is SQLite's
- * `lower()` of the text, which migration 0029 relies on.
+ * `lower()` of the text, which migration 0029 relies on. A change to the
+ * rules for anything else needs a migration that clears the keys stored for
+ * it, as 0030 did, so the app computes them again (unique-keys.ts).
  */
 export function uniqueKeyOf(text: string) {
-  return text
-    .normalize("NFKC")
-    .replace(CONTROL_OR_FORMAT_ALL, "")
-    .toUpperCase()
-    .toLowerCase()
-    .normalize("NFKC");
+  let key = text;
+  for (let pass = 0; pass < MAX_FOLD_PASSES; pass += 1) {
+    const folded = foldOnce(key);
+    if (folded === key) break;
+    key = folded;
+  }
+  return key;
 }

@@ -79,7 +79,16 @@ describe("uniqueKeyOf", () => {
     ["accented capitals", "ÉCOLE", "école"],
     ["composed and decomposed accents", "é", "é"],
     ["sharp s", "Straße", "STRASSE"],
+    ["capital sharp s and ss", "STRAẞE", "Strasse"],
+    ["sharp s and capital sharp s", "Straße", "STRAẞE"],
+    ["an emoji with a variation selector", "❤️", "❤"],
+    ["a variation selector after a letter", "a️", "A"],
+    ["a combining grapheme joiner", "a͏b", "AB"],
+    ["a Hangul filler", "aㅤb", "ab"],
+    ["a halfwidth Hangul filler", "aﾠb", "ab"],
+    ["a tag character", "a\u{E0041}b", "ab"],
     ["Greek final sigma", "ΟΔΟΣ", "οδοσ"],
+    ["Greek capital sigma and final sigma", "Σ", "ς"],
     ["Cyrillic", "Привет", "привет"],
   ])("equates %s", (_name, a, b) => {
     expect(uniqueKeyOf(a)).toBe(uniqueKeyOf(b));
@@ -91,6 +100,32 @@ describe("uniqueKeyOf", () => {
     ["a space and none", "a b", "ab"],
   ])("keeps %s apart", (_name, a, b) => {
     expect(uniqueKeyOf(a)).not.toBe(uniqueKeyOf(b));
+  });
+
+  it("gives case variants of any character one key, and folds a key to itself", () => {
+    const failures: Array<string> = [];
+    for (let code = 0; code <= 0x10ffff; code += 1) {
+      if (code >= 0xd800 && code <= 0xdfff) continue;
+      const character = String.fromCodePoint(code);
+      const key = uniqueKeyOf(character);
+      const variants = [
+        character.toUpperCase(),
+        character.toLowerCase(),
+        character.toLowerCase().toUpperCase(),
+      ];
+      if (
+        uniqueKeyOf(key) !== key ||
+        variants.some((variant) => uniqueKeyOf(variant) !== key)
+      ) {
+        failures.push(code.toString(16));
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it("keeps apart what only looks alike", () => {
+    expect(uniqueKeyOf("ss")).not.toBe(uniqueKeyOf("s s"));
+    expect(uniqueKeyOf("e")).not.toBe(uniqueKeyOf("é"));
   });
 
   it("is SQLite's lower() for printable ASCII and CJK ideographs", () => {

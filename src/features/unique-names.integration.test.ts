@@ -141,6 +141,29 @@ describe.each([
     expect(response.status).toBe(400);
   });
 
+  it("treats Straße, STRAẞE and Strasse as one name, and a variation selector as nothing", async () => {
+    const apiKey = await seedAdminApiKey();
+    const create = (name: string) =>
+      callAdminApi(apiKey, `/admin/${collection}`, {
+        method: "POST",
+        body: { name },
+      });
+    expect((await create("Strasse")).status).toBe(200);
+    for (const name of ["Straße", "STRAẞE", "straße", "ＳＴＲＡＳＳＥ"]) {
+      const response = await create(name);
+      expect(response.status, name).toBe(409);
+      expect(await codeOf(response)).toBe(conflict);
+    }
+
+    expect((await create("Love ❤")).status).toBe(200);
+    // Only a variation selector more: it shows the same.
+    const selector = await create("Love ❤️");
+    expect(selector.status).toBe(409);
+    expect(await codeOf(selector)).toBe(conflict);
+    // But a different name stays possible.
+    expect((await create("Love ❤ it")).status).toBe(200);
+  });
+
   it("keeps a no-break space or fullwidth letters as written, but compares them", async () => {
     const apiKey = await seedAdminApiKey();
     const created = await callAdminApi(apiKey, `/admin/${collection}`, {
@@ -196,6 +219,31 @@ describe("post slugs", () => {
     for (const slug of ["a\u200Bb", "a\u00A0b", "a\u202Eb", "a\tb"]) {
       expect((await patch(second, slug)).status).toBe(400);
     }
+  });
+
+  it("compares slugs by full case folding and ignores variation selectors", async () => {
+    const apiKey = await seedAdminApiKey();
+    const [first, second, third] = [
+      await newPost(),
+      await newPost(),
+      await newPost(),
+    ];
+    const patch = (id: number, slug: string) =>
+      callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: { data: { slug } },
+      });
+
+    expect((await patch(first, "Strasse")).status).toBe(200);
+    for (const slug of ["STRA\u1E9EE", "Stra\u00DFe"]) {
+      const response = await patch(second, slug);
+      expect(response.status, slug).toBe(409);
+      expect(await codeOf(response)).toBe("SLUG_TAKEN");
+    }
+    expect((await patch(second, "heart-\u2764")).status).toBe(200);
+    const selector = await patch(third, "heart-\u2764\uFE0F");
+    expect(selector.status).toBe(409);
+    expect(await codeOf(selector)).toBe("SLUG_TAKEN");
   });
 
   it("refuses a slug equal to another post's live page under NFKC", async () => {
