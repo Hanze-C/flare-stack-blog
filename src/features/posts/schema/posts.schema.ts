@@ -105,7 +105,7 @@ const PostTitleInputSchema = z
 const SUMMARY_FORMAT_RULE =
   "It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, an escape, a zero width space or a bidirectional control) other than tab, line feed and carriage return; a zero width joiner inside an emoji is fine.";
 
-const PostSummaryInputSchema = z
+export const PostSummaryInputSchema = z
   .string()
   .refine(isPostSummaryFormat, { message: SUMMARY_FORMAT_RULE })
   .nullable()
