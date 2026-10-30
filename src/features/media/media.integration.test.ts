@@ -13,6 +13,22 @@ import { unwrap } from "@/lib/errors";
 import * as Storage from "./data/media.storage";
 import * as MediaService from "./service/media.service";
 
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+/** A file whose bytes start like a PNG, so uploads accept it. */
+function pngFile(name: string, content: string) {
+  return new File([new Uint8Array(PNG_SIGNATURE), content], name, {
+    type: "image/png",
+  });
+}
+
+/** A JPEG-signed file of exactly `size` bytes. */
+function jpegFile(name: string, size: number) {
+  const bytes = new Uint8Array(size);
+  bytes.set([0xff, 0xd8, 0xff, 0xe0]);
+  return new File([bytes], name, { type: "image/jpeg" });
+}
+
 /**
  * MediaService Tests
  *
@@ -55,9 +71,7 @@ describe("MediaService", () => {
   // ============================================
   describe("Upload Flow", () => {
     it("should upload file and create DB record", async () => {
-      const file = new File(["fake image content"], "test-image.png", {
-        type: "image/png",
-      });
+      const file = pngFile("test-image.png", "fake image content");
 
       const result = unwrap(await MediaService.upload(adminContext, { file }));
 
@@ -77,9 +91,7 @@ describe("MediaService", () => {
     });
 
     it("should rollback R2 upload when DB insert fails", async () => {
-      const file = new File(["test content"], "rollback-test.png", {
-        type: "image/png",
-      });
+      const file = pngFile("rollback-test.png", "test content");
 
       // Make putToR2 work but insertMedia fail
       const mockKey = `rollback-key-${Date.now()}`;
@@ -110,11 +122,17 @@ describe("MediaService", () => {
       );
     });
 
-    it("should calculate correct file size", async () => {
-      const content = "x".repeat(1024); // 1KB
-      const file = new File([content], "sized-file.jpg", {
-        type: "image/jpeg",
+    it("refuses a file whose bytes are not the declared type", async () => {
+      const result = await MediaService.upload(adminContext, {
+        file: new File(["just text"], "fake.png", { type: "image/png" }),
       });
+
+      expect(result.error?.reason).toBe("MEDIA_INVALID");
+      expect(Storage.putToR2).not.toHaveBeenCalled();
+    });
+
+    it("should calculate correct file size", async () => {
+      const file = jpegFile("sized-file.jpg", 1024); // 1KB
 
       const result = unwrap(await MediaService.upload(adminContext, { file }));
 
@@ -144,9 +162,7 @@ describe("MediaService", () => {
 
     it("should delete from both DB and trigger R2 cleanup", async () => {
       // First upload a file
-      const file = new File(["delete me"], "to-delete.png", {
-        type: "image/png",
-      });
+      const file = pngFile("to-delete.png", "delete me");
       const uploaded = unwrap(
         await MediaService.upload(adminContext, { file }),
       );
@@ -181,9 +197,7 @@ describe("MediaService", () => {
     beforeEach(async () => {
       // Upload some test files
       for (let i = 1; i <= 5; i++) {
-        const file = new File([`content ${i}`], `query-test-${i}.png`, {
-          type: "image/png",
-        });
+        const file = pngFile(`query-test-${i}.png`, `content ${i}`);
         unwrap(await MediaService.upload(adminContext, { file }));
       }
     });
@@ -217,9 +231,7 @@ describe("MediaService", () => {
 
     it("should search media by filename", async () => {
       // Upload a uniquely named file
-      const uniqueFile = new File(["unique"], "special-unique-file.png", {
-        type: "image/png",
-      });
+      const uniqueFile = pngFile("special-unique-file.png", "unique");
       unwrap(await MediaService.upload(adminContext, { file: uniqueFile }));
 
       const result = await MediaService.getMediaList(adminContext, {
@@ -245,9 +257,7 @@ describe("MediaService", () => {
     });
 
     it("should update media filename", async () => {
-      const file = new File(["rename me"], "original-name.png", {
-        type: "image/png",
-      });
+      const file = pngFile("original-name.png", "rename me");
       const uploaded = unwrap(
         await MediaService.upload(adminContext, { file }),
       );
@@ -298,9 +308,7 @@ describe("MediaService", () => {
   // ============================================
   describe("Post-Media Relationships", () => {
     it("should track media usage in posts", async () => {
-      const file = new File(["linked image"], "linked-image.png", {
-        type: "image/png",
-      });
+      const file = pngFile("linked-image.png", "linked image");
       const media = unwrap(await MediaService.upload(adminContext, { file }));
       const { id: postId } = await PostService.createEmptyPost(adminContext);
 
@@ -317,9 +325,7 @@ describe("MediaService", () => {
     });
 
     it("should return false for unused media", async () => {
-      const file = new File(["unused"], "unused-image.png", {
-        type: "image/png",
-      });
+      const file = pngFile("unused-image.png", "unused");
       const media = unwrap(await MediaService.upload(adminContext, { file }));
 
       const isInUse = await MediaService.isMediaInUse(adminContext, media.key);
@@ -331,7 +337,7 @@ describe("MediaService", () => {
       const mediaKeys: Array<string> = [];
 
       for (const fileName of files) {
-        const file = new File(["content"], fileName, { type: "image/png" });
+        const file = pngFile(fileName, "content");
         const media = unwrap(await MediaService.upload(adminContext, { file }));
         mediaKeys.push(media.key);
       }
@@ -351,9 +357,7 @@ describe("MediaService", () => {
     });
 
     it("keeps published snapshot images locked after they leave the draft", async () => {
-      const file = new File(["published image"], "published-image.png", {
-        type: "image/png",
-      });
+      const file = pngFile("published-image.png", "published image");
       const media = unwrap(await MediaService.upload(adminContext, { file }));
       const { id: postId } = await PostService.createEmptyPost(adminContext);
 
@@ -375,9 +379,7 @@ describe("MediaService", () => {
     });
 
     it("locks a Post Cover on the draft and on the public snapshot", async () => {
-      const file = new File(["cover image"], "cover-image.png", {
-        type: "image/png",
-      });
+      const file = pngFile("cover-image.png", "cover image");
       const media = unwrap(await MediaService.upload(adminContext, { file }));
       const { id: postId } = await PostService.createEmptyPost(adminContext);
 
@@ -422,9 +424,7 @@ describe("MediaService", () => {
     });
 
     it("unlocks snapshot-only images after unpublish if the draft no longer uses them", async () => {
-      const file = new File(["unpublish image"], "unpublish-image.png", {
-        type: "image/png",
-      });
+      const file = pngFile("unpublish-image.png", "unpublish image");
       const media = unwrap(await MediaService.upload(adminContext, { file }));
       const { id: postId } = await PostService.createEmptyPost(adminContext);
 
@@ -440,9 +440,7 @@ describe("MediaService", () => {
     });
 
     it("marks a Post Cover on linked posts", async () => {
-      const file = new File(["cover"], "cover-flag.png", {
-        type: "image/png",
-      });
+      const file = pngFile("cover-flag.png", "cover");
       const media = unwrap(await MediaService.upload(adminContext, { file }));
       const { id: postId } = await PostService.createEmptyPost(adminContext);
       unwrap(
@@ -460,11 +458,11 @@ describe("MediaService", () => {
 
   describe("Replace and import", () => {
     it("replaces the file at the same key", async () => {
-      const original = new File(["old"], "old.png", { type: "image/png" });
+      const original = pngFile("old.png", "old");
       const uploaded = unwrap(
         await MediaService.upload(adminContext, { file: original }),
       );
-      const next = new File(["new-bytes"], "new.jpg", { type: "image/jpeg" });
+      const next = jpegFile("new.jpg", 64);
       const replaced = unwrap(
         await MediaService.replaceImage(adminContext, {
           key: uploaded.key,
@@ -486,7 +484,7 @@ describe("MediaService", () => {
     it("gives a replaced file a new versioned URL and points drafts at it", async () => {
       const media = unwrap(
         await MediaService.upload(adminContext, {
-          file: new File(["old"], "banner.png", { type: "image/png" }),
+          file: pngFile("banner.png", "old"),
         }),
       );
       const { id: postId } = await PostService.createEmptyPost(adminContext);
@@ -496,7 +494,7 @@ describe("MediaService", () => {
       const replaced = unwrap(
         await MediaService.replaceImage(adminContext, {
           key: media.key,
-          file: new File(["new"], "banner.png", { type: "image/png" }),
+          file: pngFile("banner.png", "new"),
         }),
       );
 
@@ -512,8 +510,25 @@ describe("MediaService", () => {
       );
     });
 
+    it("refuses a replacement whose bytes are not the declared type", async () => {
+      const media = unwrap(
+        await MediaService.upload(adminContext, {
+          file: pngFile("keep.png", "old"),
+        }),
+      );
+      vi.mocked(Storage.putToR2).mockClear();
+
+      const result = await MediaService.replaceImage(adminContext, {
+        key: media.key,
+        file: new File(["plain text"], "keep.png", { type: "image/png" }),
+      });
+
+      expect(result.error?.reason).toBe("MEDIA_INVALID");
+      expect(Storage.putToR2).not.toHaveBeenCalled();
+    });
+
     it("imports a public image URL into Media", async () => {
-      const bytes = new Uint8Array([1, 2, 3, 4]);
+      const bytes = await pngFile("download.png", "x").arrayBuffer();
       vi.stubGlobal(
         "fetch",
         vi.fn().mockResolvedValue(
@@ -545,12 +560,12 @@ describe("MediaService", () => {
     it("deletes unused media in one pass", async () => {
       const unused = unwrap(
         await MediaService.upload(adminContext, {
-          file: new File(["a"], "unused-batch.png", { type: "image/png" }),
+          file: pngFile("unused-batch.png", "a"),
         }),
       );
       const used = unwrap(
         await MediaService.upload(adminContext, {
-          file: new File(["b"], "used-batch.png", { type: "image/png" }),
+          file: pngFile("used-batch.png", "b"),
         }),
       );
       const { id: postId } = await PostService.createEmptyPost(adminContext);
@@ -576,7 +591,7 @@ describe("MediaService", () => {
     it("keeps media an Admin uses as their avatar", async () => {
       const avatar = unwrap(
         await MediaService.upload(adminContext, {
-          file: new File(["a"], "admin-avatar.png", { type: "image/png" }),
+          file: pngFile("admin-avatar.png", "a"),
         }),
       );
       await setAvatar(
@@ -604,7 +619,7 @@ describe("MediaService", () => {
     it("does not protect media a reader points their avatar at", async () => {
       const media = unwrap(
         await MediaService.upload(adminContext, {
-          file: new File(["r"], "reader-avatar.png", { type: "image/png" }),
+          file: pngFile("reader-avatar.png", "r"),
         }),
       );
       const reader = createMockSession({

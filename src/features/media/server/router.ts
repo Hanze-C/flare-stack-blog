@@ -50,6 +50,7 @@ const list = adminProcedure
 const upload = adminProcedure
   .errors({
     MEDIA_RECORD_CREATE_FAILED: mediaErrors.MEDIA_RECORD_CREATE_FAILED,
+    MEDIA_INVALID: mediaErrors.MEDIA_INVALID,
   })
   .route({
     method: "POST",
@@ -67,6 +68,9 @@ const upload = adminProcedure
     unwrapResult(MediaService.upload(context, { file: input.image }), {
       MEDIA_RECORD_CREATE_FAILED: () => {
         throw errors.MEDIA_RECORD_CREATE_FAILED();
+      },
+      MEDIA_INVALID: () => {
+        throw errors.MEDIA_INVALID();
       },
     }),
   );
@@ -188,7 +192,10 @@ const linkedPosts = adminProcedure
   );
 
 const replace = adminProcedure
-  .errors({ MEDIA_NOT_FOUND: mediaErrors.MEDIA_NOT_FOUND })
+  .errors({
+    MEDIA_NOT_FOUND: mediaErrors.MEDIA_NOT_FOUND,
+    MEDIA_INVALID: mediaErrors.MEDIA_INVALID,
+  })
   .route({
     method: "POST",
     path: "/admin/media/{key}/replace",
@@ -211,6 +218,9 @@ const replace = adminProcedure
       {
         MEDIA_NOT_FOUND: () => {
           throw errors.MEDIA_NOT_FOUND();
+        },
+        MEDIA_INVALID: () => {
+          throw errors.MEDIA_INVALID();
         },
       },
     ),

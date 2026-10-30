@@ -9,6 +9,7 @@ import {
   MAX_FILE_SIZE,
 } from "@/features/media/media.schema";
 import { getImageDimensions } from "@/features/media/utils/image-dimensions";
+import { matchesDeclaredImageType } from "@/features/media/utils/image-signature";
 import {
   getContentTypeFromKey,
   getOriginalImageUrl,
@@ -26,7 +27,11 @@ export async function upload(
 ) {
   const { file } = input;
 
-  const dimensions = getImageDimensions(await file.arrayBuffer());
+  const buffer = await file.arrayBuffer();
+  if (!matchesDeclaredImageType(buffer, file.type)) {
+    return err({ reason: "MEDIA_INVALID" });
+  }
+  const dimensions = getImageDimensions(buffer);
   const width = dimensions?.width;
   const height = dimensions?.height;
 
@@ -158,7 +163,11 @@ export async function replaceImage(
     return err({ reason: "MEDIA_NOT_FOUND" });
   }
 
-  const dimensions = getImageDimensions(await input.file.arrayBuffer());
+  const buffer = await input.file.arrayBuffer();
+  if (!matchesDeclaredImageType(buffer, input.file.type)) {
+    return err({ reason: "MEDIA_INVALID" });
+  }
+  const dimensions = getImageDimensions(buffer);
   await Storage.putToR2(context.env, input.file, input.key);
   // The key stays, so a new version keeps cached copies of the old file from
   // answering for the new one.
