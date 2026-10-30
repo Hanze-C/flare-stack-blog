@@ -36,11 +36,44 @@ const imageFile = z
   .max(MAX_FILE_SIZE)
   .mime([...ACCEPTED_IMAGE_TYPES]);
 
+// The file reaches the procedure only as a multipart part; the generator also
+// offers the input as JSON, which no client can send a file in. The document
+// declares the one body that works.
+const multipartImageBody = oo.spec(
+  os.middleware(({ next }) => next()),
+  (operation) => ({
+    ...operation,
+    requestBody: {
+      required: true,
+      content: {
+        "multipart/form-data": {
+          schema: {
+            type: "object",
+            properties: {
+              image: {
+                type: "string",
+                format: "binary",
+                description: `The image file, at most ${MAX_FILE_SIZE / 1024 / 1024} MB, sent as a multipart part with its content type: ${ACCEPTED_IMAGE_TYPES.join(", ")}. The bytes must be that type; a mismatch answers 400 MEDIA_INVALID.`,
+              },
+            },
+            required: ["image"],
+          },
+          encoding: {
+            image: { contentType: ACCEPTED_IMAGE_TYPES.join(", ") },
+          },
+        },
+      },
+    },
+  }),
+);
+
 const list = adminProcedure
   .route({
     method: "GET",
     path: "/admin/media",
     summary: "List media",
+    description:
+      "Lists the media library, newest first, a page at a time (20 by default). search matches file names. unusedOnly keeps the images nothing uses, the ones DELETE /admin/media/unused would delete. postCount counts the posts that use each image, Post Revisions included.",
     tags: ["Admin Media"],
   })
   .input(GetMediaListInputSchema)
@@ -52,10 +85,13 @@ const upload = adminProcedure
     MEDIA_RECORD_CREATE_FAILED: mediaErrors.MEDIA_RECORD_CREATE_FAILED,
     MEDIA_INVALID: mediaErrors.MEDIA_INVALID,
   })
+  .use(multipartImageBody)
   .route({
     method: "POST",
     path: "/admin/media",
     summary: "Upload an image",
+    description:
+      "Stores an image in the media library from a multipart/form-data body with one part, image. Returns the new Media; use its url as the src of an image in a post body, or its id as a post's coverMediaId. Answers 400 MEDIA_INVALID when the file's bytes are not the type it declares.",
     tags: ["Admin Media"],
   })
   .input(
@@ -86,6 +122,8 @@ const importFromUrl = adminProcedure
     method: "POST",
     path: "/admin/media/import",
     summary: "Import an image from a URL",
+    description:
+      "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public, MEDIA_IMPORT_FAILED when the download fails, and MEDIA_INVALID when the response is not an accepted image type or its bytes are not that type.",
     tags: ["Admin Media"],
   })
   .input(ImportMediaUrlInputSchema)
@@ -112,6 +150,8 @@ const stats = adminProcedure
     method: "GET",
     path: "/admin/media/stats",
     summary: "Get media library stats",
+    description:
+      "Counts the images in the media library, how many of them nothing uses, and their total size in bytes.",
     tags: ["Admin Media"],
   })
   .output(MediaStatsSchema)
@@ -122,6 +162,7 @@ const totalSize = adminProcedure
     method: "GET",
     path: "/admin/media/size",
     summary: "Get total media size",
+    description: "The total size of the media library in bytes.",
     tags: ["Admin Media"],
   })
   .output(z.number().int())
@@ -132,6 +173,8 @@ const linkedKeys = adminProcedure
     method: "POST",
     path: "/admin/media/linked-keys",
     summary: "Resolve which media keys are linked",
+    description:
+      "Returns the given keys that a post uses, in its draft, its published version or a Post Revision. Media with such a key cannot be deleted.",
     tags: ["Admin Media"],
   })
   .input(z.object({ keys: z.array(z.string()) }))
@@ -145,6 +188,8 @@ const removeUnused = adminProcedure
     method: "DELETE",
     path: "/admin/media/unused",
     summary: "Delete unused media",
+    description:
+      "Deletes every image no post uses (draft, published version or Post Revision) and no Admin has as an avatar. Cannot be undone.",
     tags: ["Admin Media"],
   })
   .output(DeleteUnusedMediaResultSchema)
@@ -163,6 +208,8 @@ const remove = adminProcedure
     method: "DELETE",
     path: "/admin/media/{key}",
     summary: "Delete media",
+    description:
+      "Deletes one image. Answers 404 MEDIA_NOT_FOUND when no Media has the key, and 409 MEDIA_IN_USE while a post uses it (draft, published version or Post Revision) or an Admin has it as an avatar; GET /admin/media/{key}/posts lists the posts. Cannot be undone.",
     tags: ["Admin Media"],
   })
   .input(MediaKeyInputSchema)
@@ -183,6 +230,8 @@ const linkedPosts = adminProcedure
     method: "GET",
     path: "/admin/media/{key}/posts",
     summary: "List posts linked to media",
+    description:
+      "Lists the posts that use the image in their body or as their cover, in the draft, the published version or a Post Revision. revisionsOnly marks a post whose Post Revisions alone use it. An unknown key lists nothing.",
     tags: ["Admin Media"],
   })
   .input(MediaKeyInputSchema)
@@ -196,10 +245,13 @@ const replace = adminProcedure
     MEDIA_NOT_FOUND: mediaErrors.MEDIA_NOT_FOUND,
     MEDIA_INVALID: mediaErrors.MEDIA_INVALID,
   })
+  .use(multipartImageBody)
   .route({
     method: "POST",
     path: "/admin/media/{key}/replace",
     summary: "Replace media file",
+    description:
+      "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares.",
     tags: ["Admin Media"],
   })
   .input(
@@ -246,6 +298,8 @@ const updateName = adminProcedure
     method: "PATCH",
     path: "/admin/media/{key}",
     summary: "Rename media",
+    description:
+      "Changes the image's file name in the media library. Its key and address stay. Answers 404 MEDIA_NOT_FOUND when no Media has the key.",
     tags: ["Admin Media"],
   })
   .input(UpdateMediaNameInputSchema)
