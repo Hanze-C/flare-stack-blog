@@ -101,7 +101,11 @@ export function removeCodeBlockHighlighting(
   const cloned = structuredClone(doc);
 
   function walk(node: JSONContent) {
-    if (node.type === "codeBlock" && node.attrs && "highlightedHtml" in node.attrs) {
+    if (
+      node.type === "codeBlock" &&
+      node.attrs &&
+      "highlightedHtml" in node.attrs
+    ) {
       const { highlightedHtml: _highlightedHtml, ...rest } = node.attrs;
       if (Object.keys(rest).length === 0) delete node.attrs;
       else node.attrs = rest;
