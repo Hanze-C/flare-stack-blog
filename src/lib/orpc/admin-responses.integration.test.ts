@@ -44,8 +44,9 @@ async function call(
   };
 }
 
+type Schema = { anyOf?: unknown; type?: string; $ref?: string };
 type Response200 = {
-  content?: Record<string, { schema: { anyOf?: unknown; type?: string } }>;
+  content?: Record<string, { schema: Schema }>;
 };
 
 describe("OpenAPI document", () => {
@@ -59,7 +60,13 @@ describe("OpenAPI document", () => {
         string,
         Record<string, { responses: Record<string, Response200> }>
       >;
+      components: { schemas: Record<string, Schema> };
     };
+    // A schema several operations return is a component they reference.
+    const resolve = (schema: Schema | undefined) =>
+      schema?.$ref
+        ? doc.components.schemas[schema.$ref.split("/").pop()!]
+        : schema;
     const operations: Array<[string, string]> = [
       ["post", "/admin/config/assets"],
       ["post", "/admin/friend-links"],
@@ -77,10 +84,11 @@ describe("OpenAPI document", () => {
       ["post", "/admin/webhooks/telegram/chats"],
     ];
     for (const [method, path] of operations) {
-      const schema =
+      const schema = resolve(
         doc.paths[path]?.[method]?.responses["200"]?.content?.[
           "application/json"
-        ]?.schema;
+        ]?.schema,
+      );
       expect(schema, `${method} ${path}`).toBeDefined();
       expect(schema?.anyOf, `${method} ${path}`).toBeUndefined();
       expect(schema?.type, `${method} ${path}`).toBe("object");
