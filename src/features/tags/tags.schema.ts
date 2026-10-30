@@ -45,29 +45,29 @@ export const SetPostTagsResultSchema = z.object({
 });
 
 // API Input Schemas
-export const CreateTagInputSchema = z.object({
+export const CreateTagInputSchema = z.strictObject({
   name: z.string().min(1).max(50),
 });
 
-export const UpdateTagInputSchema = z.object({
+export const UpdateTagInputSchema = z.strictObject({
   id: z.number(),
-  data: z.object({
+  data: z.strictObject({
     name: z.string().min(1).max(50).optional(),
   }),
 });
 
-export const DeleteTagInputSchema = z.object({
+export const DeleteTagInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const GetTagsInputSchema = z.object({
+export const GetTagsInputSchema = z.strictObject({
   sortBy: z.enum(["name", "createdAt", "postCount"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
   withCount: z.boolean().optional(),
   publicOnly: z.boolean().optional(),
 });
 
-export const SetPostTagsInputSchema = z.object({
+export const SetPostTagsInputSchema = z.strictObject({
   postId: z.number(),
   tagIds: z.array(z.number()),
   saveToken: z
@@ -78,7 +78,7 @@ export const SetPostTagsInputSchema = z.object({
     ),
 });
 
-export const GetTagsByPostIdInputSchema = z.object({
+export const GetTagsByPostIdInputSchema = z.strictObject({
   postId: z.number(),
 });
 

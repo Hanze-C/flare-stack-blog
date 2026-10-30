@@ -78,24 +78,24 @@ export const createSubmitFriendLinkSchema = (m: Messages) =>
 
 // === Admin create input (manual add) ===
 
-export const CreateFriendLinkInputSchema = z.object(friendLinkFields);
+export const CreateFriendLinkInputSchema = z.strictObject(friendLinkFields);
 
 export const createCreateFriendLinkSchema = (m: Messages) =>
   z.object(createFriendLinkFormFields(m));
 
 // === Admin inputs ===
-export const GetAllFriendLinksInputSchema = z.object({
+export const GetAllFriendLinksInputSchema = z.strictObject({
   search: z.string().max(200).optional(),
   offset: z.number().optional(),
   limit: z.number().optional(),
   status: z.enum(["pending", "approved", "rejected"]).optional(),
 });
 
-export const ApproveFriendLinkInputSchema = z.object({
+export const ApproveFriendLinkInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const RejectFriendLinkInputSchema = z.object({
+export const RejectFriendLinkInputSchema = z.strictObject({
   id: z.number(),
   rejectionReason: z.string().max(500).optional(),
 });
@@ -116,7 +116,7 @@ export const UpdateFriendLinkInputSchema = z
   })
   .strict();
 
-export const DeleteFriendLinkInputSchema = z.object({
+export const DeleteFriendLinkInputSchema = z.strictObject({
   id: z.number(),
 });
 

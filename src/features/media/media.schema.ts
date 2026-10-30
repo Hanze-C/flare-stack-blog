@@ -77,23 +77,23 @@ export const DeleteUnusedMediaResultSchema = z.object({
   error: z.null(),
 });
 
-export const MediaKeyInputSchema = z.object({
+export const MediaKeyInputSchema = z.strictObject({
   key: z.string(),
 });
 
-export const UpdateMediaNameInputSchema = z.object({
+export const UpdateMediaNameInputSchema = z.strictObject({
   key: z.string().min(1),
   name: z.string().min(1),
 });
 
-export const GetMediaListInputSchema = z.object({
+export const GetMediaListInputSchema = z.strictObject({
   cursor: z.number().optional(),
   limit: z.number().optional(),
   search: z.string().optional(),
   unusedOnly: z.boolean().optional(),
 });
 
-export const ImportMediaUrlInputSchema = z.object({
+export const ImportMediaUrlInputSchema = z.strictObject({
   url: z.string().min(1),
 });
 

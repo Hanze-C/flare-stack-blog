@@ -33,11 +33,11 @@ export const PostRevisionSelectSchema = createSelectSchema(PostRevisionsTable, {
   reason: PostRevisionReasonSchema,
 });
 
-export const ListPostRevisionsInputSchema = z.object({
+export const ListPostRevisionsInputSchema = z.strictObject({
   postId: z.number(),
 });
 
-export const FindPostRevisionByIdInputSchema = z.object({
+export const FindPostRevisionByIdInputSchema = z.strictObject({
   postId: z.number(),
   revisionId: z.number(),
 });
@@ -47,12 +47,12 @@ const CreatePostRevisionInputSchema = z.object({
   reason: PostRevisionReasonSchema.optional(),
 });
 
-export const RestorePostRevisionInputSchema = z.object({
+export const RestorePostRevisionInputSchema = z.strictObject({
   postId: z.number(),
   revisionId: z.number(),
 });
 
-export const DeletePostRevisionsInputSchema = z.object({
+export const DeletePostRevisionsInputSchema = z.strictObject({
   postId: z.number(),
   revisionIds: z.array(z.number().int()).min(1),
 });

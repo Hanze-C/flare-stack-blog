@@ -232,30 +232,30 @@ export type GetPostsCursorInput = z.infer<typeof GetPostsCursorInputSchema>;
 export type FindPostBySlugInput = z.infer<typeof FindPostBySlugInputSchema>;
 
 // Admin API Schemas
-export const GenerateSlugInputSchema = z.object({
+export const GenerateSlugInputSchema = z.strictObject({
   title: z.string().optional(),
   excludeId: z.number().optional(),
 });
 
 const AdminTaxonomyFilterSchema = z.discriminatedUnion("kind", [
-  z.object({
+  z.strictObject({
     kind: z.literal("category"),
     id: z.number().int().positive(),
     scope: z.enum(["current", "public"]),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("tag"),
     id: z.number().int().positive(),
     scope: z.enum(["current", "public"]),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("uncategorized"),
     scope: z.enum(["current", "public"]),
   }),
 ]);
 export type AdminTaxonomyFilter = z.infer<typeof AdminTaxonomyFilterSchema>;
 
-export const GetPostsInputSchema = z.object({
+export const GetPostsInputSchema = z.strictObject({
   taxonomy: AdminTaxonomyFilterSchema.optional(),
   categoryId: z
     .number()
@@ -350,7 +350,7 @@ export const AdminPostListPageSchema = z.object({
   ),
 });
 
-export const FindPostByIdInputSchema = z.object({ id: z.number() });
+export const FindPostByIdInputSchema = z.strictObject({ id: z.number() });
 
 export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
   contentFormat: PostContentFormatSchema,
@@ -361,7 +361,7 @@ export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
  * always creates a new draft instead of reusing an existing empty one, so
  * several external clients can create posts without colliding.
  */
-const CreatePostDataSchema = z.object({
+const CreatePostDataSchema = z.strictObject({
   title: z
     .string()
     .trim()
@@ -373,23 +373,23 @@ const CreatePostDataSchema = z.object({
 });
 
 export const CreatePostInputSchema = z
-  .object({
+  .strictObject({
     data: CreatePostDataSchema.optional().describe(
       "Omit to keep the get-or-create-empty-draft behavior used by the Admin UI.",
     ),
   })
   .optional();
 
-export const UpdatePostInputSchema = z.object({
+export const UpdatePostInputSchema = z.strictObject({
   id: z.number(),
   data: PostUpdateSchema,
   saveToken: StatedSaveTokenSchema,
   contentFormat: PostContentFormatSchema,
 });
 
-export const DeletePostInputSchema = z.object({ id: z.number() });
+export const DeletePostInputSchema = z.strictObject({ id: z.number() });
 
-export const PublishPostInputSchema = z.object({
+export const PublishPostInputSchema = z.strictObject({
   id: z.number(),
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
@@ -469,22 +469,22 @@ export const EditConflictDataSchema = z.object({
     ),
 });
 
-export const UnpublishPostInputSchema = z.object({
+export const UnpublishPostInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const DiscardPostChangesInputSchema = z.object({
+export const DiscardPostChangesInputSchema = z.strictObject({
   id: z.number(),
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and mean to discard. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to discard whatever the draft is now.",
   ),
 });
 
-export const PinPostInputSchema = z.object({
+export const PinPostInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const UnpinPostInputSchema = z.object({
+export const UnpinPostInputSchema = z.strictObject({
   id: z.number(),
 });
 
@@ -505,7 +505,7 @@ export type UnpinPostInput = z.infer<typeof UnpinPostInputSchema>;
 export type PostItem = z.infer<typeof PostItemSchema>;
 export type PostWithToc = z.infer<typeof PostWithTocSchema>;
 
-export const VideoMetaInputSchema = z.object({
+export const VideoMetaInputSchema = z.strictObject({
   provider: z.enum(["bilibili", "youtube"]),
   videoId: z.string().max(32),
   page: z.number().int().positive().nullable().optional(),

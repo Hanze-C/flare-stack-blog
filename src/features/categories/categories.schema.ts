@@ -44,22 +44,22 @@ export const AdminCategoryListSchema = z.object({
 
 export const DeleteCategoryResultSchema = z.object({ success: z.boolean() });
 
-export const CreateCategoryInputSchema = z.object({
+export const CreateCategoryInputSchema = z.strictObject({
   name: z.string().min(1).max(50),
 });
 
-export const UpdateCategoryInputSchema = z.object({
+export const UpdateCategoryInputSchema = z.strictObject({
   id: z.number(),
-  data: z.object({
+  data: z.strictObject({
     name: z.string().min(1).max(50).optional(),
   }),
 });
 
-export const DeleteCategoryInputSchema = z.object({
+export const DeleteCategoryInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const GetCategoriesInputSchema = z.object({
+export const GetCategoriesInputSchema = z.strictObject({
   sortBy: z.enum(["name", "createdAt", "postCount"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
   publicOnly: z.boolean().optional(),

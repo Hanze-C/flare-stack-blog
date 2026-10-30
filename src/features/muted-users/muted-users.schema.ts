@@ -9,11 +9,11 @@ export const MutedUserSchema = z.object({
   mutedAt: coercedDate,
 });
 
-export const MuteUserInputSchema = z.object({
+export const MuteUserInputSchema = z.strictObject({
   userId: z.string().min(1),
 });
 
-export const UnmuteUserInputSchema = z.object({
+export const UnmuteUserInputSchema = z.strictObject({
   userId: z.string().min(1),
 });
 

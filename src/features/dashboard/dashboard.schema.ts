@@ -101,7 +101,7 @@ export const DashboardOverviewSchema = z.object({
   }),
 });
 
-export const UnrepliedCommentsInputSchema = z.object({
+export const UnrepliedCommentsInputSchema = z.strictObject({
   limit: z.number().int().min(1).max(50).default(20),
   /** Continue after this Comment: the previous page's `nextBeforeId`. */
   beforeId: z.number().int().positive().optional(),

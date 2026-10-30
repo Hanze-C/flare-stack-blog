@@ -58,7 +58,7 @@ const upload = adminProcedure
     tags: ["Admin Media"],
   })
   .input(
-    z.object({
+    z.strictObject({
       image: imageFile,
     }),
   )
@@ -130,7 +130,7 @@ const linkedKeys = adminProcedure
     summary: "Resolve which media keys are linked",
     tags: ["Admin Media"],
   })
-  .input(z.object({ keys: z.array(z.string()) }))
+  .input(z.strictObject({ keys: z.array(z.string()) }))
   .output(z.array(z.string()))
   .handler(({ context, input }) =>
     MediaService.getLinkedMediaKeys(context, input.keys),
@@ -190,7 +190,7 @@ const replace = adminProcedure
     tags: ["Admin Media"],
   })
   .input(
-    z.object({
+    z.strictObject({
       key: z.string(),
       image: imageFile,
     }),

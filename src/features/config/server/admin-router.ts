@@ -61,7 +61,7 @@ const uploadAsset = adminProcedure
     }),
   )
   .input(
-    z.object({
+    z.strictObject({
       file: z
         .file()
         .max(SITE_ASSET_MAX_FILE_SIZE)

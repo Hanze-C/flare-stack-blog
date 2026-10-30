@@ -107,7 +107,7 @@ export const GetMyCommentsInputSchema = z.object({
 });
 
 // Admin API Schemas
-export const CommentHandledInputSchema = z.object({
+export const CommentHandledInputSchema = z.strictObject({
   id: z.number().int().positive(),
 });
 
