@@ -674,6 +674,7 @@
   "media_copy_failed": "复制失败",
   "media_replace_success": "已替换",
   "media_replace_fail": "替换失败",
+  "media_replace_type_changed": "替换的文件必须与原图类型相同（例如 PNG 只能换成 PNG）",
   "media_import_fail": "无法导入这张图片",
   "media_uploading": "正在上传 {current}/{total}",
   "media_grid_loading": "加载中...",
