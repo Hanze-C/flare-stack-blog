@@ -145,7 +145,7 @@
             "method": "PATCH",
             "path": "/admin/posts/{id}",
             "summary": "Update a post",
-            "description": "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data), whichever format it was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+            "description": "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
             "tags": ["Admin Posts"]
           }
         }
@@ -597,7 +597,7 @@
           "method": "POST",
           "path": "/admin/media",
           "summary": "Upload an image",
-          "description": "Stores an image in the media library from a multipart/form-data body with one part, image. Returns the new Media; use its url as the src of an image in a post body, or its id as a post's coverMediaId. Answers 400 MEDIA_INVALID when the file's bytes are not the type it declares.",
+          "description": "Stores an image in the media library from a multipart/form-data body with one part, image. Returns the new Media; use its url as the src of an image in a post body, or its id as a post's coverMediaId. Answers 400 MEDIA_INVALID when the file's bytes are not the type it declares; data.detail says why.",
           "tags": ["Admin Media"]
         }
       }
@@ -610,7 +610,7 @@
           "method": "POST",
           "path": "/admin/media/import",
           "summary": "Import an image from a URL",
-          "description": "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public, MEDIA_IMPORT_FAILED when the download fails, and MEDIA_INVALID when the response is not an accepted image type or its bytes are not that type.",
+          "description": "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public, MEDIA_IMPORT_FAILED when the download fails, and MEDIA_INVALID when the response is not an accepted image type, is empty or over the size limit, or its bytes are not that type; data.detail says which.",
           "tags": ["Admin Media"]
         }
       }
@@ -701,7 +701,7 @@
           "method": "POST",
           "path": "/admin/media/{key}/replace",
           "summary": "Replace media file",
-          "description": "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares.",
+          "description": "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares (data.detail says why).",
           "tags": ["Admin Media"]
         }
       }
