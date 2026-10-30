@@ -306,7 +306,7 @@ const update = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Update a post",
     description:
-      "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+      "Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
@@ -403,6 +403,8 @@ const unpublishPost = adminProcedure
     method: "POST",
     path: "/admin/posts/{id}/unpublish",
     summary: "Unpublish a post",
+    description:
+      "Discards the Public Content Snapshot, so the post becomes a draft post and leaves the public site. A post that is already a draft is left as it is: it answers 200 with its current saveToken, unchanged.",
     tags: ["Admin Posts"],
   })
   .input(UnpublishPostInputSchema)
@@ -497,17 +499,23 @@ const unpinPost = adminProcedure
   );
 
 const listRevisions = adminProcedure
+  .errors(postNotFoundErrors)
   .route({
     method: "GET",
     path: "/admin/posts/{postId}/revisions",
     summary: "List post revisions",
+    description:
+      "A post that does not exist answers 404 POST_NOT_FOUND; a post without revisions answers an empty list.",
     tags: ["Admin Posts"],
   })
   .input(ListPostRevisionsInputSchema)
   .output(z.array(PostRevisionListItemSchema))
-  .handler(({ context, input }) =>
-    PostRevisionService.listPostRevisions(context, input),
-  );
+  .handler(async ({ context, input, errors }) => {
+    if (!(await PostService.postExists(context, input.postId))) {
+      throw errors.POST_NOT_FOUND();
+    }
+    return PostRevisionService.listPostRevisions(context, input);
+  });
 
 const getRevision = adminProcedure
   .errors({ POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND })
@@ -572,17 +580,26 @@ const restoreRevision = adminProcedure
   );
 
 const deleteRevisions = adminProcedure
+  .errors(postNotFoundErrors)
   .route({
     method: "DELETE",
     path: "/admin/posts/{postId}/revisions",
     summary: "Delete post revisions",
+    description:
+      "A post that does not exist answers 404 POST_NOT_FOUND. Ids the post has no revision for are left out of deletedIds.",
     tags: ["Admin Posts"],
   })
   .input(DeletePostRevisionsInputSchema)
   .output(DeletePostRevisionsResultSchema)
-  .handler(({ context, input }) =>
-    unwrapResult(PostRevisionService.deletePostRevisions(context, input), {}),
-  );
+  .handler(async ({ context, input, errors }) => {
+    if (!(await PostService.postExists(context, input.postId))) {
+      throw errors.POST_NOT_FOUND();
+    }
+    return unwrapResult(
+      PostRevisionService.deletePostRevisions(context, input),
+      {},
+    );
+  });
 
 export default {
   list: adminList,

@@ -8,7 +8,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  like,
   lt,
   ne,
   or,
@@ -38,6 +37,7 @@ import type { PostItem } from "@/features/posts/schema/posts.schema";
 import { HOME_POSTS_PER_PAGE } from "@/features/posts/schema/posts.schema";
 import { isPostBodyEmpty } from "@/features/posts/utils/is-post-body-empty";
 import type { PostStatus, PublicPostSnapshot } from "@/lib/db/schema";
+import { startsWithText } from "@/lib/db/text-match";
 import { newSaveToken, PostsTable } from "@/lib/db/schema";
 
 const DEFAULT_PAGE_SIZE = 12;
@@ -790,11 +790,11 @@ export async function findSimilarSlugs(
   baseSlug: string,
   options: { excludeId?: number } = {},
 ) {
-  // LIKE ignores the case of ASCII letters, as slugExists does.
+  // Ignores the case of ASCII letters, as slugExists does.
   const conditions = [
     or(
-      like(PostsTable.slug, `${baseSlug}-%`),
-      like(PostsTable.publicSlug, `${baseSlug}-%`),
+      startsWithText(PostsTable.slug, `${baseSlug}-`),
+      startsWithText(PostsTable.publicSlug, `${baseSlug}-`),
     ),
   ];
 

@@ -128,6 +128,10 @@ export async function isMediaInUse(context: DbContext, key: string) {
   return await PostMediaRepo.isMediaInUse(context.db, key);
 }
 
+export async function mediaExists(context: DbContext, key: string) {
+  return (await MediaRepo.findMediaByKey(context.db, key)) !== null;
+}
+
 export async function getLinkedPosts(context: DbContext, key: string) {
   return await PostMediaRepo.getPostsByMediaKey(context.db, key);
 }

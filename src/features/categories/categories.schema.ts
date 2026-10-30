@@ -1,6 +1,7 @@
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { CategoriesTable } from "@/lib/db/schema";
+import { atLeastOneField } from "@/lib/orpc/changes";
 
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 
@@ -59,9 +60,11 @@ export const CreateCategoryInputSchema = z.strictObject({
 
 export const UpdateCategoryInputSchema = z.strictObject({
   id: z.number(),
-  data: z.strictObject({
-    name: CategoryNameInputSchema.optional(),
-  }),
+  data: atLeastOneField(
+    z.strictObject({
+      name: CategoryNameInputSchema.optional(),
+    }),
+  ).describe("The fields to change; at least one, or the request answers 400."),
 });
 
 export const DeleteCategoryInputSchema = z.strictObject({

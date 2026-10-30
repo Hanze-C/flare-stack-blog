@@ -77,13 +77,17 @@ export async function getTagsWithCount(
 }
 
 /**
- * Get tags for a specific post
+ * Get tags for a specific post, or POST_NOT_FOUND when there is no such post:
+ * a missing post has no tags to list, which is not the same as having none.
  */
 export async function getTagsByPostId(
   context: DbContext,
   data: GetTagsByPostIdInput,
 ) {
-  return await TagRepo.getTagsByPostId(context.db, data.postId);
+  if ((await PostRepo.findPostSaveToken(context.db, data.postId)) === null) {
+    return err({ reason: "POST_NOT_FOUND" });
+  }
+  return ok(await TagRepo.getTagsByPostId(context.db, data.postId));
 }
 
 // ============ Admin Service Methods ============
@@ -197,6 +201,23 @@ export async function deleteTag(
  * comes back as an Edit Conflict (ADR 0031).
  */
 export async function setPostTags(context: DbContext, data: SetPostTagsInput) {
+  // Setting the Tags the Post already has writes nothing, so it keeps the
+  // saveToken an open editor holds. A stated token still has to be current.
+  const held = await PostRepo.findPostSaveToken(context.db, data.postId);
+  if (held !== null) {
+    const tags = await TagRepo.getTagsByPostId(context.db, data.postId);
+    const wanted = new Set(data.tagIds);
+    if (
+      tags.length === wanted.size &&
+      tags.every((tag) => wanted.has(tag.id))
+    ) {
+      if (data.saveToken !== undefined && data.saveToken !== held) {
+        return err({ reason: "EDIT_CONFLICT", saveToken: held });
+      }
+      return ok({ saveToken: held });
+    }
+  }
+
   const saveToken = await TagRepo.setPostTags(
     context.db,
     data.postId,

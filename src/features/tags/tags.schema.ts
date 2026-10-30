@@ -1,6 +1,7 @@
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { TagsTable } from "@/lib/db/schema";
+import { atLeastOneField } from "@/lib/orpc/changes";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
@@ -60,9 +61,11 @@ export const CreateTagInputSchema = z.strictObject({
 
 export const UpdateTagInputSchema = z.strictObject({
   id: z.number(),
-  data: z.strictObject({
-    name: TagNameInputSchema.optional(),
-  }),
+  data: atLeastOneField(
+    z.strictObject({
+      name: TagNameInputSchema.optional(),
+    }),
+  ).describe("The fields to change; at least one, or the request answers 400."),
 });
 
 export const DeleteTagInputSchema = z.strictObject({
