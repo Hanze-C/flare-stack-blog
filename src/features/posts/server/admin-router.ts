@@ -38,6 +38,7 @@ import * as PostService from "@/features/posts/services/posts.service";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
 import {
   CONTENT_SIZE_RULES,
+  HIGHLIGHT_BUDGET_CHARS,
   POST_CONTENT_JSON_LIMIT_BYTES,
   PUBLIC_SNAPSHOT_LIMIT_BYTES,
 } from "@/features/posts/utils/post-content-size";
@@ -466,7 +467,7 @@ const publishPost = adminProcedure
     method: "POST",
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
-    description: `Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. Answers 413 POST_CONTENT_TOO_LARGE, writing nothing, when the serialized Public Content Snapshot (the body with its code highlighted, which is larger than the draft) takes more than ${PUBLIC_SNAPSHOT_LIMIT_BYTES} bytes; shorten the post. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.`,
+    description: `Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot, in order, up to ${HIGHLIGHT_BUDGET_CHARS} characters of new code per publish; a block past that is stored unhighlighted, as plain text. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. Answers 413 POST_CONTENT_TOO_LARGE, writing nothing, when the serialized Public Content Snapshot (the body with its code highlighted, which is larger than the draft) takes more than ${PUBLIC_SNAPSHOT_LIMIT_BYTES} bytes; shorten the post. When the snapshot is over the limit even before its code is highlighted, it answers at once and data.size counts it unhighlighted. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.`,
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)

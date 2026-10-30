@@ -6,9 +6,10 @@ import {
   seedAdminApiKey,
   seedUser,
 } from "tests/test-utils";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as PostService from "@/features/posts/services/posts.service";
 import {
+  HIGHLIGHT_BUDGET_CHARS,
   POST_CONTENT_JSON_LIMIT_BYTES,
   PUBLIC_SNAPSHOT_LIMIT_BYTES,
   serializedBytes,
@@ -18,6 +19,16 @@ import { PostsTable } from "@/lib/db/schema";
 import { JSON_BODY_LIMIT_BYTES } from "@/lib/orpc/body-limit";
 import { createApiContext } from "@/lib/orpc/create-context";
 import { openAPIHandler } from "@/lib/orpc/openapi-handler";
+import { plainCodeHtml } from "@/lib/plain-code-html";
+import { highlight as shikiHighlight } from "@/lib/shiki";
+
+// Highlighting runs as it does in production; the spy tells whether
+// publishing spent the CPU on it.
+vi.mock("@/lib/shiki", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/shiki")>();
+  return { ...actual, highlight: vi.fn(actual.highlight) };
+});
+const highlight = vi.mocked(shikiHighlight);
 
 /*
  * A Post's body and snapshot are stored in one D1 row that holds 2,000,000
@@ -178,45 +189,59 @@ describe("Post size limits", () => {
     });
   });
 
-  describe("a snapshot over the limit once its code is highlighted", () => {
-    // The code is repeated in the draft and again as highlighted HTML.
-    const codeDoc = () => ({
-      type: "doc" as const,
-      content: [
-        {
-          type: "codeBlock",
-          attrs: { language: "ts" },
-          content: [
-            {
-              type: "text",
-              text: Array.from(
-                { length: 12_000 },
-                (_, line) => `let a${line} = ${line};`,
-              ).join("\n"),
-            },
-          ],
-        },
-      ],
+  describe("a snapshot over the limit", () => {
+    const codeLines = (lines: number) =>
+      Array.from(
+        { length: lines },
+        (_, line) => `let a${line} = ${line};`,
+      ).join("\n");
+    const codeBlock = (text: string) => ({
+      type: "codeBlock",
+      attrs: { language: "ts" },
+      content: [{ type: "text", text }],
     });
 
-    it("refuses to publish with 413 POST_CONTENT_TOO_LARGE and writes nothing", async () => {
+    async function draftPost(contentJson: object) {
       const { id } = await PostService.createEmptyPost(adminContext);
-      const contentJson = codeDoc();
-      expect(serializedBytes(contentJson)).toBeLessThan(
-        POST_CONTENT_JSON_LIMIT_BYTES,
-      );
       unwrap(
         await PostService.updatePost(adminContext, {
           id,
           data: {
             title: "Heavy code",
-            slug: "heavy-code",
+            slug: `heavy-code-${id}`,
             publishedAt: new Date(),
             contentJson,
           },
         }),
       );
+      return id;
+    }
+
+    async function expectUnpublished(id: number, saveToken?: string) {
+      const row = await adminContext.db.query.PostsTable.findFirst({
+        where: eq(PostsTable.id, id),
+      });
+      expect(row?.status).toBe("draft");
+      expect(row?.publicSnapshotJson).toBeNull();
+      expect(row?.publicSlug).toBeNull();
+      expect(row?.saveToken).toBe(saveToken);
+    }
+
+    // The code is in the draft once and in the snapshot twice: as code and
+    // again inside its HTML, which is never shorter than the code.
+    const overEvenUnhighlighted = () => ({
+      type: "doc" as const,
+      content: [codeBlock(codeLines(26_000))],
+    });
+
+    it("refuses to publish before highlighting when even its code alone is too large", async () => {
+      const contentJson = overEvenUnhighlighted();
+      expect(serializedBytes(contentJson)).toBeLessThan(
+        POST_CONTENT_JSON_LIMIT_BYTES,
+      );
+      const id = await draftPost(contentJson);
       const before = await PostService.findPostById(adminContext, { id });
+      highlight.mockClear();
 
       const result = await PostService.publishPost(adminContext, { id });
 
@@ -225,29 +250,33 @@ describe("Post size limits", () => {
         field: "publicSnapshot",
         limit: PUBLIC_SNAPSHOT_LIMIT_BYTES,
       });
-      const row = await adminContext.db.query.PostsTable.findFirst({
-        where: eq(PostsTable.id, id),
+      expect(highlight).not.toHaveBeenCalled();
+      await expectUnpublished(id, before?.saveToken);
+    });
+
+    it("refuses once highlighted when only the highlighted HTML is too large", async () => {
+      // Within the highlight budget, but its HTML is about 20 times the code.
+      const code = codeLines(1_500);
+      expect(code.length).toBeLessThan(HIGHLIGHT_BUDGET_CHARS);
+      const id = await draftPost({
+        type: "doc",
+        content: [textDoc("x".repeat(350_000)).content[0], codeBlock(code)],
       });
-      expect(row?.status).toBe("draft");
-      expect(row?.publicSnapshotJson).toBeNull();
-      expect(row?.publicSlug).toBeNull();
-      expect(row?.saveToken).toBe(before?.saveToken);
+      const before = await PostService.findPostById(adminContext, { id });
+
+      const result = await PostService.publishPost(adminContext, { id });
+
+      expect(result.error).toMatchObject({
+        reason: "POST_CONTENT_TOO_LARGE",
+        field: "publicSnapshot",
+      });
+      expect(highlight).toHaveBeenCalled();
+      await expectUnpublished(id, before?.saveToken);
     });
 
     it("answers the API with 413 and the snapshot field", async () => {
       const apiKey = await seedAdminApiKey();
-      const { id } = await PostService.createEmptyPost(adminContext);
-      unwrap(
-        await PostService.updatePost(adminContext, {
-          id,
-          data: {
-            title: "Heavy code",
-            slug: "heavy-code",
-            publishedAt: new Date(),
-            contentJson: codeDoc(),
-          },
-        }),
-      );
+      const id = await draftPost(overEvenUnhighlighted());
 
       const response = await callAdminApi(
         apiKey,
@@ -260,6 +289,52 @@ describe("Post size limits", () => {
       expect(body.code).toBe("POST_CONTENT_TOO_LARGE");
       expect(body.data.field).toBe("publicSnapshot");
       expect(body.data.limit).toBe(PUBLIC_SNAPSHOT_LIMIT_BYTES);
+    });
+  });
+
+  describe("code past the highlight budget", () => {
+    it("publishes as plain HTML without highlighting it", async () => {
+      // About 200,000 characters: too much to highlight in one publish, small
+      // enough to store unhighlighted.
+      const code = Array.from(
+        { length: 12_000 },
+        (_, line) => `let a${line} = ${line};`,
+      ).join("\n");
+      expect(code.length).toBeGreaterThan(HIGHLIGHT_BUDGET_CHARS);
+      const { id } = await PostService.createEmptyPost(adminContext);
+      unwrap(
+        await PostService.updatePost(adminContext, {
+          id,
+          data: {
+            title: "Long code",
+            slug: "long-code",
+            publishedAt: new Date(),
+            contentJson: {
+              type: "doc",
+              content: [
+                {
+                  type: "codeBlock",
+                  attrs: { language: "ts" },
+                  content: [{ type: "text", text: code }],
+                },
+              ],
+            },
+          },
+        }),
+      );
+      highlight.mockClear();
+
+      unwrap(await PostService.publishPost(adminContext, { id }));
+
+      expect(highlight).not.toHaveBeenCalled();
+      const row = await adminContext.db.query.PostsTable.findFirst({
+        where: eq(PostsTable.id, id),
+      });
+      expect(row?.status).toBe("published");
+      expect(
+        row?.publicSnapshotJson?.contentJson?.content?.[0]?.attrs
+          ?.highlightedHtml,
+      ).toBe(plainCodeHtml(code));
     });
   });
 });
