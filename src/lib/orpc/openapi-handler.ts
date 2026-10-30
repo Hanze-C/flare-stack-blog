@@ -14,6 +14,7 @@ import {
   DOCUMENT_PATHS,
   OpenAPIDocumentPlugin,
 } from "./openapi-document-plugin";
+import { isBrowserSessionOnly } from "./procedure";
 import { router } from "./router";
 import { StrictOpenAPIHandler } from "./strict-openapi-handler";
 
@@ -30,6 +31,8 @@ Paths are relative to the server URL.
 ## Authentication
 
 Admin routes require a browser session cookie or an Admin API Key in the \`x-api-key\` header. Operations do not declare security one by one: send the header on every request. A key acts as the Admin who issued it, with that Admin's content-management permissions; it cannot create or revoke API Keys. 401 means the key is missing, wrong or revoked. Public pages and public read operations need no key.
+
+Pairing gets a key without it passing through a conversation: an Admin generates a Pairing Code in the admin UI (\`ABCD-EFGH\`, case and hyphen ignored, valid ten minutes, works once) and gives it to the agent, which exchanges it with the Agent Pairing operation, sending no key, for a new API Key and the site URL. The answer is the only time the key is shown. Every failed exchange answers 404 \`PAIRING_CODE_NOT_FOUND\`: ask the Admin for a new code.
 
 ## Client fingerprint
 
@@ -103,6 +106,8 @@ export const openAPIHandler = new StrictOpenAPIHandler(router, {
       schemaConverters: [schemaConverter],
       docsTitle: "Flare Stack Blog API",
       generateOptions: {
+        // The admin UI calls these through the same routes; an agent cannot.
+        filter: ({ contract }) => !isBrowserSessionOnly(contract),
         commonSchemas: OPENAPI_COMPONENTS,
         info: {
           title: "Flare Stack Blog API",

@@ -3,6 +3,7 @@ import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { describe, expect, it, vi } from "vitest";
 import { operationsOf } from "./openapi-document";
 import { handleApiRequest } from "./openapi-handler";
+import { isBrowserSessionOnly } from "./procedure";
 import { router } from "./router";
 
 // The whole document is too large for an agent to read at the start of every
@@ -78,7 +79,9 @@ describe("the whole document", () => {
   it("defines the schemas operations share once, losing no description", async () => {
     const inlined = await new OpenAPIGenerator({
       schemaConverters: [new ZodToJsonSchemaConverter()],
-    }).generate(router);
+    }).generate(router, {
+      filter: ({ contract }) => !isBrowserSessionOnly(contract),
+    });
 
     expect(Object.keys(full.components?.schemas ?? {})).toEqual(
       expect.arrayContaining([
@@ -101,6 +104,13 @@ describe("the whole document", () => {
     expect(JSON.stringify(full).length).toBeLessThan(
       JSON.stringify(inlined).length * 0.7,
     );
+  });
+
+  it("leaves out the operations an API Key cannot call", () => {
+    const ids = operations.map(({ operation }) => operation.operationId);
+    expect(ids).toContain("pairing.exchange");
+    expect(ids.filter((id) => id?.startsWith("pairing.admin."))).toEqual([]);
+    expect(Object.keys(full.paths ?? {})).not.toContain("/admin/pairing-code");
   });
 
   it("answers its paths to GET only", async () => {
