@@ -45,7 +45,9 @@ const options = adminProcedure
   .handler(({ context }) => CategoryService.getCategoryOptions(context));
 
 const create = adminProcedure
-  .errors(categoryErrors)
+  .errors({
+    CATEGORY_NAME_ALREADY_EXISTS: categoryErrors.CATEGORY_NAME_ALREADY_EXISTS,
+  })
   .route({
     method: "POST",
     path: "/admin/categories",
@@ -84,7 +86,7 @@ const update = adminProcedure
   );
 
 const remove = adminProcedure
-  .errors(categoryErrors)
+  .errors({ CATEGORY_NOT_FOUND: categoryErrors.CATEGORY_NOT_FOUND })
   .route({
     method: "DELETE",
     path: "/admin/categories/{id}",

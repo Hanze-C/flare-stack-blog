@@ -48,7 +48,9 @@ const list = adminProcedure
   .handler(({ context, input }) => MediaService.getMediaList(context, input));
 
 const upload = adminProcedure
-  .errors(mediaErrors)
+  .errors({
+    MEDIA_RECORD_CREATE_FAILED: mediaErrors.MEDIA_RECORD_CREATE_FAILED,
+  })
   .route({
     method: "POST",
     path: "/admin/media",
@@ -70,7 +72,12 @@ const upload = adminProcedure
   );
 
 const importFromUrl = adminProcedure
-  .errors(mediaErrors)
+  .errors({
+    MEDIA_RECORD_CREATE_FAILED: mediaErrors.MEDIA_RECORD_CREATE_FAILED,
+    MEDIA_INVALID_URL: mediaErrors.MEDIA_INVALID_URL,
+    MEDIA_IMPORT_FAILED: mediaErrors.MEDIA_IMPORT_FAILED,
+    MEDIA_INVALID: mediaErrors.MEDIA_INVALID,
+  })
   .route({
     method: "POST",
     path: "/admin/media/import",
@@ -144,7 +151,7 @@ const removeUnused = adminProcedure
   });
 
 const remove = adminProcedure
-  .errors(mediaErrors)
+  .errors({ MEDIA_IN_USE: mediaErrors.MEDIA_IN_USE })
   .route({
     method: "DELETE",
     path: "/admin/media/{key}",
@@ -175,7 +182,7 @@ const linkedPosts = adminProcedure
   );
 
 const replace = adminProcedure
-  .errors(mediaErrors)
+  .errors({ MEDIA_NOT_FOUND: mediaErrors.MEDIA_NOT_FOUND })
   .route({
     method: "POST",
     path: "/admin/media/{key}/replace",
