@@ -48,7 +48,7 @@ export const PostContentFormatSchema = z
   );
 export type PostContentFormat = z.infer<typeof PostContentFormatSchema>;
 
-const ContentMarkdownOutputSchema = z
+export const ContentMarkdownOutputSchema = z
   .string()
   .nullable()
   .optional()
@@ -69,7 +69,7 @@ const SaveTokenSchema = z
     "Opaque token that every save of the post's draft and every publish or unpublish replaces, including tags, category, cover and Post Revision restores; pinning keeps it. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
   );
 
-const StatedSaveTokenSchema = z
+export const StatedSaveTokenSchema = z
   .string()
   .optional()
   .describe(

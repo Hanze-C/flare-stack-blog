@@ -15,7 +15,7 @@ import type {
   PostRevisionSnapshot,
   RestorePostRevisionInput,
 } from "@/features/posts/schema/post-revisions.schema";
-import { PostRevisionSnapshotSchema } from "@/features/posts/schema/post-revisions.schema";
+import { parseRevisionSnapshot } from "@/features/posts/schema/post-revisions.schema";
 import { calculatePostHash } from "@/features/posts/utils/sync";
 import { ms } from "@/lib/duration";
 import { err, ok } from "@/lib/errors";
@@ -54,6 +54,14 @@ async function hashSnapshot(snapshot: PostRevisionSnapshot) {
     coverMediaId: snapshot.coverMediaId ?? null,
     categoryId: snapshot.categoryId ?? null,
   });
+}
+
+/** A conditional restore wrote nothing: tell a missing Post from a newer save. */
+async function editConflictOrNotFound(db: DB, postId: number) {
+  const saveToken = await PostRepo.findPostSaveToken(db, postId);
+  return saveToken === null
+    ? err({ reason: "POST_NOT_FOUND" })
+    : err({ reason: "EDIT_CONFLICT", saveToken });
 }
 
 export async function listPostRevisions(
@@ -161,20 +169,21 @@ export async function restorePostRevision(
   if (!post) {
     return err({ reason: "POST_NOT_FOUND" });
   }
+  if (data.saveToken !== undefined && data.saveToken !== post.saveToken) {
+    return err({ reason: "EDIT_CONFLICT", saveToken: post.saveToken });
+  }
 
   if (!revision) {
     return err({ reason: "POST_REVISION_NOT_FOUND" });
   }
 
-  const parsedSnapshot = PostRevisionSnapshotSchema.safeParse(
-    revision.snapshotJson,
-  );
-  if (!parsedSnapshot.success) {
+  const parsedSnapshot = parseRevisionSnapshot(revision.snapshotJson);
+  if (!parsedSnapshot) {
     return err({ reason: "POST_REVISION_INVALID_SNAPSHOT" });
   }
   const targetSnapshot = {
-    ...parsedSnapshot.data,
-    coverMediaId: parsedSnapshot.data.coverMediaId ?? null,
+    ...parsedSnapshot,
+    coverMediaId: parsedSnapshot.coverMediaId ?? null,
   };
   if (targetSnapshot.coverMediaId != null) {
     const coverMedia = await MediaRepo.findMediaById(
@@ -209,10 +218,11 @@ export async function restorePostRevision(
       snapshotHash: currentHash,
       restoredFromRevisionId: revision.id,
     },
+    saveToken: data.saveToken,
   });
 
   if (!restoredPost) {
-    return err({ reason: "POST_NOT_FOUND" });
+    return editConflictOrNotFound(context.db, post.id);
   }
 
   // Restoring changes the draft only, its Category and Tags included
@@ -263,10 +273,8 @@ export async function discardUnpublishedChanges(
     context.db,
     [post.id],
   );
-  const parsedSnapshot = PostRevisionSnapshotSchema.safeParse(
-    revision?.snapshotJson,
-  );
-  if (!revision || !parsedSnapshot.success) {
+  const parsedSnapshot = parseRevisionSnapshot(revision?.snapshotJson);
+  if (!revision || !parsedSnapshot) {
     return err({ reason: "POST_REVISION_NOT_FOUND" });
   }
   // Category and Tags are the public ones, not the revision's: they are what
@@ -280,7 +288,7 @@ export async function discardUnpublishedChanges(
   // not leave a revision of what it published, this one is not it.
   const publishedFingerprint =
     await UnpublishedChangesService.fingerprintOfPublished(
-      parsedSnapshot.data,
+      parsedSnapshot,
       publicIds,
     );
   if (publishedFingerprint !== post.publishedFingerprint) {
@@ -288,10 +296,10 @@ export async function discardUnpublishedChanges(
   }
 
   const targetSnapshot = {
-    ...parsedSnapshot.data,
+    ...parsedSnapshot,
     categoryId: publicIds.categoryId,
     tagIds: publicIds.tagIds,
-    coverMediaId: parsedSnapshot.data.coverMediaId ?? null,
+    coverMediaId: parsedSnapshot.coverMediaId ?? null,
   };
   if (
     targetSnapshot.coverMediaId != null &&
@@ -314,10 +322,7 @@ export async function discardUnpublishedChanges(
     saveToken: data.saveToken ?? post.saveToken,
   });
   if (!discarded) {
-    const saveToken = await PostRepo.findPostSaveToken(context.db, post.id);
-    return saveToken === null
-      ? err({ reason: "POST_NOT_FOUND" })
-      : err({ reason: "EDIT_CONFLICT", saveToken });
+    return editConflictOrNotFound(context.db, post.id);
   }
 
   await syncPostMedia(context.db, discarded);

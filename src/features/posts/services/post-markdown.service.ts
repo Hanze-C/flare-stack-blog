@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import * as PostRepo from "@/features/posts/data/posts.data";
+import { NullableJsonContentSchema } from "@/features/posts/schema/json-content.schema";
 import type { PostContentFormat } from "@/features/posts/schema/posts.schema";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
 import type { VideoMeta } from "@/features/posts/utils/video-source";
@@ -104,6 +105,18 @@ async function withDetails(
   return fill(contentJson);
 }
 
+/**
+ * `contentJson` as a JSON write hands it on: sent as JSON and parsed by the
+ * input schema, which rebuilds every node with its keys in the schema's
+ * order. Unpublished Changes hash the body as stored, so the same body must
+ * be stored the same way whichever format it was written in.
+ */
+function asJsonWrite(contentJson: JSONContent) {
+  return NullableJsonContentSchema.parse(
+    JSON.parse(JSON.stringify(contentJson)),
+  );
+}
+
 interface ContentFields {
   contentJson?: JSONContent | null;
   contentMarkdown?: string;
@@ -137,7 +150,10 @@ export async function resolveMarkdownContent<T extends ContentFields>(
       ? null
       : ((await PostRepo.findPostById(context.db, postId))?.contentJson ??
         null);
-  return ok({ ...rest, contentJson: await withDetails(contentJson, previous) });
+  return ok({
+    ...rest,
+    contentJson: asJsonWrite(await withDetails(contentJson, previous)),
+  });
 }
 
 /**

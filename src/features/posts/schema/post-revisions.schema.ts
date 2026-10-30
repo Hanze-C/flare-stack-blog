@@ -6,6 +6,11 @@ import {
   PostRevisionsTable,
 } from "@/lib/db/schema";
 import { NullableJsonContentSchema } from "./json-content.schema";
+import {
+  ContentMarkdownOutputSchema,
+  PostContentFormatSchema,
+  StatedSaveTokenSchema,
+} from "./posts.schema";
 
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 
@@ -33,6 +38,15 @@ export const PostRevisionSelectSchema = createSelectSchema(PostRevisionsTable, {
   reason: PostRevisionReasonSchema,
 });
 
+export const PostRevisionSchema = PostRevisionSelectSchema.extend({
+  snapshotJson: PostRevisionSnapshotSchema.extend({
+    contentJson: NullableJsonContentSchema.optional().describe(
+      "The body as TipTap JSON. Not returned when the request asks for contentFormat=markdown.",
+    ),
+    contentMarkdown: ContentMarkdownOutputSchema,
+  }),
+});
+
 export const ListPostRevisionsInputSchema = z.object({
   postId: z.number(),
 });
@@ -42,6 +56,11 @@ export const FindPostRevisionByIdInputSchema = z.object({
   revisionId: z.number(),
 });
 
+export const GetPostRevisionInputSchema =
+  FindPostRevisionByIdInputSchema.extend({
+    contentFormat: PostContentFormatSchema,
+  });
+
 const CreatePostRevisionInputSchema = z.object({
   postId: z.number(),
   reason: PostRevisionReasonSchema.optional(),
@@ -50,6 +69,9 @@ const CreatePostRevisionInputSchema = z.object({
 export const RestorePostRevisionInputSchema = z.object({
   postId: z.number(),
   revisionId: z.number(),
+  saveToken: StatedSaveTokenSchema.describe(
+    "The saveToken of the draft you read and mean to replace. If the post was saved since, nothing is written, not even the revision of the current draft, and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to restore over whatever the draft is now.",
+  ),
 });
 
 export const DeletePostRevisionsInputSchema = z.object({
@@ -70,6 +92,25 @@ export const PostRevisionListItemSchema = PostRevisionSelectSchema.pick({
 });
 
 export type PostRevisionSnapshot = z.infer<typeof PostRevisionSnapshotSchema>;
+
+/**
+ * A Post Revision's snapshot, or null when it is not a valid one. The body
+ * is returned as stored, not as parsed: parsing rebuilds every node with its
+ * keys in the schema's order, so a body stored in another order, as Markdown
+ * writes once stored it, would no longer hash like the draft it was taken
+ * from, and restoring it would write a draft that differs from that one.
+ */
+export function parseRevisionSnapshot(
+  snapshotJson: unknown,
+): PostRevisionSnapshot | null {
+  const parsed = PostRevisionSnapshotSchema.safeParse(snapshotJson);
+  if (!parsed.success) return null;
+  return {
+    ...parsed.data,
+    contentJson: (snapshotJson as PostRevisionSnapshot).contentJson,
+  };
+}
+
 export type ListPostRevisionsInput = z.infer<
   typeof ListPostRevisionsInputSchema
 >;

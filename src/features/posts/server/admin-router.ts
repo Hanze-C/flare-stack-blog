@@ -26,10 +26,10 @@ import {
 } from "@/features/posts/schema/posts.schema";
 import {
   DeletePostRevisionsInputSchema,
-  FindPostRevisionByIdInputSchema,
+  GetPostRevisionInputSchema,
   ListPostRevisionsInputSchema,
   PostRevisionListItemSchema,
-  PostRevisionSelectSchema,
+  PostRevisionSchema,
   RestorePostRevisionInputSchema,
 } from "@/features/posts/schema/post-revisions.schema";
 import * as PostMarkdownService from "@/features/posts/services/post-markdown.service";
@@ -440,18 +440,25 @@ const getRevision = adminProcedure
     path: "/admin/posts/{postId}/revisions/{revisionId}",
     summary: "Get a post revision",
     description:
-      "Answers 404 POST_REVISION_NOT_FOUND when the post has no such revision.",
+      "Answers 404 POST_REVISION_NOT_FOUND when the post has no such revision. The snapshot's body comes back as snapshotJson.contentJson, or as snapshotJson.contentMarkdown instead when contentFormat=markdown.",
     tags: ["Admin Posts"],
   })
-  .input(FindPostRevisionByIdInputSchema)
-  .output(PostRevisionSelectSchema)
+  .input(GetPostRevisionInputSchema)
+  .output(PostRevisionSchema)
   .handler(async ({ context, input, errors }) => {
+    const { contentFormat, ...find } = input;
     const revision = await PostRevisionService.findPostRevisionById(
       context,
-      input,
+      find,
     );
     if (!revision) throw errors.POST_REVISION_NOT_FOUND();
-    return revision;
+    return {
+      ...revision,
+      snapshotJson: await PostMarkdownService.inContentFormat(
+        revision.snapshotJson,
+        contentFormat,
+      ),
+    };
   });
 
 const restoreRevision = adminProcedure
@@ -459,13 +466,14 @@ const restoreRevision = adminProcedure
     ...postNotFoundErrors,
     POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND,
     POST_REVISION_INVALID_SNAPSHOT: postErrors.POST_REVISION_INVALID_SNAPSHOT,
+    ...editConflictErrors,
   })
   .route({
     method: "POST",
     path: "/admin/posts/{postId}/revisions/{revisionId}/restore",
     summary: "Restore a post revision",
     description:
-      "Writes the revision back into the draft. post.saveToken is the post's token after the restore.",
+      "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(RestorePostRevisionInputSchema)
@@ -480,6 +488,9 @@ const restoreRevision = adminProcedure
       },
       POST_REVISION_INVALID_SNAPSHOT: () => {
         throw errors.POST_REVISION_INVALID_SNAPSHOT();
+      },
+      EDIT_CONFLICT: ({ saveToken }) => {
+        throw errors.EDIT_CONFLICT({ data: { saveToken } });
       },
     }),
   );

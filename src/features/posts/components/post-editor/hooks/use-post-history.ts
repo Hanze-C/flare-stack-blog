@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
+  postByIdQuery,
   postRevisionDetailQuery,
   postRevisionListQuery,
 } from "@/features/posts/queries";
@@ -13,6 +14,7 @@ import {
   type RevisionDetail,
   type RevisionListItem,
 } from "../post-editor-history.shared";
+import { editConflictOf } from "../post-editor.model";
 
 function invalidatePostEditorQueries(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -51,6 +53,10 @@ export function usePostHistory({
   const queryClient = useQueryClient();
   const [confirm, setConfirm] = useState<null | "restore" | "delete">(null);
 
+  // The post as the editor last saved it, or as this page read it: its
+  // saveToken is what a restore states.
+  const postQuery = useQuery(postByIdQuery(postId));
+
   const revisionsQuery = useQuery({
     ...postRevisionListQuery(postId),
     refetchOnMount: "always",
@@ -74,6 +80,7 @@ export function usePostHistory({
       await orpcClient.posts.admin.revisions.restore({
         postId,
         revisionId: selectedRevisionId,
+        saveToken: postQuery.data?.saveToken,
       });
     },
     onSuccess: async () => {
@@ -94,6 +101,16 @@ export function usePostHistory({
       onRestored();
     },
     onError: (error) => {
+      if (editConflictOf(error)) {
+        // Read the post again, so restoring anyway states its current token.
+        void queryClient.invalidateQueries({
+          queryKey: orpc.posts.admin.get.key({ input: { id: postId } }),
+        });
+        toast.error(m.editor_history_toast_restore_failed(), {
+          description: m.editor_history_error_edit_conflict(),
+        });
+        return;
+      }
       toast.error(m.editor_history_toast_restore_failed(), {
         description: getRestoreErrorMessage(error.message),
       });

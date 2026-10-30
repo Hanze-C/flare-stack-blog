@@ -247,7 +247,7 @@
               "method": "GET",
               "path": "/admin/posts/{postId}/revisions/{revisionId}",
               "summary": "Get a post revision",
-              "description": "Answers 404 POST_REVISION_NOT_FOUND when the post has no such revision.",
+              "description": "Answers 404 POST_REVISION_NOT_FOUND when the post has no such revision. The snapshot's body comes back as snapshotJson.contentJson, or as snapshotJson.contentMarkdown instead when contentFormat=markdown.",
               "tags": ["Admin Posts"]
             }
           }
@@ -260,7 +260,7 @@
               "method": "POST",
               "path": "/admin/posts/{postId}/revisions/{revisionId}/restore",
               "summary": "Restore a post revision",
-              "description": "Writes the revision back into the draft. post.saveToken is the post's token after the restore.",
+              "description": "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
               "tags": ["Admin Posts"]
             }
           }
