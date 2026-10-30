@@ -389,3 +389,60 @@ describe("category and tag names", () => {
     },
   );
 });
+
+describe("setting a post's tags", () => {
+  it("answers 404 TAG_NOT_FOUND for an unknown tag id and writes nothing", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id } = await createPost(apiKey, "Tagged");
+    const tag = (await (
+      await callApi(apiKey, "/admin/tags", {
+        method: "POST",
+        body: { name: "Kept" },
+      })
+    ).json()) as { id: number };
+    const set = await callApi(apiKey, `/admin/posts/${id}/tags`, {
+      method: "PUT",
+      body: { tagIds: [tag.id] },
+    });
+    const { saveToken } = (await set.json()) as { saveToken: string };
+
+    const response = await callApi(apiKey, `/admin/posts/${id}/tags`, {
+      method: "PUT",
+      body: { tagIds: [tag.id, 999_999], saveToken },
+    });
+
+    expect(response.status).toBe(404);
+    expect(await codeOf(response)).toBe("TAG_NOT_FOUND");
+    const tags = (await (
+      await callApi(apiKey, `/admin/posts/${id}/tags`)
+    ).json()) as Array<{ id: number }>;
+    expect(tags.map((t) => t.id)).toEqual([tag.id]);
+    expect((await readPost(apiKey, id)).saveToken).toBe(saveToken);
+  });
+
+  it("answers POST_NOT_FOUND for a missing post whatever its tags", async () => {
+    const apiKey = await seedAdminApiKey();
+
+    const response = await callApi(apiKey, "/admin/posts/999999/tags", {
+      method: "PUT",
+      body: { tagIds: [999_999] },
+    });
+
+    expect(response.status).toBe(404);
+    expect(await codeOf(response)).toBe("POST_NOT_FOUND");
+  });
+
+  it("still answers an Edit Conflict for a stale token with known tags", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id, saveToken } = await createPost(apiKey, "Stale tags");
+    await patchPost(apiKey, id, { data: { title: "Saved since" } });
+
+    const response = await callApi(apiKey, `/admin/posts/${id}/tags`, {
+      method: "PUT",
+      body: { tagIds: [], saveToken },
+    });
+
+    expect(response.status).toBe(409);
+    expect(await codeOf(response)).toBe("EDIT_CONFLICT");
+  });
+});

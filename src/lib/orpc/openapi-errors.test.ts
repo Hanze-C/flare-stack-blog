@@ -131,7 +131,7 @@ describe("errors declared by tag, category and media operations", () => {
     [
       "put",
       "/admin/posts/{postId}/tags",
-      ["404 POST_NOT_FOUND", "409 EDIT_CONFLICT"],
+      ["404 POST_NOT_FOUND", "404 TAG_NOT_FOUND", "409 EDIT_CONFLICT"],
     ],
     ["post", "/admin/categories", ["409 CATEGORY_NAME_ALREADY_EXISTS"]],
     [

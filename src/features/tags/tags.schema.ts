@@ -78,7 +78,11 @@ export const GetTagsInputSchema = z.strictObject({
 
 export const SetPostTagsInputSchema = z.strictObject({
   postId: z.number(),
-  tagIds: z.array(z.number()),
+  tagIds: z
+    .array(z.number())
+    .describe(
+      "The ids of every tag the post should carry; an empty list removes them all. An id no tag has answers 404 TAG_NOT_FOUND and nothing is written.",
+    ),
   saveToken: z
     .string()
     .optional()

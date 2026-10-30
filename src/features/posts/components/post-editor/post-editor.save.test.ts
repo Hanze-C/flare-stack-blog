@@ -201,3 +201,13 @@ it("leaves out a title or slug the API would refuse, saving the rest", async () 
 
   expect(server.updated).toMatchObject({ title: "Back", slug: "back" });
 });
+
+it("keeps the tags that still exist when one was deleted since it was read", async () => {
+  const session = editorSession();
+  server.knownTags = [3];
+
+  await session.save({ ...POST, tagIds: [3, 4] });
+
+  expect(server.savedTags).toEqual([3]);
+  expect(session.token()).toBe(server.token);
+});
