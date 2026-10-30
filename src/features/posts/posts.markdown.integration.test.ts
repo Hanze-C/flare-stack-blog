@@ -513,6 +513,13 @@ describe("Post content as Markdown over the Admin API", () => {
           { type: "image", attrs: { src: "https://example.com/b.png" } },
         ],
       };
+      await MediaRepo.insertMedia(createTestContext().db, {
+        key: "a.png",
+        url: "/images/a.png",
+        fileName: "a.png",
+        mimeType: "image/png",
+        sizeInBytes: 10,
+      });
       const id = await createPost(apiKey, { contentJson: content });
 
       const markdown = await readPost(apiKey, id, "?contentFormat=markdown");

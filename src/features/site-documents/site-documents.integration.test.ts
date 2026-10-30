@@ -6,6 +6,7 @@ import {
   seedAdminApiKey,
 } from "tests/test-utils";
 import { describe, expect, it } from "vitest";
+import * as MediaRepo from "@/features/media/data/media.data";
 import {
   buildAtomXml,
   buildFeedJson,
@@ -119,6 +120,13 @@ describe("sitemap", () => {
 
 describe("feeds", () => {
   it("carry the post body as HTML in JSON Feed, RSS and Atom", async () => {
+    await MediaRepo.insertMedia(createTestContext().db, {
+      key: "pic.png",
+      url: "/images/pic.png",
+      fileName: "pic.png",
+      mimeType: "image/png",
+      sizeInBytes: 10,
+    });
     await publishedPost(
       "Feed HTML post",
       "Some **bold** text\n\n![pic](/images/pic.png)\n\n- item",
