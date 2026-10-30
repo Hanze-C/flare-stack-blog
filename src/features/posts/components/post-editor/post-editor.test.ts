@@ -358,6 +358,45 @@ it("surfaces the conflict when publishing is refused", async () => {
   }
 });
 
+it("tells the Admin to change a publication date that is in the future", async () => {
+  await renderPostEditorPage(createServer().save);
+  publish.mockRejectedValue(
+    new ORPCError("PUBLISHED_AT_IN_FUTURE", { status: 400, defined: true }),
+  );
+
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_header_publish() })[0]!,
+  );
+
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      m.editor_action_publish_future_date(),
+    ),
+  );
+});
+
+it("keeps autosaving and holds back publishing while the slug is taken", async () => {
+  const server = createServer();
+  const save = vi.fn<PostEditorSave>(async (...args) => {
+    await server.save(...args);
+    return { slugTaken: true };
+  });
+  const editor = await renderPostEditorPage(save);
+
+  typeInto(editor, "one");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1), AUTOSAVE_WAIT);
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_info_title() })[0]!,
+  );
+  expect(await screen.findByText(m.editor_meta_slug_taken())).toBeTruthy();
+  await waitFor(() => expect(publishButton().disabled).toBe(true));
+
+  typeInto(editor, " two");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2), AUTOSAVE_WAIT);
+  expect(screen.getByText(m.editor_meta_slug_taken())).toBeTruthy();
+  expect(headerStatus()).not.toBe(m.editor_status_save_error());
+});
+
 const PUBLISHED: PostEditorProps["initialData"] = {
   ...INITIAL,
   hasPublicSnapshot: true,

@@ -17,6 +17,10 @@ const server = vi.hoisted(() => ({
   knownTags: null as Array<number> | null,
   /** The tag ids of the last tags write that went through. */
   savedTags: [] as Array<number>,
+  /** Slugs another post uses; an update stating one is refused. */
+  takenSlugs: [] as Array<string>,
+  /** How many updates were refused over a taken slug. */
+  slugRefusals: 0,
   /** Refuses a write stating a token that is no longer current. */
   refuse(saveToken: string | undefined) {
     if (saveToken !== undefined && saveToken !== server.token) {
@@ -46,6 +50,13 @@ vi.mock("@/lib/orpc", () => ({
           data: Record<string, unknown>;
         }) => {
           server.refuse(saveToken);
+          if (
+            typeof data.slug === "string" &&
+            server.takenSlugs.includes(data.slug)
+          ) {
+            server.slugRefusals += 1;
+            throw new ORPCError("SLUG_TAKEN", { status: 409, defined: true });
+          }
           server.updated = data;
           return { saveToken: server.rotate() };
         },
@@ -104,6 +115,8 @@ beforeEach(() => {
   server.updated = {};
   server.knownTags = null;
   server.savedTags = [];
+  server.takenSlugs = [];
+  server.slugRefusals = 0;
 });
 
 /** The editor's loop: save, take the token handed back, save again. */
@@ -210,4 +223,39 @@ it("keeps the tags that still exist when one was deleted since it was read", asy
 
   expect(server.savedTags).toEqual([3]);
   expect(session.token()).toBe(server.token);
+});
+
+it("saves everything but a slug another post uses, and says so", async () => {
+  const session = editorSession();
+  server.takenSlugs = ["taken"];
+  const content = { type: "doc", content: [] };
+
+  const result = await session.save({
+    ...POST,
+    slug: "taken",
+    summary: "kept",
+    contentJson: content,
+    tagIds: [3],
+  });
+
+  expect(result).toEqual({ slugTaken: true });
+  expect(server.slugRefusals).toBe(1);
+  expect(server.updated).not.toHaveProperty("slug");
+  expect(server.updated).toMatchObject({
+    summary: "kept",
+    contentJson: content,
+  });
+  expect(server.savedTags).toEqual([3]);
+  expect(session.token()).toBe(server.token);
+});
+
+it("sends the slug again once it is changed", async () => {
+  const session = editorSession();
+  server.takenSlugs = ["taken"];
+  await session.save({ ...POST, slug: "taken" });
+
+  const result = await session.save({ ...POST, slug: "free" });
+
+  expect(result).toEqual({ slugTaken: false });
+  expect(server.updated).toMatchObject({ slug: "free" });
 });

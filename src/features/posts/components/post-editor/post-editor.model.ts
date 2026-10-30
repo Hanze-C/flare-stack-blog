@@ -36,6 +36,17 @@ export function editConflictOf(error: unknown): EditConflict | null {
 }
 
 /**
+ * What to tell the Admin when publishing was refused or failed. An Edit
+ * Conflict is handled apart from this.
+ */
+export function publishErrorMessage(error: unknown) {
+  if (error instanceof ORPCError && error.code === "PUBLISHED_AT_IN_FUTURE") {
+    return m.editor_action_publish_future_date();
+  }
+  return m.editor_action_publish_failed();
+}
+
+/**
  * What to tell the Admin when discarding Unpublished Changes was refused or
  * failed. An Edit Conflict is handled apart from this.
  */

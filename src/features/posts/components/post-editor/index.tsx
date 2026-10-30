@@ -159,6 +159,7 @@ export function PostEditor({
     setError,
     flush,
     conflicted: conflict !== null,
+    slugTaken: saveError === SLUG_TAKEN_ERROR,
     getSaveToken,
     acceptSaveToken,
     reportConflict,
