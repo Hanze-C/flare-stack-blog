@@ -32,7 +32,8 @@ export type PublicFetchError =
   | { reason: "UNREACHABLE" };
 
 type Resolution =
-  { kind: "addresses"; addresses: Array<string> } | { kind: "unresolved" };
+  | { kind: "addresses"; addresses: Array<string> }
+  | { kind: "unresolved" };
 
 async function resolveType(
   name: string,
