@@ -1,3 +1,7 @@
+import {
+  isValidPostSlug,
+  isValidPostTitle,
+} from "@/features/posts/utils/post-fields";
 import { orpcClient } from "@/lib/orpc";
 import { persistableTagIds } from "./post-editor.model";
 import type { PostEditorSave } from "./types";
@@ -15,9 +19,11 @@ export function savePostEdits(postId: number): PostEditorSave {
       id: postId,
       saveToken,
       data: {
-        title: data.title,
+        // A title or slug the API would refuse, such as an empty one while it
+        // is being retyped, stays out so the rest of the post still saves.
+        ...(isValidPostTitle(data.title) && { title: data.title }),
         summary: data.summary,
-        slug: data.slug,
+        ...(isValidPostSlug(data.slug) && { slug: data.slug }),
         contentJson: data.contentJson,
         publishedAt: data.publishedAt,
         coverMediaId: data.coverMediaId,

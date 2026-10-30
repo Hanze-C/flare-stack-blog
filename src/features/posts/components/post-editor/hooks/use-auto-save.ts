@@ -5,7 +5,9 @@ import {
   contentHasBlobUrl,
   EDIT_CONFLICT_ERROR,
   editConflictOf,
+  isSlugTaken,
   persistableTagIds,
+  SLUG_TAKEN_ERROR,
 } from "../post-editor.model";
 import type {
   EditConflict,
@@ -260,7 +262,7 @@ export function useAutoSave({
       }
       console.error("Auto-save failed:", err);
       assignStatus("ERROR");
-      setError("AUTO_SAVE_FAILED");
+      setError(isSlugTaken(err) ? SLUG_TAKEN_ERROR : "AUTO_SAVE_FAILED");
       return "failed";
     } finally {
       isSaving.current = false;

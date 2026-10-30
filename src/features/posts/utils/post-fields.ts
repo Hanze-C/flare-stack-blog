@@ -1,0 +1,43 @@
+/**
+ * Rules for a Post's title and slug, shared by the API schemas and the admin
+ * editor, which leaves a value out of its autosave until it follows them.
+ */
+
+export const POST_TITLE_MAX_LENGTH = 200;
+export const POST_SLUG_MAX_LENGTH = 200;
+
+/**
+ * A slug made from a title is cut to this length, leaving room for the number
+ * or random suffix that makes it unique.
+ */
+const GENERATED_SLUG_MAX_LENGTH = 180;
+
+// URL delimiters (/ ? # %), the backslash, whitespace and control characters.
+const SLUG_FORBIDDEN_CHARACTER = /[/?#%\\\s\p{Cc}]/u;
+
+/** Whether `slug`, already trimmed, can be a Post's slug. */
+export function isPostSlugFormat(slug: string) {
+  return !SLUG_FORBIDDEN_CHARACTER.test(slug) && slug !== "." && slug !== "..";
+}
+
+/** Whether the API would take `title` as a Post's title. */
+export function isValidPostTitle(title: string) {
+  const trimmed = title.trim();
+  return trimmed.length > 0 && trimmed.length <= POST_TITLE_MAX_LENGTH;
+}
+
+/** Whether the API would take `slug` as a Post's slug. */
+export function isValidPostSlug(slug: string) {
+  const trimmed = slug.trim();
+  return (
+    trimmed.length > 0 &&
+    trimmed.length <= POST_SLUG_MAX_LENGTH &&
+    isPostSlugFormat(trimmed)
+  );
+}
+
+/** `slug`, made from a title, cut short enough to take a suffix. */
+export function truncateGeneratedSlug(slug: string) {
+  if (slug.length <= GENERATED_SLUG_MAX_LENGTH) return slug;
+  return slug.slice(0, GENERATED_SLUG_MAX_LENGTH).replace(/-+$/, "");
+}

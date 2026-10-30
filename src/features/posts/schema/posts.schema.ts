@@ -11,6 +11,11 @@ import {
   PageOffsetSchema,
   pageLimitSchema,
 } from "@/lib/orpc/pagination";
+import {
+  isPostSlugFormat,
+  POST_SLUG_MAX_LENGTH,
+  POST_TITLE_MAX_LENGTH,
+} from "@/features/posts/utils/post-fields";
 import { NullableJsonContentSchema } from "./json-content.schema";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
@@ -68,6 +73,28 @@ const ContentMarkdownInputSchema = z
     `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal.`,
   );
 
+const PostTitleInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(POST_TITLE_MAX_LENGTH)
+  .describe(
+    `Title, trimmed. It must not be empty and holds at most ${POST_TITLE_MAX_LENGTH} characters.`,
+  );
+
+const SLUG_FORMAT_RULE =
+  "cannot contain / ? # % \\, whitespace or control characters, or be . or ..";
+
+const PostSlugInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(POST_SLUG_MAX_LENGTH)
+  .refine(isPostSlugFormat, { message: `A slug ${SLUG_FORMAT_RULE}.` })
+  .describe(
+    `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. No other post may use it, ignoring case, as its slug or as the slug of its live page: that answers 409 SLUG_TAKEN.`,
+  );
+
 const SaveTokenSchema = z
   .string()
   .describe(
@@ -110,6 +137,8 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  */
 const PostUpdateSchema = createUpdateSchema(PostsTable, {
   contentJson: NullableJsonContentSchema.optional(),
+  title: PostTitleInputSchema.optional(),
+  slug: PostSlugInputSchema.optional(),
 })
   .omit({
     publicSnapshotJson: true,
@@ -367,11 +396,9 @@ export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
  * several external clients can create posts without colliding.
  */
 const CreatePostDataSchema = z.strictObject({
-  title: z
-    .string()
-    .trim()
-    .min(1)
-    .describe("Draft title; a unique slug is generated from it."),
+  title: PostTitleInputSchema.describe(
+    `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. A unique slug is generated from it.`,
+  ),
   summary: z.string().nullable().optional(),
   contentJson: NullableJsonContentSchema.optional(),
   contentMarkdown: ContentMarkdownInputSchema,

@@ -447,6 +447,8 @@
   "editor_toast_unpublished": "Post unpublished",
   "editor_title_placeholder": "Enter post title here...",
   "editor_meta_link": "Link",
+  "editor_meta_slug_invalid": "The link can't be empty or contain spaces or characters like / ? # % \\. It isn't saved until it's fixed.",
+  "editor_meta_slug_taken": "Another post already uses this link (ignoring case). Choose another to save it.",
   "editor_meta_date": "Date",
   "editor_meta_tags": "Tags",
   "editor_meta_category": "Category",

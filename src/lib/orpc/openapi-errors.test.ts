@@ -76,6 +76,7 @@ describe("errors declared by post operations", () => {
         "404 MEDIA_NOT_FOUND",
         "404 POST_NOT_FOUND",
         "409 EDIT_CONFLICT",
+        "409 SLUG_TAKEN",
       ],
     ],
     [

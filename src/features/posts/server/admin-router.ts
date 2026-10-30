@@ -58,6 +58,11 @@ const postErrors = {
     status: 409,
     message: "This public slug is already in use.",
   },
+  SLUG_TAKEN: {
+    status: 409,
+    message:
+      "Another post already uses this slug, or a case variant of it, as its slug or live page.",
+  },
   MEDIA_NOT_FOUND: { status: 404, message: "Media not found." },
   CATEGORY_NOT_FOUND: { status: 404, message: "Category not found." },
   CONTENT_FORMAT_AMBIGUOUS: {
@@ -226,6 +231,7 @@ const update = adminProcedure
     ...markdownContentErrors,
     MEDIA_NOT_FOUND: postErrors.MEDIA_NOT_FOUND,
     CATEGORY_NOT_FOUND: postErrors.CATEGORY_NOT_FOUND,
+    SLUG_TAKEN: postErrors.SLUG_TAKEN,
     ...editConflictErrors,
   })
   .route({
@@ -260,6 +266,9 @@ const update = adminProcedure
         },
         CATEGORY_NOT_FOUND: () => {
           throw errors.CATEGORY_NOT_FOUND();
+        },
+        SLUG_TAKEN: () => {
+          throw errors.SLUG_TAKEN();
         },
       },
     );

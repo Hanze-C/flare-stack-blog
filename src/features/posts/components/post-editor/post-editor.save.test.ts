@@ -11,6 +11,12 @@ const server = vi.hoisted(() => ({
   tagWrites: 0,
   statedOnTags: [] as Array<string | undefined>,
   failTags: false,
+  /** The data of the last update. */
+  updated: {} as Record<string, unknown>,
+  /** Tags that exist; null when every id does. */
+  knownTags: null as Array<number> | null,
+  /** The tag ids of the last tags write that went through. */
+  savedTags: [] as Array<number>,
   /** Refuses a write stating a token that is no longer current. */
   refuse(saveToken: string | undefined) {
     if (saveToken !== undefined && saveToken !== server.token) {
@@ -32,19 +38,42 @@ vi.mock("@/lib/orpc", () => ({
   orpcClient: {
     posts: {
       admin: {
-        update: async ({ saveToken }: { saveToken?: string }) => {
+        update: async ({
+          saveToken,
+          data,
+        }: {
+          saveToken?: string;
+          data: Record<string, unknown>;
+        }) => {
           server.refuse(saveToken);
+          server.updated = data;
           return { saveToken: server.rotate() };
         },
       },
     },
     tags: {
       admin: {
-        setPostTags: async ({ saveToken }: { saveToken?: string }) => {
+        list: async () =>
+          (server.knownTags ?? []).map((id) => ({ id, name: `Tag ${id}` })),
+        setPostTags: async ({
+          saveToken,
+          tagIds,
+        }: {
+          saveToken?: string;
+          tagIds: Array<number>;
+        }) => {
           if (server.failTags) throw new Error("network");
           server.statedOnTags.push(saveToken);
           server.refuse(saveToken);
+          const known = server.knownTags;
+          if (known && tagIds.some((id) => !known.includes(id))) {
+            throw new ORPCError("TAG_NOT_FOUND", {
+              status: 404,
+              defined: true,
+            });
+          }
           server.tagWrites += 1;
+          server.savedTags = tagIds;
           return { saveToken: server.rotate() };
         },
       },
@@ -72,6 +101,9 @@ beforeEach(() => {
   server.tagWrites = 0;
   server.statedOnTags = [];
   server.failTags = false;
+  server.updated = {};
+  server.knownTags = null;
+  server.savedTags = [];
 });
 
 /** The editor's loop: save, take the token handed back, save again. */
@@ -154,4 +186,18 @@ it("is refused on the tags with the current token when another client saved afte
   expect(server.tagWrites).toBe(0);
   // The update's token is kept, so the Admin resolves the conflict from there.
   expect(session.token()).toBe("token-2");
+});
+
+it("leaves out a title or slug the API would refuse, saving the rest", async () => {
+  const session = editorSession();
+
+  await session.save({ ...POST, title: "  ", slug: "two words", summary: "s" });
+
+  expect(server.updated).not.toHaveProperty("title");
+  expect(server.updated).not.toHaveProperty("slug");
+  expect(server.updated).toMatchObject({ summary: "s" });
+
+  await session.save({ ...POST, title: "Back", slug: "back" });
+
+  expect(server.updated).toMatchObject({ title: "Back", slug: "back" });
 });
