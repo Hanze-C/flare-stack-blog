@@ -865,8 +865,8 @@
   "settings_api_keys_toast_delete_success": "API Key deleted",
   "settings_api_keys_toast_delete_fail": "Could not delete the key",
   "settings_api_keys_paired_badge": "Paired",
-  "settings_api_keys_agent_pointer": "Connecting an Agent Skill needs no manual API Key. Pair it with a code on the {link}.",
-  "settings_api_keys_agent_pointer_link": "“Agent Skill” tab",
+  "settings_api_keys_agent_pointer": "Connecting an Agent Skill needs no manual API Key. Pair it with a code on the “{link}” tab.",
+  "settings_api_keys_agent_pointer_link": "Agent Skill",
   "agent_skill_title": "Agent Skill",
   "agent_skill_intro": "Connect an AI agent in three steps: install, pair, try. The API Key never appears in the conversation.",
   "agent_skill_step_install": "Install",
@@ -883,6 +883,14 @@
   "agent_skill_pair_copied": "Sentence copied",
   "agent_skill_pair_code_hidden": "The pairing code is shown only when it is generated. Regenerate to get a new one.",
   "agent_skill_pair_waiting": "Waiting for the agent to connect",
+  "agent_skill_pair_valid_until": [
+    {
+      "declarations": ["input time", "local formattedTimeEn = time: datetime hour=2-digit minute=2-digit"],
+      "match": {
+        "time=*": "Valid until {formattedTimeEn}"
+      }
+    }
+  ],
   "agent_skill_pair_connected": "Connected: {name}, {time}",
   "agent_skill_pair_not_this": "Not this agent? Revoke",
   "agent_skill_pair_another": "Pair another agent",
@@ -898,7 +906,7 @@
   "agent_skill_try_hint": "Once connected, give the agent any of these instructions.",
   "agent_skill_try_list_drafts": "List the latest drafts",
   "agent_skill_try_notes": "Turn the local notes.md into a draft and upload its images",
-  "agent_skill_try_publish": "Check what unpublished changes the draft “…” has, then publish after confirmation",
+  "agent_skill_try_publish": "Check what unpublished changes the latest draft has, then publish after confirmation",
   "agent_skill_try_summaries": "Write summaries for the latest three posts and save them as drafts",
   "agent_skill_try_copy": "Copy instruction",
   "agent_skill_try_copied": "Instruction copied",

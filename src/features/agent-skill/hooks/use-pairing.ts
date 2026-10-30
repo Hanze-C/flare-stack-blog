@@ -94,6 +94,7 @@ export function usePairing() {
     state,
     agent: state === "connected" ? status?.agent : undefined,
     code,
+    expiresAt: status?.expiresAt,
     isLoading: statusQuery.isPending || isCheckingAgent,
     isError: statusQuery.isError && status === undefined,
     reload: statusQuery.refetch,

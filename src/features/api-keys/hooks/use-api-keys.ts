@@ -61,13 +61,13 @@ export function useApiKeys() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (keyId: string) => {
+    mutationFn: async ({ keyId }: { keyId: string; quiet?: boolean }) => {
       const { error } = await getAuthClient().apiKey.delete({ keyId });
       if (error) throw error;
     },
-    onSuccess: async () => {
+    onSuccess: async (_data, { quiet }) => {
       await queryClient.invalidateQueries({ queryKey: API_KEYS_QUERY_KEY });
-      toast.success(m.settings_api_keys_toast_delete_success());
+      if (!quiet) toast.success(m.settings_api_keys_toast_delete_success());
     },
     onError: () => {
       toast.error(m.settings_api_keys_toast_delete_fail());
@@ -81,7 +81,9 @@ export function useApiKeys() {
     reload: listQuery.refetch,
     createKey: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
-    deleteKey: deleteMutation.mutateAsync,
+    /** `quiet` leaves the success toast to a caller that shows its own. */
+    deleteKey: (keyId: string, options: { quiet?: boolean } = {}) =>
+      deleteMutation.mutateAsync({ keyId, ...options }),
     isDeleting: deleteMutation.isPending,
   };
 }

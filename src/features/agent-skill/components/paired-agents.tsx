@@ -5,9 +5,22 @@ import ConfirmationModal from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeading } from "@/components/ui/page-heading";
 import { isPairedApiKey } from "@/features/agent-pairing/agent-pairing.schema";
-import { useApiKeys } from "@/features/api-keys/hooks/use-api-keys";
+import {
+  type ApiKeyListItem,
+  useApiKeys,
+} from "@/features/api-keys/hooks/use-api-keys";
 import { formatDate } from "@/lib/utils";
 import { m } from "@/paraglide/messages";
+
+/** The agent's own name, not the key's `<agent> · <date>`; pairing time has its column. */
+function pairedAgentName(key: ApiKeyListItem) {
+  const agentName = (key.metadata as { agentName?: unknown } | null)?.agentName;
+  return (
+    (typeof agentName === "string" && agentName.trim()) ||
+    key.name ||
+    m.settings_api_keys_unnamed()
+  );
+}
 
 export function PairedAgents() {
   const { keys, isLoading, isError, reload, deleteKey, isDeleting } =
@@ -63,7 +76,7 @@ export function PairedAgents() {
             </thead>
             <tbody>
               {agents.map((key) => {
-                const name = key.name || m.settings_api_keys_unnamed();
+                const name = pairedAgentName(key);
                 return (
                   <tr key={key.id}>
                     <td>

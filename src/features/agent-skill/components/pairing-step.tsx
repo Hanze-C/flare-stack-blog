@@ -25,6 +25,7 @@ export function PairingStep() {
     state,
     agent,
     code,
+    expiresAt,
     isLoading,
     isError,
     reload,
@@ -100,6 +101,11 @@ export function PairingStep() {
         <p className="agent-skill-waiting" role="status">
           <Spinner />
           {m.agent_skill_pair_waiting()}
+          {expiresAt && (
+            <span className="agent-skill-expiry">
+              {m.agent_skill_pair_valid_until({ time: expiresAt })}
+            </span>
+          )}
         </p>
         <div className="agent-skill-actions">
           {generateButton(m.agent_skill_pair_regenerate())}
@@ -167,7 +173,7 @@ export function PairingStep() {
         onConfirm={async () => {
           if (!pendingRevoke || isDeleting) return;
           try {
-            await deleteKey(pendingRevoke.id);
+            await deleteKey(pendingRevoke.id, { quiet: true });
             toast.success(
               m.agent_skill_pair_revoked({ name: pendingRevoke.name }),
             );

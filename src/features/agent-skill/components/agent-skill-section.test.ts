@@ -13,7 +13,6 @@ import { toast } from "sonner";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { formatDate } from "@/lib/utils";
 import { m } from "@/paraglide/messages";
-import type { PairingStatus } from "../queries";
 import { AgentSkillSection } from "./agent-skill-section";
 
 const pairing = vi.hoisted(() => ({
@@ -42,12 +41,18 @@ vi.mock("@tanstack/react-router", () => ({
     createElement("a", null, children),
 }));
 
+// The pairing operations answer over HTTP, where a date is an ISO string and
+// mutation results are not revived: the mocks answer the way the network does.
 const connectedAt = new Date("2026-10-30T08:00:00.000Z");
-const expiresAt = new Date("2026-10-30T08:10:00.000Z");
-const waiting: PairingStatus = { state: "waiting", expiresAt };
-const connected: PairingStatus = {
+const expiresAt = "2026-10-30T08:10:00.000Z";
+const waiting = { state: "waiting", expiresAt };
+const connected = {
   state: "connected",
-  agent: { name: "Claude Code", apiKeyId: "key-1", connectedAt },
+  agent: {
+    name: "Claude Code",
+    apiKeyId: "key-1",
+    connectedAt: connectedAt.toISOString(),
+  },
 };
 
 const pairedKey = {
@@ -176,7 +181,7 @@ it("offers the four example instructions, each with a copy button, and the draft
   for (const text of [
     "列出最近的草稿",
     "把本地的 notes.md 整理成一篇草稿，图片一并上传",
-    "检查草稿《…》有哪些未发布的修改，确认后发布",
+    "检查最近一篇草稿有哪些未发布的修改，确认后发布",
     "为最近三篇文章补写摘要，保存为草稿",
   ]) {
     expect(screen.getByText(text)).toBeTruthy();
@@ -228,6 +233,18 @@ it("generates a code and shows the sentence for the agent with the configured do
     screen.getByRole("button", { name: m.agent_skill_pair_copy() }),
   ).toBeTruthy();
   expect(screen.getByText(m.agent_skill_pair_waiting())).toBeTruthy();
+});
+
+it("says until when the waiting code is valid", async () => {
+  pairing.status.mockResolvedValue(waiting);
+  mountPage();
+  await flush();
+  expect(
+    screen.getByText(
+      m.agent_skill_pair_valid_until({ time: new Date(expiresAt) }),
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText(/^有效至 \d{2}:\d{2}$/)).toBeTruthy();
 });
 
 it("writes the code as ABCD-EFGH whatever case or separator the server uses", async () => {
@@ -286,7 +303,7 @@ it("does not show a code that another tab replaced", async () => {
 
   pairing.status.mockResolvedValue({
     state: "waiting",
-    expiresAt: new Date("2026-10-30T08:12:00.000Z"),
+    expiresAt: "2026-10-30T08:12:00.000Z",
   });
   await tick(2000);
   await settle();
@@ -347,7 +364,10 @@ it("reloads the connected agent into the key list", async () => {
   await tick(2000);
   await settle();
   expect(authKeys.list).toHaveBeenCalledTimes(2);
-  expect(screen.getByText(pairedKey.name)).toBeTruthy();
+  expect(screen.getByRole("table")).toBeTruthy();
+  expect(
+    within(screen.getByRole("table")).getByText("Claude Code"),
+  ).toBeTruthy();
 });
 
 it("cancels a waiting code and returns to the start", async () => {
@@ -432,6 +452,8 @@ it("asks before revoking, then deletes the key the code issued", async () => {
   expect(toast.success).toHaveBeenCalledWith(
     m.agent_skill_pair_revoked({ name: "Claude Code" }),
   );
+  // Only the revoke toast, not the generic "key deleted" one as well.
+  expect(toast.success).toHaveBeenCalledTimes(1);
   // Status still says connected; the missing key sends the tab back to the start.
   expect(
     screen.queryByRole("button", { name: "不是此 agent？撤销" }),
@@ -494,12 +516,28 @@ it("lists only the agents connected by pairing, with their last use", async () =
   mountPage();
   await flush();
   const list = screen.getByRole("table");
-  expect(within(list).getByText(pairedKey.name)).toBeTruthy();
+  // The agent's name from the metadata, not the key's "<agent> · <date>".
+  expect(within(list).getByText("Claude Code")).toBeTruthy();
+  expect(within(list).queryByText(pairedKey.name)).toBeNull();
   expect(within(list).queryByText(manualKey.name)).toBeNull();
   expect(
     within(list).getByText(
       formatDate(pairedKey.lastRequest, { includeTime: true }),
     ),
+  ).toBeTruthy();
+});
+
+it("falls back to the key name when the metadata has no agent name", async () => {
+  authKeys.list.mockResolvedValue({
+    data: {
+      apiKeys: [{ ...pairedKey, metadata: { source: "pairing" } }],
+    },
+    error: null,
+  });
+  mountPage();
+  await flush();
+  expect(
+    within(screen.getByRole("table")).getByText(pairedKey.name),
   ).toBeTruthy();
 });
 
@@ -538,7 +576,7 @@ it("deletes a paired agent's key after confirmation", async () => {
   );
   const dialog = screen.getByRole("dialog");
   expect(dialog.textContent).toContain(
-    m.settings_api_keys_delete_desc({ name: pairedKey.name }),
+    m.settings_api_keys_delete_desc({ name: "Claude Code" }),
   );
   expect(authKeys.delete).not.toHaveBeenCalled();
   fireEvent.click(

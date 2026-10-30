@@ -100,5 +100,10 @@ it("points to the Agent Skill tab instead of carrying the install hint", async (
     name: m.settings_api_keys_agent_pointer_link(),
   });
   expect(link.getAttribute("href")).toBe("/admin/settings/agent-skill");
+  // Only the words are linked; the brackets and "tab" stay outside.
+  expect(link.textContent).toBe("Agent Skill");
+  expect(link.parentElement?.textContent).toContain(
+    `「${link.textContent}」页签`,
+  );
   expect(document.body.textContent).not.toContain("npx skills add");
 });

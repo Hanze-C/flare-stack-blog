@@ -858,8 +858,8 @@
   "settings_api_keys_toast_delete_success": "密钥已删除",
   "settings_api_keys_toast_delete_fail": "删除失败",
   "settings_api_keys_paired_badge": "配对",
-  "settings_api_keys_agent_pointer": "接入 Agent Skill 无需手动创建 API Key，可在{link}通过配对码完成。",
-  "settings_api_keys_agent_pointer_link": "「Agent Skill」页签",
+  "settings_api_keys_agent_pointer": "接入 Agent Skill 无需手动创建 API Key，可在「{link}」页签通过配对码完成。",
+  "settings_api_keys_agent_pointer_link": "Agent Skill",
   "agent_skill_title": "Agent Skill",
   "agent_skill_intro": "按安装、配对、试一试三步接入 AI agent，API Key 不会出现在对话记录中。",
   "agent_skill_step_install": "安装",
@@ -876,6 +876,14 @@
   "agent_skill_pair_copied": "已复制这段话",
   "agent_skill_pair_code_hidden": "配对码仅在生成时显示。需要新的配对码时，请重新生成。",
   "agent_skill_pair_waiting": "等待 agent 连接",
+  "agent_skill_pair_valid_until": [
+    {
+      "declarations": ["input time", "local formattedTimeZh = time: datetime hour=2-digit minute=2-digit hour12=false"],
+      "match": {
+        "time=*": "有效至 {formattedTimeZh}"
+      }
+    }
+  ],
   "agent_skill_pair_connected": "已连接：{name}，{time}",
   "agent_skill_pair_not_this": "不是此 agent？撤销",
   "agent_skill_pair_another": "配对其他 agent",
@@ -891,7 +899,7 @@
   "agent_skill_try_hint": "接入完成后，可向 agent 发出以下指令。",
   "agent_skill_try_list_drafts": "列出最近的草稿",
   "agent_skill_try_notes": "把本地的 notes.md 整理成一篇草稿，图片一并上传",
-  "agent_skill_try_publish": "检查草稿《…》有哪些未发布的修改，确认后发布",
+  "agent_skill_try_publish": "检查最近一篇草稿有哪些未发布的修改，确认后发布",
   "agent_skill_try_summaries": "为最近三篇文章补写摘要，保存为草稿",
   "agent_skill_try_copy": "复制指令",
   "agent_skill_try_copied": "已复制指令",
