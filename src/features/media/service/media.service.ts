@@ -300,6 +300,29 @@ function fileNameFromUrl(url: URL, mimeType: string) {
   return `image.${ext}`;
 }
 
+// An SVG opened at its own address is a document on the site origin. Served
+// as a sandboxed document with no script source it cannot run script, and
+// nosniff keeps any image from being read as another type. As an <img>, an
+// SVG never runs script anyway, so this changes nothing on the site's pages.
+const IMAGE_SECURITY_HEADERS = {
+  "Content-Security-Policy":
+    "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox",
+  "X-Content-Type-Options": "nosniff",
+} as const;
+
+function withImageHeaders(
+  response: Response,
+  cacheControl: Record<string, string>,
+) {
+  for (const [name, value] of Object.entries({
+    ...cacheControl,
+    ...IMAGE_SECURITY_HEADERS,
+  })) {
+    response.headers.set(name, value);
+  }
+  return response;
+}
+
 export async function handleImageRequest(
   env: Env,
   key: string,
@@ -311,7 +334,10 @@ export async function handleImageRequest(
   const serveOriginal = async () => {
     const object = await env.R2.get(key);
     if (!object) {
-      return new Response("Image not found", { status: 404 });
+      return withImageHeaders(
+        new Response("Image not found", { status: 404 }),
+        {},
+      );
     }
 
     const contentType =
@@ -323,11 +349,11 @@ export async function handleImageRequest(
     object.writeHttpMetadata(headers);
     headers.set("Content-Type", contentType);
     headers.set("ETag", object.httpEtag);
-    Object.entries(CACHE_CONTROL.public).forEach(([k, v]) => {
-      headers.set(k, v);
-    });
 
-    return new Response(object.body, { headers });
+    return withImageHeaders(
+      new Response(object.body, { headers }),
+      CACHE_CONTROL.public,
+    );
   };
 
   // 1. 防止循环调用 & 显式请求原图
@@ -396,11 +422,7 @@ export async function handleImageRequest(
     const newResponse = new Response(response.body, response);
 
     newResponse.headers.set("Vary", "Accept");
-    Object.entries(CACHE_CONTROL.immutable).forEach(([k, v]) => {
-      newResponse.headers.set(k, v);
-    });
-
-    return newResponse;
+    return withImageHeaders(newResponse, CACHE_CONTROL.immutable);
   } catch (e) {
     console.error(
       JSON.stringify({
