@@ -38,7 +38,6 @@ import { toIsoOrNull } from "@/features/posts/public-snapshot";
 import type { PublicPostCover } from "@/lib/db/schema";
 
 import {
-  extractAllImageKeys,
   extractMediaPathImages,
   slugify,
 } from "@/features/posts/utils/content";
@@ -68,6 +67,7 @@ import {
   POST_PUBLIC_SLUG,
   POST_SLUG,
 } from "@/lib/db/unique-keys";
+import { serverEnv } from "@/lib/env/server.env";
 import { err, ok } from "@/lib/errors";
 
 function stripPublicSnapshot<
@@ -161,23 +161,28 @@ async function buildPublicSnapshot(
 }
 
 /**
- * The Media keys a body written into a draft uses by path (`/images/{key}`),
- * or the images whose Media does not exist. An image the Post's stored draft
- * (`postId`) already shows is accepted even when its Media is gone, so a body
- * with an old broken image can still be saved; it cannot be added anew.
+ * The Media keys a body written into a draft uses by path (`/images/{key}`,
+ * alone or on the site's own address), or the images whose Media does not
+ * exist. An image the Post's stored draft (`postId`) already shows by path is
+ * accepted even when its Media is gone, so a body with an old broken image
+ * can still be saved; it cannot be added anew.
  */
 async function bodyMediaReferences(
-  db: DB,
+  context: DbContext,
   contentJson: JSONContent | null,
   postId?: number,
 ) {
-  const images = extractMediaPathImages(contentJson);
+  const { db } = context;
+  const siteHost = serverEnv(context.env).DOMAIN;
+  const images = extractMediaPathImages(contentJson, siteHost);
   const keys = [...new Set(images.map((image) => image.key))];
   const missing = await findMissingMediaKeys(db, keys);
   const refusedKeys = new Set(missing);
   if (refusedKeys.size > 0 && postId !== undefined) {
     const stored = await PostRepo.findPostContentJson(db, postId);
-    for (const key of extractAllImageKeys(stored)) refusedKeys.delete(key);
+    for (const { key } of extractMediaPathImages(stored, siteHost)) {
+      refusedKeys.delete(key);
+    }
   }
   const refused = images.filter((image) => refusedKeys.has(image.key));
   if (refused.length > 0) {
@@ -397,7 +402,7 @@ export async function createDraft(context: DbContext, data: CreatePostData) {
   const tooLarge = contentTooLarge("contentJson", contentJson);
   if (tooLarge) return err(tooLarge);
 
-  const references = await bodyMediaReferences(context.db, contentJson);
+  const references = await bodyMediaReferences(context, contentJson);
   if (references.error) return references;
 
   let post;
@@ -416,7 +421,7 @@ export async function createDraft(context: DbContext, data: CreatePostData) {
   } catch (error) {
     // Media the body uses was deleted after the check; nothing was written.
     if (!isMediaGone(error)) throw error;
-    const recheck = await bodyMediaReferences(context.db, contentJson);
+    const recheck = await bodyMediaReferences(context, contentJson);
     if (recheck.error) return recheck;
     throw error;
   }
@@ -651,7 +656,7 @@ export async function updatePost(
   let bodyKeys: Array<string> = [];
   if (updateData.contentJson !== undefined) {
     const references = await bodyMediaReferences(
-      context.db,
+      context,
       updateData.contentJson,
       data.id,
     );
@@ -691,7 +696,7 @@ export async function updatePost(
       }
       if (updateData.contentJson !== undefined) {
         const recheck = await bodyMediaReferences(
-          context.db,
+          context,
           updateData.contentJson,
           data.id,
         );
