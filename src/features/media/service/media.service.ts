@@ -31,7 +31,7 @@ export async function upload(
 
   const buffer = await file.arrayBuffer();
   if (!matchesDeclaredImageType(buffer, file.type)) {
-    return err({ reason: "MEDIA_INVALID" });
+    return err({ reason: "MEDIA_INVALID", detail: "TYPE_MISMATCH" });
   }
   const dimensions = getImageDimensions(buffer);
   const width = dimensions?.width;
@@ -173,7 +173,7 @@ export async function replaceImage(
 
   const buffer = await input.file.arrayBuffer();
   if (!matchesDeclaredImageType(buffer, input.file.type)) {
-    return err({ reason: "MEDIA_INVALID" });
+    return err({ reason: "MEDIA_INVALID", detail: "TYPE_MISMATCH" });
   }
   const dimensions = getImageDimensions(buffer);
   await Storage.putToR2(context.env, input.file, input.key);
@@ -246,12 +246,15 @@ export async function importFromUrl(
     .trim()
     .toLowerCase();
   if (!ACCEPTED_IMAGE_TYPES.includes(mime)) {
-    return err({ reason: "MEDIA_INVALID" });
+    return err({ reason: "MEDIA_INVALID", detail: "TYPE_UNRECOGNIZED" });
   }
 
   const buffer = await response.arrayBuffer();
-  if (buffer.byteLength === 0 || buffer.byteLength > MAX_FILE_SIZE) {
-    return err({ reason: "MEDIA_INVALID" });
+  if (buffer.byteLength === 0) {
+    return err({ reason: "MEDIA_INVALID", detail: "EMPTY" });
+  }
+  if (buffer.byteLength > MAX_FILE_SIZE) {
+    return err({ reason: "MEDIA_INVALID", detail: "TOO_LARGE" });
   }
 
   const file = new File([buffer], fileNameFromUrl(parsed, mime), {
