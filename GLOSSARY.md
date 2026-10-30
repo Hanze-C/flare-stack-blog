@@ -165,6 +165,7 @@ _Avoid_: New commit, fork update
 - Editing or autosaving a **Post** does not update the **Public Content Snapshot**.
 - Unpublishing a **Published Post** discards its **Public Content Snapshot**, making it a **Draft Post**, and removes it from public listing, detail, and search.
 - Restoring a **Post Revision** first saves the current editable **Post** as a **Post Revision**, then restores the editable content, **Category** and **Tags**. It does not replace or discard the **Public Content Snapshot**.
+- Discarding **Unpublished Changes** first saves the current editable **Post** as a **Post Revision**, then writes the draft from the **Public Content Snapshot** and the **Public Usage** of its **Category** and **Tags**. It reads no **Post Revision**, so deleting **Post Revisions** never stops it.
 - Publishing with a new slug replaces the **Public Content Snapshot** slug. The previous public slug does not remain reachable.
 - A **Published Post** has a publication date for display and listing order. The date is a past or current server date, never a future date. First publication without a date uses server time.
 - A **Post Revision** belongs to exactly one **Post**.

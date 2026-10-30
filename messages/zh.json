@@ -506,7 +506,6 @@
   "editor_action_discard_failed": "放弃修改未完成，请再试一次。",
   "editor_action_discard_no_changes": "草稿和已发布的版本已经一致，没有可放弃的修改。",
   "editor_action_discard_not_published": "这篇文章还没有发布，没有可以回到的已发布版本。",
-  "editor_action_discard_no_revision": "找不到已发布版本的记录，无法放弃修改。",
   "editor_action_slug_set": "URL slug 已设置",
   "editor_action_slug_set_desc": [
     {

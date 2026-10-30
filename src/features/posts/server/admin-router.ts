@@ -352,7 +352,6 @@ const unpublishPost = adminProcedure
 const discardChanges = adminProcedure
   .errors({
     ...postNotFoundErrors,
-    POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND,
     ...discardChangesErrors,
     ...editConflictErrors,
   })
@@ -361,7 +360,7 @@ const discardChanges = adminProcedure
     path: "/admin/posts/{id}/discard-changes",
     summary: "Discard a post's unpublished changes",
     description:
-      "Makes the draft of a published post that has unpublished changes (hasUnpublishedChanges) match the published version again: title, summary, slug, body, publication date, cover, category and tags. The draft as it is now is first saved as a Post Revision, so the discarded changes can be restored from the revision list. The published page is not touched. Answers 409 POST_NOT_PUBLISHED for a draft post and 409 NO_UNPUBLISHED_CHANGES when the draft already matches. With saveToken, only the draft that token was read from is discarded; if the post was saved since, it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Returns the post's new saveToken.",
+      "Makes the draft of a published post that has unpublished changes (hasUnpublishedChanges) match the published version again: title, summary, slug, body, publication date, cover, category and tags, read from the published version itself, so it works whatever Post Revisions were deleted. The draft as it is now is first saved as a Post Revision (reason restore_backup), so the discarded changes can be restored from the revision list. The published page is not touched. Answers 409 POST_NOT_PUBLISHED for a draft post and 409 NO_UNPUBLISHED_CHANGES when the draft already matches. With saveToken, only the draft that token was read from is discarded; if the post was saved since, it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Returns the post's new saveToken.",
     tags: ["Admin Posts"],
   })
   .input(DiscardPostChangesInputSchema)
@@ -372,9 +371,6 @@ const discardChanges = adminProcedure
       {
         POST_NOT_FOUND: () => {
           throw errors.POST_NOT_FOUND();
-        },
-        POST_REVISION_NOT_FOUND: () => {
-          throw errors.POST_REVISION_NOT_FOUND();
         },
         POST_NOT_PUBLISHED: () => {
           throw errors.POST_NOT_PUBLISHED();
@@ -509,6 +505,8 @@ const deleteRevisions = adminProcedure
     method: "DELETE",
     path: "/admin/posts/{postId}/revisions",
     summary: "Delete post revisions",
+    description:
+      "Permanently deletes the listed Post Revisions of the post; ids that are not its revisions are skipped, and deletedIds lists what was deleted. Revisions are history, not the draft: deleting them leaves the draft, its saveToken and the published page as they are, so it takes no saveToken. It cannot be undone. A restore_backup revision is the only copy of a draft that a restore or a discard replaced, so deleting it loses those changes for good. Media used only by deleted revisions is no longer in use and can then be deleted. Publishing, unpublishing and discard-changes do not need any revision.",
     tags: ["Admin Posts"],
   })
   .input(DeletePostRevisionsInputSchema)

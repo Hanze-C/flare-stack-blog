@@ -513,7 +513,6 @@
   "editor_action_discard_failed": "Discarding did not finish. Try again.",
   "editor_action_discard_no_changes": "The draft already matches the published version, so there is nothing to discard.",
   "editor_action_discard_not_published": "This post is not published, so there is no published version to go back to.",
-  "editor_action_discard_no_revision": "The published version could not be found, so the changes cannot be discarded.",
   "editor_action_slug_set": "URL Slug Set",
   "editor_action_slug_set_desc": [
     {

@@ -57,8 +57,6 @@ export function discardErrorMessage(error: unknown) {
         return m.editor_action_discard_no_changes();
       case "POST_NOT_PUBLISHED":
         return m.editor_action_discard_not_published();
-      case "POST_REVISION_NOT_FOUND":
-        return m.editor_action_discard_no_revision();
     }
   }
   return m.editor_action_discard_failed();

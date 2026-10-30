@@ -150,6 +150,8 @@ export async function restorePostSnapshot(
       snapshotHash: string;
       restoredFromRevisionId?: number | null;
     };
+    /** Replaces the Post's published fingerprint, when given. */
+    publishedFingerprint?: string;
     saveToken?: string;
   },
 ) {
@@ -175,6 +177,9 @@ export async function restorePostSnapshot(
             ? null
             : sql`(SELECT id FROM categories WHERE id = ${data.snapshot.categoryId})`,
         draftFingerprint: null,
+        ...(data.publishedFingerprint !== undefined && {
+          publishedFingerprint: data.publishedFingerprint,
+        }),
         saveToken,
       })
       .where(

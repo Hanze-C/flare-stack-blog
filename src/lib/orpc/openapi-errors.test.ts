@@ -89,7 +89,6 @@ describe("errors declared by post operations", () => {
       "/admin/posts/{id}/discard-changes",
       [
         "404 POST_NOT_FOUND",
-        "404 POST_REVISION_NOT_FOUND",
         "409 EDIT_CONFLICT",
         "409 NO_UNPUBLISHED_CHANGES",
         "409 POST_NOT_PUBLISHED",
