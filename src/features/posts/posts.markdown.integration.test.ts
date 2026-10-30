@@ -1,6 +1,11 @@
 import { env } from "cloudflare:workers";
-import { createMockExecutionCtx, seedAdminApiKey } from "tests/test-utils";
+import {
+  createMockExecutionCtx,
+  createTestContext,
+  seedAdminApiKey,
+} from "tests/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as MediaRepo from "@/features/media/data/media.data";
 import { fetchVideoMeta } from "@/features/posts/services/video-meta.service";
 import { createApiContext } from "@/lib/orpc/create-context";
 import { openAPIHandler } from "@/lib/orpc/openapi-handler";
@@ -87,6 +92,14 @@ describe("Post content as Markdown over the Admin API", () => {
       "```mermaid\nflowchart LR\n  A --> B\n```",
       "![cover](/images/cover.png)",
     ].join("\n\n");
+    // Media paths must name existing Media.
+    await MediaRepo.insertMedia(createTestContext().db, {
+      key: "cover.png",
+      url: "/images/cover.png",
+      fileName: "cover.png",
+      mimeType: "image/png",
+      sizeInBytes: 10,
+    });
 
     const id = await createPost(apiKey, { contentMarkdown: markdown });
 
@@ -116,6 +129,36 @@ describe("Post content as Markdown over the Admin API", () => {
     expect((await readPost(apiKey, id)).contentJson).toEqual(
       asJson.contentJson,
     );
+  });
+
+  it("answers a PATCH in the requested content format", async () => {
+    const apiKey = await seedAdminApiKey();
+    const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+
+    const asMarkdown = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: {
+        data: { contentMarkdown: "## Heading\n\nWritten **bold**" },
+        contentFormat: "markdown",
+      },
+    });
+    expect(asMarkdown.status).toBe(200);
+    const written = (await asMarkdown.json()) as ReadPost & {
+      saveToken: string;
+    };
+    expect(written).not.toHaveProperty("contentJson");
+    expect(written.contentMarkdown).toContain("## Heading");
+    expect(written.contentMarkdown).toContain("**bold**");
+    expect(written.saveToken).toEqual(expect.any(String));
+
+    const asJson = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { title: "Renamed" } },
+    });
+    expect(asJson.status).toBe(200);
+    const plain = (await asJson.json()) as ReadPost;
+    expect(plain).not.toHaveProperty("contentMarkdown");
+    expect(plain.contentJson?.content?.[0]?.type).toBe("heading");
   });
 
   it("reads Markdown in the list with includeContent", async () => {
@@ -157,6 +200,54 @@ describe("Post content as Markdown over the Admin API", () => {
     expect(item).not.toHaveProperty("contentMarkdown");
   });
 
+  it("reads the published body as Markdown next to the draft, with no revisions left", async () => {
+    const apiKey = await seedAdminApiKey();
+    const id = await createPost(apiKey, {
+      contentMarkdown: "## Live\n\n```ts\nconst a = 1;\n```",
+    });
+    const unpublished = await readPost(apiKey, id, "?contentFormat=markdown");
+    expect(unpublished).toMatchObject({ publicSnapshotContentMarkdown: null });
+    expect(unpublished).not.toHaveProperty("publicSnapshotContentJson");
+
+    const published = await callAdminApi(apiKey, `/admin/posts/${id}/publish`, {
+      method: "POST",
+      body: {},
+    });
+    expect(published.status).toBe(200);
+    await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { contentMarkdown: "## Draft\n\nChanged." } },
+    });
+    const revisions = (await (
+      await callAdminApi(apiKey, `/admin/posts/${id}/revisions`)
+    ).json()) as Array<{ id: number }>;
+    expect(revisions.length).toBeGreaterThan(0);
+    await callAdminApi(apiKey, `/admin/posts/${id}/revisions`, {
+      method: "DELETE",
+      body: { revisionIds: revisions.map((revision) => revision.id) },
+    });
+
+    const read = (await readPost(
+      apiKey,
+      id,
+      "?contentFormat=markdown",
+    )) as ReadPost & { publicSnapshotContentMarkdown?: string | null };
+    expect(read.contentMarkdown).toBe("## Draft\n\nChanged.\n");
+    // The highlighted code HTML the snapshot keeps does not show.
+    expect(read.publicSnapshotContentMarkdown).toBe(
+      "## Live\n\n```ts\nconst a = 1;\n```\n",
+    );
+    expect(read).not.toHaveProperty("publicSnapshotContentJson");
+
+    const asJson = (await readPost(apiKey, id)) as ReadPost & {
+      publicSnapshotContentJson?: { content?: Array<{ type: string }> };
+    };
+    expect(asJson).not.toHaveProperty("publicSnapshotContentMarkdown");
+    expect(
+      asJson.publicSnapshotContentJson?.content?.map((node) => node.type),
+    ).toEqual(["heading", "codeBlock"]);
+  });
+
   it("refuses a local image and names it", async () => {
     const apiKey = await seedAdminApiKey();
     const id = await createPost(apiKey, { contentJson: paragraph("Before") });
@@ -193,6 +284,79 @@ describe("Post content as Markdown over the Admin API", () => {
     expect(((await create.json()) as { code: string }).code).toBe(
       "MARKDOWN_IMAGE_INVALID",
     );
+  });
+
+  it("refuses javascript: and data: links in either format and names them", async () => {
+    const apiKey = await seedAdminApiKey();
+    const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+    type LinkError = {
+      code: string;
+      message: string;
+      data: { links: Array<string> };
+    };
+
+    const markdown = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          contentMarkdown:
+            "[ok](https://example.com) [site](/posts) [top](#top) [mail](mailto:a@b.example)\n\n[x](javascript:alert(1)) [y](data:text/html;base64,PHNjcmlwdD4=)\n\n[z][r]\n\n[r]: JAVASCRIPT:alert(2)",
+        },
+      },
+    });
+    expect(markdown.status).toBe(400);
+    const markdownBody = (await markdown.json()) as LinkError;
+    expect(markdownBody.code).toBe("CONTENT_LINK_INVALID");
+    expect(markdownBody.data.links).toEqual([
+      "javascript:alert(1)",
+      "data:text/html;base64,PHNjcmlwdD4=",
+      "JAVASCRIPT:alert(2)",
+    ]);
+    expect(markdownBody.message).toContain('"javascript:alert(1)"');
+
+    const linked = (href: string) => ({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "click",
+              marks: [{ type: "bold" }, { type: "link", attrs: { href } }],
+            },
+          ],
+        },
+      ],
+    });
+    const json = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { contentJson: linked(" java\tscript:alert(3)") } },
+    });
+    expect(json.status).toBe(400);
+    const jsonBody = (await json.json()) as LinkError;
+    expect(jsonBody.code).toBe("CONTENT_LINK_INVALID");
+    expect(jsonBody.data.links).toEqual([" java\tscript:alert(3)"]);
+    expect((await readPost(apiKey, id)).contentJson).toEqual(
+      paragraph("Before"),
+    );
+
+    const create = await callAdminApi(apiKey, "/admin/posts", {
+      method: "POST",
+      body: {
+        data: { title: "Data link", contentJson: linked("data:,hello") },
+      },
+    });
+    expect(create.status).toBe(400);
+    expect(((await create.json()) as LinkError).data.links).toEqual([
+      "data:,hello",
+    ]);
+
+    const fine = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { contentJson: linked("https://example.com/") } },
+    });
+    expect(fine.status).toBe(200);
   });
 
   it("refuses contentJson and contentMarkdown together", async () => {
@@ -283,5 +447,153 @@ describe("Post content as Markdown over the Admin API", () => {
         },
       },
     ]);
+  });
+
+  describe("contentJson follows the Markdown rules", () => {
+    interface ContentJsonError {
+      code: string;
+      message: string;
+      data: {
+        nodeTypes: Array<string>;
+        markTypes: Array<string>;
+        images: Array<string>;
+      };
+    }
+
+    const image = (src: string) => ({
+      type: "doc",
+      content: [{ type: "image", attrs: { src, alt: "x" } }],
+    });
+
+    it("refuses javascript: and file: images, on create and on PATCH", async () => {
+      const apiKey = await seedAdminApiKey();
+      const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+
+      for (const src of ["javascript:alert(1)", "file:///etc/passwd", ""]) {
+        const patch = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+          method: "PATCH",
+          body: { data: { contentJson: image(src) } },
+        });
+        expect(patch.status).toBe(400);
+        const body = (await patch.json()) as ContentJsonError;
+        expect(body.code).toBe("CONTENT_JSON_INVALID");
+        expect(body.data.images).toEqual([src]);
+        if (src) expect(body.message).toContain(src);
+      }
+
+      const create = await callAdminApi(apiKey, "/admin/posts", {
+        method: "POST",
+        body: {
+          data: { title: "Bad", contentJson: image("javascript:alert(1)") },
+        },
+      });
+      expect(create.status).toBe(400);
+
+      expect((await readPost(apiKey, id)).contentJson).toEqual(
+        paragraph("Before"),
+      );
+    });
+
+    it("refuses node and mark types the editor does not know, naming them", async () => {
+      const apiKey = await seedAdminApiKey();
+      const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+
+      const response = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: {
+          data: {
+            contentJson: {
+              type: "doc",
+              content: [
+                { type: "callout", content: [{ type: "paragraph" }] },
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "x",
+                      marks: [{ type: "highlight" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as ContentJsonError;
+      expect(body.code).toBe("CONTENT_JSON_INVALID");
+      expect(body.data.nodeTypes).toEqual(["callout"]);
+      expect(body.data.markTypes).toEqual(["highlight"]);
+      expect(body.message).toContain('"callout"');
+      expect(body.message).toContain('"highlight"');
+      expect((await readPost(apiKey, id)).contentJson).toEqual(
+        paragraph("Before"),
+      );
+    });
+
+    it("keeps accepting what the editor saves", async () => {
+      const apiKey = await seedAdminApiKey();
+      const content = {
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 2 },
+            content: [{ type: "text", text: "Title" }],
+          },
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "all marks",
+                marks: [
+                  { type: "bold" },
+                  { type: "underline" },
+                  { type: "link", attrs: { href: "https://example.com" } },
+                ],
+              },
+            ],
+          },
+          { type: "image", attrs: { src: "/images/a.png?width=10" } },
+          { type: "image", attrs: { src: "https://example.com/b.png" } },
+        ],
+      };
+      await MediaRepo.insertMedia(createTestContext().db, {
+        key: "a.png",
+        url: "/images/a.png",
+        fileName: "a.png",
+        mimeType: "image/png",
+        sizeInBytes: 10,
+      });
+      const id = await createPost(apiKey, { contentJson: content });
+
+      const markdown = await readPost(apiKey, id, "?contentFormat=markdown");
+      expect(markdown.contentMarkdown).toContain("++");
+      const written = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: { data: { contentMarkdown: markdown.contentMarkdown } },
+      });
+      expect(written.status).toBe(200);
+    });
+
+    it("reads an empty body as null, as documented", async () => {
+      const apiKey = await seedAdminApiKey();
+      const id = await createPost(apiKey, {
+        contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+      });
+      expect(
+        (await readPost(apiKey, id, "?contentFormat=markdown")).contentMarkdown,
+      ).toBeNull();
+
+      const written = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: { data: { contentMarkdown: "" }, contentFormat: "markdown" },
+      });
+      expect(written.status).toBe(200);
+      expect(((await written.json()) as ReadPost).contentMarkdown).toBeNull();
+    });
   });
 });

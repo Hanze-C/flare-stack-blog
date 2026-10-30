@@ -4,13 +4,10 @@ import type { PostStatus } from "@/lib/db/schema";
 import type { AdminTaxonomyFilter } from "@/features/posts/schema/posts.schema";
 import { PostTagsTable, PostsTable } from "@/lib/db/schema";
 import { hasPublicTag } from "@/features/posts/data/public-assignments.data";
+import { containsText } from "@/lib/db/text-match";
 
-export type SortField = "publishedAt" | "updatedAt" | "id";
+export type SortField = "publishedAt" | "updatedAt" | "createdAt" | "id";
 export type SortDirection = "ASC" | "DESC";
-
-function escapeLikeString(str: string) {
-  return str.replace(/[%_\\]/g, "\\$&");
-}
 
 export function adminPostTextColumns(taxonomy?: AdminTaxonomyFilter) {
   if (taxonomy?.scope !== "public")
@@ -91,13 +88,20 @@ export function buildPostWhereClause(options: PostFilters) {
   if (options.search) {
     const searchTerm = options.search.trim();
     if (searchTerm) {
-      const pattern = `%${escapeLikeString(searchTerm)}%`;
       const fields = adminPostTextColumns(options.taxonomy);
       whereClauses.push(
         or(
-          sql`${fields.title} LIKE ${pattern} ESCAPE '\\'`,
-          sql`${fields.summary} LIKE ${pattern} ESCAPE '\\'`,
-          sql`${fields.slug} LIKE ${pattern} ESCAPE '\\'`,
+          containsText(fields.title, searchTerm),
+          containsText(fields.summary, searchTerm),
+          containsText(fields.slug, searchTerm),
+          // The public page may still carry the title and slug it was
+          // published with after the draft's changed, and a reader looking
+          // for it by what the site shows must find it.
+          containsText(
+            sql`json_extract(${PostsTable.publicSnapshotJson}, '$.title')`,
+            searchTerm,
+          ),
+          containsText(PostsTable.publicSlug, searchTerm),
         ),
       );
     }

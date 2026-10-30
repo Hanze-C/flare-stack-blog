@@ -358,6 +358,90 @@ it("surfaces the conflict when publishing is refused", async () => {
   }
 });
 
+it("tells the Admin to change a publication date that is in the future", async () => {
+  await renderPostEditorPage(createServer().save);
+  publish.mockRejectedValue(
+    new ORPCError("PUBLISHED_AT_IN_FUTURE", { status: 400, defined: true }),
+  );
+
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_header_publish() })[0]!,
+  );
+
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      m.editor_action_publish_future_date(),
+    ),
+  );
+});
+
+function tooLarge(field: "contentJson" | "publicSnapshot") {
+  return new ORPCError("POST_CONTENT_TOO_LARGE", {
+    status: 413,
+    defined: true,
+    data: { field, limit: 800_000, size: 900_000 },
+  });
+}
+
+it("says the post is too large to save instead of a generic failure", async () => {
+  const save = vi.fn<PostEditorSave>(async () => {
+    throw tooLarge("contentJson");
+  });
+  const editor = await renderPostEditorPage(save);
+
+  typeInto(editor, "more");
+
+  await waitFor(
+    () =>
+      expect(toast.error).toHaveBeenCalledWith(
+        m.editor_content_too_large({ limit: 800 }),
+      ),
+    AUTOSAVE_WAIT,
+  );
+  expect(m.editor_content_too_large({ limit: 800 })).toContain("800");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("says the published version is too large when publishing is refused for it", async () => {
+  await renderPostEditorPage(createServer().save);
+  publish.mockRejectedValue(tooLarge("publicSnapshot"));
+
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_header_publish() })[0]!,
+  );
+
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      m.editor_snapshot_too_large({ limit: 800 }),
+    ),
+  );
+  expect(toast.error).not.toHaveBeenCalledWith(
+    m.editor_action_publish_failed(),
+  );
+});
+
+it("keeps autosaving and holds back publishing while the slug is taken", async () => {
+  const server = createServer();
+  const save = vi.fn<PostEditorSave>(async (...args) => {
+    await server.save(...args);
+    return { slugTaken: true };
+  });
+  const editor = await renderPostEditorPage(save);
+
+  typeInto(editor, "one");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1), AUTOSAVE_WAIT);
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_info_title() })[0]!,
+  );
+  expect(await screen.findByText(m.editor_meta_slug_taken())).toBeTruthy();
+  await waitFor(() => expect(publishButton().disabled).toBe(true));
+
+  typeInto(editor, " two");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2), AUTOSAVE_WAIT);
+  expect(screen.getByText(m.editor_meta_slug_taken())).toBeTruthy();
+  expect(headerStatus()).not.toBe(m.editor_status_save_error());
+});
+
 const PUBLISHED: PostEditorProps["initialData"] = {
   ...INITIAL,
   hasPublicSnapshot: true,
@@ -569,4 +653,75 @@ it("says the draft is saved, not that it is live, when nothing is waiting", asyn
   await renderPostEditorPage(createServer().save, () => PUBLISHED);
 
   expect(headerStatus()).toBe(m.editor_status_draft_saved());
+});
+
+/** The status the header shows once the rest was saved without the link. */
+function savedExceptLink() {
+  const time = /\d{2}:\d{2}/.exec(headerStatus() ?? "")?.[0] ?? "";
+  return m.editor_status_saved_except_link({ time });
+}
+
+/** Opens the info panel and types `slug` into the link field. */
+function typeSlug(slug: string) {
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_info_title() })[0]!,
+  );
+  fireEvent.change(screen.getByPlaceholderText("your-post-slug"), {
+    target: { value: slug },
+  });
+}
+
+it.each([
+  ["has a forbidden character", "a/b", m.editor_meta_slug_invalid()],
+  ["is reserved", "pinned", m.editor_meta_slug_reserved()],
+])(
+  "shows saving only while a request is out when the slug %s, then saved",
+  async (_case, slug, hint) => {
+    const server = createServer();
+    let finish!: () => void;
+    const save = vi.fn<PostEditorSave>(async (...args) => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      await server.save(...args);
+    });
+    await renderPostEditorPage(save);
+
+    typeSlug(slug);
+    expect(screen.getByText(hint)).toBeTruthy();
+    // Nothing is out yet, so the header does not claim to be saving.
+    expect(headerStatus()).toBe(m.editor_status_unsaved());
+
+    await waitFor(
+      () => expect(headerStatus()).toBe(m.editor_status_saving()),
+      AUTOSAVE_WAIT,
+    );
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await act(async () => finish());
+    // The header says the link is the part that was not saved.
+    await waitFor(() => expect(headerStatus()).toBe(savedExceptLink()));
+    // The rest of the post was saved; the field keeps saying the link was not.
+    expect(screen.getByText(hint)).toBeTruthy();
+    // Nothing else waits, so no further request is sent.
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(headerStatus()).not.toBe(m.editor_status_saving());
+  },
+);
+
+it("shows saved, not saving, once the rest of the post was saved without a taken slug", async () => {
+  const server = createServer();
+  const save = vi.fn<PostEditorSave>(async (...args) => {
+    await server.save(...args);
+    return { slugTaken: true };
+  });
+  await renderPostEditorPage(save);
+
+  typeSlug("taken-slug");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1), AUTOSAVE_WAIT);
+  await waitFor(() => expect(headerStatus()).toBe(savedExceptLink()));
+  expect(screen.getByText(m.editor_meta_slug_taken())).toBeTruthy();
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+  expect(save).toHaveBeenCalledTimes(1);
 });

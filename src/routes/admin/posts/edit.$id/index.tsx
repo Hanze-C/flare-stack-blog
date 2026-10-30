@@ -85,7 +85,7 @@ function EditPost() {
 
   const savePost = savePostEdits(post.id);
   const handleSave: PostEditorSave = async (...args) => {
-    await savePost(...args);
+    const result = await savePost(...args);
 
     // Waited for, so the status shown follows the save instead of lagging it.
     await queryClient.invalidateQueries({
@@ -100,6 +100,7 @@ function EditPost() {
     void queryClient.invalidateQueries({
       queryKey: orpc.media.linkedKeys.key(),
     });
+    return result;
   };
 
   const handleReload = async () => {

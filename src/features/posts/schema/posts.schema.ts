@@ -1,13 +1,41 @@
 import { createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import { z } from "zod";
-import { PublicCategorySchema } from "@/features/categories/categories.schema";
+import {
+  CategorySelectSchema,
+  PublicCategorySchema,
+} from "@/features/categories/categories.schema";
 import { TagSelectSchema } from "@/features/tags/tags.schema";
-import type { PostStatus } from "@/lib/db/schema";
-import { PostsTable } from "@/lib/db/schema";
+import { POST_STATUSES, PostsTable } from "@/lib/db/schema";
+import { atLeastOneField } from "@/lib/orpc/changes";
+import {
+  IdCursorSchema,
+  PageOffsetSchema,
+  pageLimitSchema,
+} from "@/lib/orpc/pagination";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
+import {
+  isPostSlugFormat,
+  isPostSummaryFormat,
+  isPostTitleFormat,
+  isReservedPostSlug,
+  POST_SLUG_MAX_LENGTH,
+  POST_TITLE_MAX_LENGTH,
+  RESERVED_POST_SLUGS,
+} from "@/features/posts/utils/post-fields";
+import {
+  PUBLICATION_DATE_MAX,
+  PUBLICATION_DATE_MIN,
+  parsePublicationDate,
+} from "@/features/posts/utils/date";
+import {
+  LEGACY_NODE_ATTRIBUTES,
+  POST_MARK_ATTRIBUTES,
+  POST_NODE_ATTRIBUTES,
+} from "@/features/posts/utils/post-content-rules";
 import { NullableJsonContentSchema } from "./json-content.schema";
+import { SaveTokenSchema, StatedSaveTokenSchema } from "./save-token.schema";
+import { coercedDate } from "@/lib/orpc/dates";
 
-// Date fields need to accept both Date objects and ISO strings (for JSON serialization)
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 const coercedDateNullable = coercedDate.nullable();
 
 const PublicPostCoverSchema = z.object({
@@ -22,21 +50,24 @@ const AdminPostCoverSchema = PublicPostCoverSchema.extend({
   fileName: z.string(),
 });
 
-const PublicSlugSchema = z
+export const PublicSlugSchema = z
   .string()
   .nullable()
   .describe(
     "Slug of the live page at /post/{publicSlug}. It can differ from slug, the draft's, until the next publish. Null while the post is not published.",
   );
 
-const HasUnpublishedChangesSchema = z
+export const HasUnpublishedChangesSchema = z
   .boolean()
   .describe(
     "True when the post is published and its draft differs from what was published: title, summary, slug, body, publication date, cover, category or tags. Changing a field back to its published value clears it, and publishing clears it. Pinning does not count. Always false for a draft post. publish makes the changes public; discard-changes makes the draft match the published version again.",
   );
 
+// The Markdown and link rules are API-wide, stated once under "Markdown
+// content" in the API description (openapi-handler.ts); the fields that read
+// or write a body point there instead of repeating them in every operation.
 const MARKDOWN_RULES =
-  "CommonMark with GFM tables, strikethrough and autolinks. It carries headings, bold, italic, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, fenced code blocks with their language (a mermaid block renders as a diagram), tables with column alignment, inline math as $…$, block math with $$ alone on the lines before and after it, images and videos. A Bilibili or YouTube link alone in a paragraph is a video block. Headings stay within levels 2 to 4: when there is an H1 every heading moves one level down, and anything below level 4 becomes level 4. Images must be http(s) addresses or Media paths (/images/<key>). Table column widths are not carried, and a table cell holds a single line. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.";
+  'Markdown follows the rules under "Markdown content" in the API description (info.description of /api/spec/index.json).';
 
 export const PostContentFormatSchema = z
   .enum(["json", "markdown"])
@@ -46,33 +77,113 @@ export const PostContentFormatSchema = z
   );
 export type PostContentFormat = z.infer<typeof PostContentFormatSchema>;
 
-const ContentMarkdownOutputSchema = z
+export const ContentMarkdownOutputSchema = z
   .string()
   .nullable()
   .optional()
   .describe(
-    "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
+    "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body, which includes a body with no content, such as one empty paragraph. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
   );
 
-const ContentMarkdownInputSchema = z
+export const ContentMarkdownInputSchema = z
   .string()
   .optional()
   .describe(
-    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal.`,
+    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} An image that is not an http(s) address or a Media path, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first; a link the rules refuse answers CONTENT_LINK_INVALID naming it. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal. An empty string writes an empty body.`,
   );
 
-const SaveTokenSchema = z
+/** `type` and its attributes in brackets, for each type of `lists`. */
+function typesWithAttributes(
+  lists: Readonly<Record<string, ReadonlyArray<string>>>,
+) {
+  return Object.entries(lists)
+    .map(([type, attrs]) =>
+      attrs.length > 0 ? `${type} [${attrs.join(", ")}]` : type,
+    )
+    .join(", ");
+}
+
+const LEGACY_ATTRIBUTES = Object.entries(LEGACY_NODE_ATTRIBUTES)
+  .map(([type, attrs]) => `${type} ${attrs.join(", ")}`)
+  .join("; ");
+
+const CONTENT_JSON_RULES = `The body as TipTap JSON, held to the same rules as Markdown: only the editor's node types (${typesWithAttributes(POST_NODE_ATTRIBUTES)}) and mark types (${typesWithAttributes(POST_MARK_ATTRIBUTES)}), each with at most the attributes in its brackets, and images whose src is an http(s) address or a Media path (/images/<key>). Anything else is refused with 400 CONTENT_JSON_INVALID naming it, an attribute as type.attribute. Attributes older editors stored (${LEGACY_ATTRIBUTES}) are accepted and dropped. The public site opens every link in a new tab with rel="noopener noreferrer nofollow" whatever its target and rel, and shows no class. A link the Markdown rules of the API description refuse answers CONTENT_LINK_INVALID naming it. Send either contentJson or contentMarkdown, not both.`;
+
+export const ContentJsonInputSchema =
+  NullableJsonContentSchema.optional().describe(CONTENT_JSON_RULES);
+
+const TITLE_FORMAT_RULE =
+  "It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, a tab, a zero width space or a bidirectional control); a zero width joiner inside an emoji is fine.";
+
+const PostTitleInputSchema = z
   .string()
+  .trim()
+  .min(1)
+  .max(POST_TITLE_MAX_LENGTH)
+  .refine(isPostTitleFormat, { message: TITLE_FORMAT_RULE })
   .describe(
-    "Opaque token that every save of the post's draft and every publish or unpublish replaces, including tags, category, cover and Post Revision restores; pinning keeps it. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
+    `Title, trimmed. It must not be empty and holds at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE}`,
   );
 
-const StatedSaveTokenSchema = z
+const SUMMARY_FORMAT_RULE =
+  "It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, an escape, a zero width space or a bidirectional control) other than tab, line feed and carriage return; a zero width joiner inside an emoji is fine.";
+
+export const PostSummaryInputSchema = z
   .string()
+  .refine(isPostSummaryFormat, { message: SUMMARY_FORMAT_RULE })
+  .nullable()
+  .describe(
+    `Summary: plain text shown on the post page and in feeds, or null for none. ${SUMMARY_FORMAT_RULE}`,
+  );
+
+const SLUG_FORMAT_RULE =
+  "cannot contain / ? # % \\ ^, whitespace (no-break spaces included), or control or format characters (Unicode Cc or Cf, such as a zero width space), or be . or ..";
+
+const SLUG_RESERVED_RULE = `A slug cannot be ${RESERVED_POST_SLUGS.join(" or ")}, in any case: GET /api/posts/pinned and /api/posts/popular are the pinned and popular lists, so a post with either slug could not be read by slug.`;
+
+const PostSlugInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(POST_SLUG_MAX_LENGTH)
+  .refine(isPostSlugFormat, { message: `A slug ${SLUG_FORMAT_RULE}.` })
+  .refine((slug) => !isReservedPostSlug(slug), {
+    message: SLUG_RESERVED_RULE,
+  })
+  .describe(
+    `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. ${SLUG_RESERVED_RULE} No other post may use it as its slug or as the slug of its live page, compared ignoring case and Unicode compatibility forms (NFKC, so fullwidth ＡＢＣ equals abc): that answers 409 SLUG_TAKEN. It is stored as written.`,
+  );
+
+const PUBLISHED_AT_RULES = `Publication date, ISO 8601: a date such as 2026-10-01, or a date and time such as 2026-10-01T08:30:00Z or 2026-10-01T08:30:00+08:00. A time with no Z or offset is read as UTC, and a date alone as the start of that day in UTC. A day the calendar does not have (2026-02-30) answers 400, and so does a date before ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} or from ${PUBLICATION_DATE_MAX.toISOString().slice(0, 10)} on. Stored to the whole second. Publishing refuses it with 400 PUBLISHED_AT_IN_FUTURE while it is later than the server's current time. Null lets the next publish set it to that time.`;
+
+const PUBLICATION_DATE_MESSAGES = {
+  FORMAT:
+    "Not an ISO 8601 date: write 2026-10-01 or 2026-10-01T08:30:00Z. A time with no Z or offset is read as UTC.",
+  NOT_A_DATE: "The calendar has no such day.",
+  NOT_A_TIME:
+    "No such time of day: hours run from 00 to 23, minutes and seconds from 00 to 59.",
+  NOT_AN_OFFSET:
+    "No such UTC offset: write Z or an offset from -23:59 to +23:59, such as +08:00.",
+  OUT_OF_RANGE: `A publication date is from ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} to the end of ${PUBLICATION_DATE_MAX.getUTCFullYear() - 1}.`,
+} as const;
+
+/** Read as the strict ISO 8601 `parsePublicationDate` takes, then a Date. */
+const PublishedAtInputSchema = z
+  .string()
+  .transform((value, ctx) => {
+    const parsed = parsePublicationDate(value);
+    if ("date" in parsed) return parsed.date;
+    ctx.addIssue({
+      code: "custom",
+      message: PUBLICATION_DATE_MESSAGES[parsed.issue],
+    });
+    return z.NEVER;
+  })
+  .nullable()
   .optional()
-  .describe(
-    "The saveToken from your latest read or write of this post. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken: read the post again before deciding what to write. Omit it to write unconditionally.",
-  );
+  .describe(PUBLISHED_AT_RULES);
+
+export { SaveTokenSchema, StatedSaveTokenSchema };
 
 const PostSelectSchema = createSelectSchema(PostsTable, {
   saveToken: SaveTokenSchema,
@@ -85,7 +196,25 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
   draftFingerprint: true,
   publishedFingerprint: true,
   publicCategoryId: true,
+  slugKey: true,
+  publicSlugKey: true,
 });
+
+const SET_TAGS_HINT =
+  "A Post's Tags are not set with its fields: set them with PUT /admin/posts/{postId}/tags, body { tagIds, saveToken }.";
+
+/**
+ * The refusal of an unknown field, pointing a `tagIds` sent with a Post's
+ * fields to the operation that sets its Tags.
+ */
+function pointTagIdsToSetTags(issue: z.core.$ZodRawIssue) {
+  if (issue.code !== "unrecognized_keys" || !issue.keys.includes("tagIds")) {
+    return undefined;
+  }
+  const keys = issue.keys.map((key) => `"${key}"`).join(", ");
+  return `Unrecognized key${issue.keys.length > 1 ? "s" : ""}: ${keys}. ${SET_TAGS_HINT}`;
+}
+
 /**
  * Strict on purpose, and narrower than the table.
  *
@@ -99,26 +228,40 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  * post that was still a draft. Rejecting the key says so instead.
  *
  * Pinning is not a field either: it takes effect at once, so it has its own
- * endpoints and a PATCH carrying `pinnedAt` is refused.
+ * endpoints and a PATCH carrying `pinnedAt` is refused. Nor are Tags, which
+ * have theirs too: a PATCH carrying `tagIds` is refused naming it.
  */
-const PostUpdateSchema = createUpdateSchema(PostsTable, {
-  contentJson: NullableJsonContentSchema.optional(),
-})
-  .omit({
-    publicSnapshotJson: true,
-    publicCategoryId: true,
-    publicSlug: true,
-    pinnedAt: true,
-    status: true,
-    id: true,
-    createdAt: true,
-    updatedAt: true,
-    saveToken: true,
-    draftFingerprint: true,
-    publishedFingerprint: true,
+const PostUpdateSchema = z.strictObject(
+  createUpdateSchema(PostsTable, {
+    contentJson: ContentJsonInputSchema,
+    title: PostTitleInputSchema.optional(),
+    slug: PostSlugInputSchema.optional(),
+    summary: PostSummaryInputSchema.optional(),
+    publishedAt: PublishedAtInputSchema,
   })
-  .extend({ contentMarkdown: ContentMarkdownInputSchema })
-  .strict();
+    .omit({
+      publicSnapshotJson: true,
+      publicCategoryId: true,
+      publicSlug: true,
+      pinnedAt: true,
+      status: true,
+      id: true,
+      createdAt: true,
+      updatedAt: true,
+      saveToken: true,
+      draftFingerprint: true,
+      publishedFingerprint: true,
+      slugKey: true,
+      publicSlugKey: true,
+    })
+    .extend({ contentMarkdown: ContentMarkdownInputSchema }).shape,
+  { error: pointTagIdsToSetTags },
+);
+const NonEmptyPostUpdateSchema = atLeastOneField(PostUpdateSchema);
+
+const PublicUpdatedAtSchema = coercedDate.describe(
+  "When the post was last published. Saving a draft does not change it, publishing does.",
+);
 
 export const PostItemSchema = PostSelectSchema.omit({
   saveToken: true,
@@ -127,6 +270,7 @@ export const PostItemSchema = PostSelectSchema.omit({
   coverMediaId: true,
   categoryId: true,
 }).extend({
+  updatedAt: PublicUpdatedAtSchema,
   tags: z.array(TagSelectSchema).optional(),
   category: PublicCategorySchema.nullable().catch(null),
   readTimeInMinutes: z.number().int().min(1),
@@ -153,6 +297,7 @@ export const PostWithTocSchema = PostSelectSchema.omit({
   categoryId: true,
 })
   .extend({
+    updatedAt: PublicUpdatedAtSchema,
     tags: z.array(TagSelectSchema).optional(),
     category: PublicCategorySchema.nullable().catch(null),
     readTimeInMinutes: z.number().int().min(1),
@@ -176,10 +321,19 @@ export const AdminPostSchema = PostSelectSchema.extend({
   tags: z.array(TagSelectSchema).optional(),
   hasPublicSnapshot: z.boolean(),
   hasUnpublishedChanges: HasUnpublishedChangesSchema,
-  publicSnapshotContentJson: NullableJsonContentSchema,
+  publicSnapshotContentJson: NullableJsonContentSchema.optional().describe(
+    "The published body, from the Public Content Snapshot, as TipTap JSON with each code block's highlighted HTML. Null while the post is not published. Not returned when the request asks for contentFormat=markdown.",
+  ),
+  publicSnapshotContentMarkdown: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "The published body as Markdown, returned in place of publicSnapshotContentJson when the request asks for contentFormat=markdown, written by the same rules as contentMarkdown so the two compare line by line. Null while the post is not published, or when the published body is empty. It is read from the Public Content Snapshot, so it is there whatever Post Revisions were deleted.",
+    ),
   serverToday: z.string(),
   cover: AdminPostCoverSchema.nullable(),
-}).nullable();
+});
 
 export function normalizePostTagName(
   tagName: string | undefined,
@@ -204,8 +358,8 @@ export const PostCategoryNameSchema = z
   .optional();
 
 export const GetPostsCursorInputSchema = z.object({
-  cursor: z.number().optional(),
-  limit: z.number().optional(),
+  cursor: IdCursorSchema.optional(),
+  limit: pageLimitSchema(50).optional(),
   tagName: PostTagNameSchema,
   categoryName: PostCategoryNameSchema,
   uncategorized: z.boolean().optional(),
@@ -230,30 +384,30 @@ export type GetPostsCursorInput = z.infer<typeof GetPostsCursorInputSchema>;
 export type FindPostBySlugInput = z.infer<typeof FindPostBySlugInputSchema>;
 
 // Admin API Schemas
-export const GenerateSlugInputSchema = z.object({
+export const GenerateSlugInputSchema = z.strictObject({
   title: z.string().optional(),
   excludeId: z.number().optional(),
 });
 
 const AdminTaxonomyFilterSchema = z.discriminatedUnion("kind", [
-  z.object({
+  z.strictObject({
     kind: z.literal("category"),
     id: z.number().int().positive(),
     scope: z.enum(["current", "public"]),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("tag"),
     id: z.number().int().positive(),
     scope: z.enum(["current", "public"]),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("uncategorized"),
     scope: z.enum(["current", "public"]),
   }),
 ]);
 export type AdminTaxonomyFilter = z.infer<typeof AdminTaxonomyFilterSchema>;
 
-export const GetPostsInputSchema = z.object({
+export const GetPostsInputSchema = z.strictObject({
   taxonomy: AdminTaxonomyFilterSchema.optional(),
   categoryId: z
     .number()
@@ -271,9 +425,9 @@ export const GetPostsInputSchema = z.object({
     .positive()
     .optional()
     .describe("Only posts currently carrying this tag."),
-  offset: z.number().optional(),
-  limit: z.number().optional(),
-  status: z.custom<PostStatus>().optional(),
+  offset: PageOffsetSchema.optional(),
+  limit: pageLimitSchema(50).optional(),
+  status: z.enum(POST_STATUSES).optional(),
   hasUnpublishedChanges: z
     .boolean()
     .optional()
@@ -283,7 +437,12 @@ export const GetPostsInputSchema = z.object({
   publicOnly: z.boolean().optional(),
   search: z.string().optional(),
   sortDir: z.enum(["ASC", "DESC"]).optional(),
-  sortBy: z.enum(["publishedAt", "updatedAt", "id"]).optional(),
+  sortBy: z
+    .enum(["publishedAt", "updatedAt", "createdAt", "id"])
+    .optional()
+    .describe(
+      "Sort key. Defaults to updatedAt. createdAt is when the post was first created and never changes. Ties are broken by id in the sortDir direction.",
+    ),
   includeContent: z
     .boolean()
     .optional()
@@ -307,7 +466,7 @@ const AdminPostListItemSchema = z.object({
   summary: z.string().nullable(),
   slug: z.string(),
   publicSlug: PublicSlugSchema,
-  status: z.enum(["draft", "published"]),
+  status: z.enum(POST_STATUSES),
   hasUnpublishedChanges: HasUnpublishedChangesSchema,
   publishedAt: coercedDateNullable,
   pinnedAt: coercedDateNullable,
@@ -343,7 +502,7 @@ export const AdminPostListPageSchema = z.object({
   ),
 });
 
-export const FindPostByIdInputSchema = z.object({ id: z.number() });
+export const FindPostByIdInputSchema = z.strictObject({ id: PathIdSchema });
 
 export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
   contentFormat: PostContentFormatSchema,
@@ -354,38 +513,103 @@ export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
  * always creates a new draft instead of reusing an existing empty one, so
  * several external clients can create posts without colliding.
  */
-const CreatePostDataSchema = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(1)
-    .describe("Draft title; a unique slug is generated from it."),
-  summary: z.string().nullable().optional(),
-  contentJson: NullableJsonContentSchema.optional(),
-  contentMarkdown: ContentMarkdownInputSchema,
-});
+const CreatePostDataSchema = z.strictObject(
+  {
+    title: PostTitleInputSchema.describe(
+      `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE} A unique slug is generated from it.`,
+    ),
+    summary: PostSummaryInputSchema.optional(),
+    contentJson: ContentJsonInputSchema,
+    contentMarkdown: ContentMarkdownInputSchema,
+  },
+  { error: pointTagIdsToSetTags },
+);
 
 export const CreatePostInputSchema = z
-  .object({
+  .strictObject({
     data: CreatePostDataSchema.optional().describe(
       "Omit to keep the get-or-create-empty-draft behavior used by the Admin UI.",
     ),
   })
   .optional();
 
-export const UpdatePostInputSchema = z.object({
-  id: z.number(),
-  data: PostUpdateSchema,
-  saveToken: StatedSaveTokenSchema,
-});
+export const UpdatePostInputSchema = z.strictObject(
+  {
+    id: PathIdSchema,
+    data: NonEmptyPostUpdateSchema.describe(
+      "The fields to change; at least one, or the request answers 400.",
+    ),
+    saveToken: StatedSaveTokenSchema,
+    contentFormat: PostContentFormatSchema,
+  },
+  { error: pointTagIdsToSetTags },
+);
 
-export const DeletePostInputSchema = z.object({ id: z.number() });
+export const DeletePostInputSchema = z.strictObject({ id: PathIdSchema });
 
-export const PublishPostInputSchema = z.object({
-  id: z.number(),
+export const PublishPostInputSchema = z.strictObject({
+  id: PathIdSchema,
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
   ),
+});
+
+export const CreatePostResultSchema = z.object({
+  id: z.number().int(),
+  saveToken: SaveTokenSchema.describe(
+    "The draft's saveToken. State it on your next save or publish.",
+  ),
+});
+
+export const DeletePostResultSchema = z.object({ success: z.boolean() });
+
+export const GenerateSlugResultSchema = z.object({
+  slug: z
+    .string()
+    .describe(
+      "A slug made from the title that no other post uses. Compatibility forms are folded first (fullwidth letters, ligatures such as ﬁ) and ß becomes ss, accents are dropped, and a letter outside Latin letters, digits and Chinese characters is left out. A title with nothing left, such as emoji alone, gets untitled-log. A number is appended when the plain slug is taken or reserved (pinned, popular): untitled-log-1, pinned-1.",
+    ),
+});
+
+// A post as a write answers it: the draft's own fields with its category and
+// tags. The public snapshot and the change-tracking fingerprints stay out.
+const WrittenPostSchema = PostSelectSchema.extend({
+  contentJson: NullableJsonContentSchema.describe(
+    "The editable body as TipTap JSON.",
+  ),
+  category: CategorySelectSchema.nullable().describe(
+    "The draft's category. Null when it has none.",
+  ),
+  tags: z.array(TagSelectSchema).describe("The draft's tags."),
+});
+
+export const UpdatedPostSchema = WrittenPostSchema.omit({
+  publicSlug: true,
+}).extend({
+  contentJson: NullableJsonContentSchema.optional().describe(
+    "The editable body as TipTap JSON. Not returned when the request asks for contentFormat=markdown.",
+  ),
+  contentMarkdown: ContentMarkdownOutputSchema,
+  hasUnpublishedChanges: HasUnpublishedChangesSchema,
+});
+
+export const RestorePostRevisionResultSchema = z.object({
+  post: WrittenPostSchema.extend({ publicSlug: PublicSlugSchema }).describe(
+    "The post after the restore. post.saveToken is its token after the restore.",
+  ),
+  restored: z
+    .boolean()
+    .describe(
+      "False when the draft already matched the revision, so nothing was written and the saveToken is unchanged.",
+    ),
+  revisionId: z.number().int().describe("The revision that was restored."),
+});
+
+export const DeletePostRevisionsResultSchema = z.object({
+  deletedIds: z
+    .array(z.number().int())
+    .describe("Ids of the revisions that were deleted."),
+  deletedCount: z.number().int(),
 });
 
 export const PostWriteResultSchema = z.object({
@@ -403,23 +627,23 @@ export const EditConflictDataSchema = z.object({
     ),
 });
 
-export const UnpublishPostInputSchema = z.object({
-  id: z.number(),
+export const UnpublishPostInputSchema = z.strictObject({
+  id: PathIdSchema,
 });
 
-export const DiscardPostChangesInputSchema = z.object({
-  id: z.number(),
+export const DiscardPostChangesInputSchema = z.strictObject({
+  id: PathIdSchema,
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and mean to discard. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to discard whatever the draft is now.",
   ),
 });
 
-export const PinPostInputSchema = z.object({
-  id: z.number(),
+export const PinPostInputSchema = z.strictObject({
+  id: PathIdSchema,
 });
 
-export const UnpinPostInputSchema = z.object({
-  id: z.number(),
+export const UnpinPostInputSchema = z.strictObject({
+  id: PathIdSchema,
 });
 
 export type GenerateSlugInput = z.infer<typeof GenerateSlugInputSchema>;
@@ -439,7 +663,7 @@ export type UnpinPostInput = z.infer<typeof UnpinPostInputSchema>;
 export type PostItem = z.infer<typeof PostItemSchema>;
 export type PostWithToc = z.infer<typeof PostWithTocSchema>;
 
-export const VideoMetaInputSchema = z.object({
+export const VideoMetaInputSchema = z.strictObject({
   provider: z.enum(["bilibili", "youtube"]),
   videoId: z.string().max(32),
   page: z.number().int().positive().nullable().optional(),

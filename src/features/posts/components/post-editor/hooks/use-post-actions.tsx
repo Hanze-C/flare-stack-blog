@@ -2,7 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { PostEditorData } from "@/features/posts/components/post-editor/types";
-import { slugify } from "@/features/posts/utils/content";
+import { FALLBACK_SLUG, slugify } from "@/features/posts/utils/content";
+import {
+  isValidPostSlug,
+  truncateGeneratedSlug,
+} from "@/features/posts/utils/post-fields";
 import { orpcClient } from "@/lib/orpc";
 import { useDebounce } from "@/hooks/use-debounce";
 import { m } from "@/paraglide/messages";
@@ -13,8 +17,10 @@ import {
 import {
   BLOB_UPLOADING_ERROR,
   discardErrorMessage,
+  CONTENT_TOO_LARGE_ERROR,
   EDIT_CONFLICT_ERROR,
   editConflictOf,
+  publishErrorMessage,
   shouldAutogenerateSlug,
 } from "../post-editor.model";
 import type { PostState } from "../../post-state";
@@ -28,6 +34,8 @@ interface UsePostActionsOptions {
   flush: () => Promise<void>;
   /** Whether a save was refused; publishing waits until it is resolved. */
   conflicted: boolean;
+  /** Another post uses the slug, so autosave left it out. */
+  slugTaken: boolean;
   getSaveToken: () => string;
   acceptSaveToken: (saveToken: string) => void;
   reportConflict: (conflict: EditConflict) => void;
@@ -44,6 +52,7 @@ export function usePostActions({
   setError,
   flush,
   conflicted,
+  slugTaken,
   getSaveToken,
   acceptSaveToken,
   reportConflict,
@@ -60,9 +69,12 @@ export function usePostActions({
 
   const canPublish = useMemo(() => {
     if (conflicted) return false;
+    // Autosave leaves a slug the API would refuse unsaved, so publishing
+    // would put the previous one live.
+    if (!isValidPostSlug(post.slug) || slugTaken) return false;
     if (!post.publishedAt) return true;
     return post.publishedAt.toISOString().slice(0, 10) <= post.serverToday;
-  }, [conflicted, post.publishedAt, post.serverToday]);
+  }, [conflicted, post.publishedAt, post.serverToday, post.slug, slugTaken]);
 
   const lastAutoSlugRef = useRef<string | null>(null);
   const queuedTitleRef = useRef<string | null>(null);
@@ -99,7 +111,7 @@ export function usePostActions({
     onError: (error) => {
       const found = editConflictOf(error);
       if (found) reportConflict(found);
-      else toast.error(m.editor_action_publish_failed());
+      else toast.error(publishErrorMessage(error));
       setProcessState("IDLE");
     },
   });
@@ -123,7 +135,11 @@ export function usePostActions({
       await flush();
     } catch (error) {
       const reason = error instanceof Error ? error.message : "";
-      if (reason !== EDIT_CONFLICT_ERROR) {
+      // A body too large to save was already explained by the save itself.
+      if (
+        reason !== EDIT_CONFLICT_ERROR &&
+        reason !== CONTENT_TOO_LARGE_ERROR
+      ) {
         toast.error(
           reason === BLOB_UPLOADING_ERROR
             ? m.editor_action_image_uploading()
@@ -223,7 +239,9 @@ export function usePostActions({
       if (error) {
         console.error("Slug generation failed:", error);
         setError(m.editor_action_slug_error());
-        const fallbackSlug = slugify(latestTitleRef.current) || "untitled-log";
+        const fallbackSlug =
+          truncateGeneratedSlug(slugify(latestTitleRef.current)) ||
+          FALLBACK_SLUG;
         lastAutoSlugRef.current = fallbackSlug;
         setPost((prev) => ({ ...prev, slug: fallbackSlug }));
       }

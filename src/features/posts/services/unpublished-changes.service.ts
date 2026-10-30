@@ -2,7 +2,7 @@ import * as PostRevisionRepo from "@/features/posts/data/post-revisions.data";
 import * as PostRepo from "@/features/posts/data/posts.data";
 import * as PublicAssignmentRepo from "@/features/posts/data/public-assignments.data";
 import type { PostRevisionSnapshot } from "@/features/posts/schema/post-revisions.schema";
-import { PostRevisionSnapshotSchema } from "@/features/posts/schema/post-revisions.schema";
+import { parseRevisionSnapshot } from "@/features/posts/schema/post-revisions.schema";
 import { calculateDraftFingerprint } from "@/features/posts/utils/sync";
 
 /*
@@ -87,8 +87,8 @@ async function publishedFingerprintOf(
   revision: { snapshotJson: unknown } | undefined,
   publicIds: PublicIds,
 ) {
-  const parsed = PostRevisionSnapshotSchema.safeParse(revision?.snapshotJson);
-  if (parsed.success) return fingerprintOfPublished(parsed.data, publicIds);
+  const published = parseRevisionSnapshot(revision?.snapshotJson);
+  if (published) return fingerprintOfPublished(published, publicIds);
 
   const snapshot = post.publicSnapshotJson;
   if (!snapshot) return draftFingerprintOf(post);

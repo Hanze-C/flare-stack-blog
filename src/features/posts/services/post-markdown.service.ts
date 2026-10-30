@@ -1,7 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import * as PostRepo from "@/features/posts/data/posts.data";
+import { NullableJsonContentSchema } from "@/features/posts/schema/json-content.schema";
 import type { PostContentFormat } from "@/features/posts/schema/posts.schema";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
+import { inspectPostContent } from "@/features/posts/utils/post-content-rules";
+import { refusedLinks } from "@/features/posts/utils/refused-links";
 import type { VideoMeta } from "@/features/posts/utils/video-source";
 import {
   videoMetaOf,
@@ -104,6 +107,49 @@ async function withDetails(
   return fill(contentJson);
 }
 
+/**
+ * `contentJson` as a JSON write hands it on: sent as JSON and parsed by the
+ * input schema, which rebuilds every node with its keys in the schema's
+ * order. Unpublished Changes hash the body as stored, so the same body must
+ * be stored the same way whichever format it was written in.
+ */
+function asJsonWrite(contentJson: JSONContent) {
+  return NullableJsonContentSchema.parse(
+    JSON.parse(JSON.stringify(contentJson)),
+  );
+}
+
+/**
+ * What keeps `contentJson` from being stored: node or mark types the editor
+ * does not know, attributes it does not give them, and images the server
+ * cannot show, the rule Markdown images follow. A body that passes reads as
+ * Markdown and writes back unchanged.
+ */
+async function invalidContentJson(contentJson: JSONContent) {
+  const { nodeTypes, markTypes, attributes, imageSources } =
+    inspectPostContent(contentJson);
+  let images: Array<string> = [];
+  if (imageSources.length > 0) {
+    const { isPostMarkdownImage } = await loadPostMarkdown();
+    images = [
+      ...new Set(imageSources.filter((src) => !isPostMarkdownImage(src))),
+    ];
+  }
+  return nodeTypes.length +
+    markTypes.length +
+    attributes.length +
+    images.length >
+    0
+    ? ({
+        reason: "CONTENT_JSON_INVALID",
+        nodeTypes,
+        markTypes,
+        attributes,
+        images,
+      } as const)
+    : null;
+}
+
 interface ContentFields {
   contentJson?: JSONContent | null;
   contentMarkdown?: string;
@@ -112,7 +158,8 @@ interface ContentFields {
 /**
  * `data` with its `contentMarkdown` turned into `contentJson`, ready for the
  * usual write path. `postId` names the Post being replaced, whose videos and
- * images keep what Markdown cannot carry.
+ * images keep what Markdown cannot carry. A body in either format with a
+ * link the post could not show is refused.
  */
 export async function resolveMarkdownContent<T extends ContentFields>(
   context: DbContext,
@@ -120,7 +167,14 @@ export async function resolveMarkdownContent<T extends ContentFields>(
   postId?: number,
 ) {
   const { contentMarkdown, ...rest } = data;
-  if (contentMarkdown === undefined) return ok(rest);
+  if (contentMarkdown === undefined) {
+    if (!rest.contentJson) return ok(rest);
+    const invalid = await invalidContentJson(rest.contentJson);
+    if (invalid) return err(invalid);
+    const links = refusedLinks(rest.contentJson);
+    if (links.length > 0) return err({ reason: "CONTENT_LINK_INVALID", links });
+    return ok(rest);
+  }
   if (rest.contentJson !== undefined) {
     return err({ reason: "CONTENT_FORMAT_AMBIGUOUS" });
   }
@@ -131,13 +185,18 @@ export async function resolveMarkdownContent<T extends ContentFields>(
   if (refusedImages.length > 0) {
     return err({ reason: "MARKDOWN_IMAGE_INVALID", images: refusedImages });
   }
+  const links = refusedLinks(contentJson);
+  if (links.length > 0) return err({ reason: "CONTENT_LINK_INVALID", links });
 
   const previous =
     postId === undefined
       ? null
       : ((await PostRepo.findPostById(context.db, postId))?.contentJson ??
         null);
-  return ok({ ...rest, contentJson: await withDetails(contentJson, previous) });
+  return ok({
+    ...rest,
+    contentJson: asJsonWrite(await withDetails(contentJson, previous)),
+  });
 }
 
 /**
@@ -151,4 +210,28 @@ export async function inContentFormat<
   const { postContentToMarkdown } = await loadPostMarkdown();
   const { contentJson, ...rest } = post;
   return { ...rest, contentMarkdown: postContentToMarkdown(contentJson) };
+}
+
+/**
+ * An admin read of a Post in `format`. Markdown also answers the published
+ * body, from the Public Content Snapshot, as `publicSnapshotContentMarkdown`
+ * in place of `publicSnapshotContentJson`, so a client compares the draft
+ * with what is published in one format, whatever Post Revisions were deleted.
+ */
+export async function adminPostInContentFormat<
+  T extends {
+    contentJson?: JSONContent | null;
+    publicSnapshotContentJson: JSONContent | null;
+  },
+>(post: T, format: PostContentFormat) {
+  if (format !== "markdown") return post;
+  const { postContentToMarkdown } = await loadPostMarkdown();
+  const { contentJson, publicSnapshotContentJson, ...rest } = post;
+  return {
+    ...rest,
+    contentMarkdown: postContentToMarkdown(contentJson ?? null),
+    publicSnapshotContentMarkdown: postContentToMarkdown(
+      publicSnapshotContentJson,
+    ),
+  };
 }

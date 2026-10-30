@@ -719,4 +719,65 @@ describe("discarding Unpublished Changes", () => {
     expect(after.tags.map((t) => t.id)).toEqual([otherTag.id]);
     expect(after.hasUnpublishedChanges).toBe(false);
   });
+
+  it("still works once every Post Revision is deleted, code blocks included", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { category, tag } = await seedTaxonomy("uc-discard-norev");
+    const id = await createPost(apiKey, "uc-discard-norev");
+    const body = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "intro" }] },
+        {
+          type: "codeBlock",
+          attrs: { language: "ts" },
+          content: [{ type: "text", text: "const answer = 42;" }],
+        },
+        {
+          type: "codeBlock",
+          content: [{ type: "text", text: "no attributes" }],
+        },
+      ],
+    };
+    await patchPost(apiKey, id, {
+      contentJson: body,
+      summary: "kept",
+      categoryId: category.id,
+    });
+    await setTags(apiKey, id, [tag.id]);
+    await publish(apiKey, id);
+    const published = await readPost(apiKey, id);
+    await patchPost(apiKey, id, {
+      title: "uc-discard-norev edited",
+      contentJson: paragraph("edited body"),
+      categoryId: null,
+    });
+    await setTags(apiKey, id, []);
+
+    const revisions = (await (
+      await callAdminApi(apiKey, `/admin/posts/${id}/revisions`)
+    ).json()) as Array<{ id: number }>;
+    expect(revisions.length).toBeGreaterThan(0);
+    const removed = await callAdminApi(apiKey, `/admin/posts/${id}/revisions`, {
+      method: "DELETE",
+      body: { revisionIds: revisions.map((revision) => revision.id) },
+    });
+    expect(removed.status).toBe(200);
+    expect(await revisionReasons(apiKey, id)).toEqual([]);
+
+    const response = await discard(apiKey, id);
+
+    expect(response.status).toBe(200);
+    const after = await readPost(apiKey, id);
+    expect(after.title).toBe("uc-discard-norev");
+    expect(after.summary).toBe("kept");
+    expect(after.slug).toBe(published.slug);
+    expect(after.contentJson).toEqual(published.contentJson);
+    expect(after.contentJson).toEqual(body);
+    expect(after.categoryId).toBe(category.id);
+    expect(after.tags.map((t) => t.id)).toEqual([tag.id]);
+    expect(after.hasUnpublishedChanges).toBe(false);
+    // The discarded draft is kept as a revision, as always.
+    expect(await revisionReasons(apiKey, id)).toEqual(["restore_backup"]);
+  });
 });

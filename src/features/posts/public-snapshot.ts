@@ -25,12 +25,21 @@ export function toIsoOrNull(
   return value instanceof Date ? value.toISOString() : value;
 }
 
+/**
+ * When the public site last changed the Post: the snapshot's last
+ * publication, or its publication date for a snapshot written before that was
+ * recorded. Never the draft's updatedAt, which would show edits nobody has
+ * published.
+ */
+export function publicModifiedAt(snapshot: PublicPostSnapshot) {
+  return new Date(snapshot.lastPublishedAt ?? snapshot.publishedAt);
+}
+
 export function mapSnapshotToPublicPost(
   row: {
     id: number;
     status: "draft" | "published";
     createdAt: Date;
-    updatedAt: Date;
     pinnedAt: Date | null;
     publicSnapshotJson: PublicPostSnapshot | null;
   },
@@ -49,7 +58,7 @@ export function mapSnapshotToPublicPost(
     publishedAt: new Date(snapshot.publishedAt),
     pinnedAt: row.pinnedAt,
     createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
+    updatedAt: publicModifiedAt(snapshot),
     readTimeInMinutes: estimateReadTimeMinutes(snapshot.contentJson),
     tags,
     category,

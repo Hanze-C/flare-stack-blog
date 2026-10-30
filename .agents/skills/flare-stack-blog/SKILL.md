@@ -18,41 +18,47 @@ url = "https://blog.example.com"
 api_key = "fsb_..."
 ```
 
-`url` is the site origin, `https://<host>` with no path or trailing slash; `api_key` is an Admin API Key. When the file is missing, either value is empty, a stored key answers 401, or the human gives a new blog or key: ask the human for the origin and an API Key (an Admin issues one in the blog's admin settings; it is shown once), check it with one read-only admin call from the document, then write the file with mode `0600`, creating its directory. Done when one origin and a key that answers 200 are in hand.
+`url` is the site origin, `https://<host>` (or `http://` for a local instance the human names) with no path or trailing slash; `api_key` is an Admin API Key. When the file is missing, either value is empty, a stored key answers 401, or the human gives a new blog or key: ask the human for the origin and an API Key (an Admin issues one in the blog's admin settings; it is shown once), fetch the document's index (see [Discover](#2-discover)) and check the key with one read-only admin operation it lists, then write the file with mode `0600` in a directory with mode `0700` (create it so, or tighten it if it exists). Done when one origin and a key that answers 200 are in hand.
 
-Keep every file a task makes (headers, request and response bodies, Markdown drafts) in one working directory of its own, created private at the task's start: `mktemp -d` on macOS and Linux; on Windows, a new folder under `$env:TEMP` with inherited permissions removed and only the current user allowed. When the task ends, succeeded or not, delete that directory. The config file stays where it is.
+Keep every file a task makes (headers, request and response bodies, Markdown drafts) in one working directory: the one the human names, or else one of its own, created private at the task's start: `mktemp -d` on macOS and Linux; on Windows, a new folder under `$env:TEMP` with inherited permissions removed and only the current user allowed. When the task ends, succeeded or not, delete the files you made there (and the directory, if you created it). The config file stays where it is.
 
-The key goes only in the `x-api-key` header, and only to the configured origin. Keep it out of command arguments, URLs, logs, saved responses and replies: with curl, write the headers (the key and a browser User-Agent) to a file in the working directory and pass `-H @<file>`; send bodies with `--data-binary @<file>`. Stop on a redirect to another origin rather than follow it with the key. In Windows PowerShell, `curl` may be an alias of `Invoke-WebRequest`: call `curl.exe`.
+The key goes only in the `x-api-key` header, and only to the configured origin. Keep it out of command arguments, URLs, logs, saved responses and replies: with curl, write the headers (the key and a browser User-Agent) to a file with mode `0600` in the working directory and pass `-H @<file>`; send bodies with `--data-binary @<file>`. Stop on a redirect to another origin rather than follow it with the key. Fetch public pages without the key. In Windows PowerShell, `curl` may be an alias of `Invoke-WebRequest`: call `curl.exe`.
 
 ## 2. Discover
 
-At the start of every task, GET `<origin>/api/spec.json` with the same headers and follow it. Read its `info.description` first: it states authentication, the browser User-Agent requirement, drafts and publishing, the save guard and Edit Conflict, and Markdown content. Done when you hold the document and, for what you are about to touch, have read its operations and schemas, following every `$ref`.
+At the start of every task, GET `<origin>/api/spec/index.json` with the same headers: it lists every operation and carries the document's `info.description`. Read that description first: it says how to fetch parts of the document, and states authentication, the browser User-Agent requirement, drafts and publishing, the save guard and Edit Conflict, and Markdown content. Then fetch, as it says, only the operations you are about to call, and more as the task needs them; fetch the whole `<origin>/api/spec.json` only when the task needs most of it. Done when you hold the index and, for what you are about to touch, have read its operations and schemas, following every `$ref`. Operation paths are relative to the document's server URL; public pages, such as a Post's public page, are on the site origin itself.
 
-When an entity has both public and admin operations, use the admin ones.
+When an entity has both public and admin operations, use the admin ones. Stay within posts, categories, tags, media and publishing: leave site settings, notifications and their test sends (which deliver real messages), comments, friend links and API keys alone unless the human asks for exactly that.
 
 ## 3. Change the draft
 
-Every save changes the draft, a Post's Category and Tags included, and readers see it only once it is published. Categories and Tags themselves have no draft: creating, renaming and deleting one take effect at once on every Published Post that shows it (the document's description says so), so tell the human before renaming or deleting one that Published Posts use.
+Every save changes the draft, a Post's Category and Tags included, and readers see it only once it is published. Categories, Tags and Media themselves have no draft: creating, renaming or deleting a Category or Tag, and replacing a Media file, take effect at once on every Published Post that shows it (the document's description says so). Tell the human before renaming or deleting a Category or Tag, or replacing Media, that Published Posts use.
 
-- **Resolve the target** by id, or by a search on the title or slug; several matches means ask which.
+- **Resolve the target** by id, or by a search on the title or slug; several matches means ask which. Given a public URL, read the post by its public slug to learn its id.
 - **Read right before each write.** The Admin edits the same Posts in the browser, which autosaves as they type. Read the Post immediately before each save, build the save on what you just read, and send that read's `saveToken`. A Post saved in between is then kept and the save answers 409 instead of overwriting it. See [Conflicts](#conflicts).
-- **Send only what changes.** Leave out every field you are not changing.
-- **Content** is Markdown, read and written as the document's description states. Keep the images, videos and links you were not asked to change, and read the Post back after writing.
+- **Send only what changes.** Leave out every field you are not changing, and spell every field exactly as the document does: a misspelt `saveToken` would leave the save unguarded.
+- **Content** is Markdown, read and written as the document's description states. Keep the images, videos and links you were not asked to change, and read the Post back after writing. A local image goes in as Media first; use the path the upload answers.
+- **Creating** always sends the content, so it makes a new draft rather than returning an existing empty one. It has nothing to read before it. If a create times out or its answer is lost, search for the title before creating again, or you may make a duplicate.
+- **Slugs and names are addresses.** Changing a Published Post's slug and publishing again leaves the old URL unreachable, and renaming a Category or Tag changes its public URL: tell the human before doing either.
 - A 400 names each problem: correct those values and resend; make no other change to get past it.
 
 Make one human-intended change at a time, carried through to its end state, unless the human asked for several together.
 
 ## 4. Publish and verify
 
-Follow the human's intent: publish when they ask to publish, keep the draft when they ask for a draft, and ask when it is unclear. Publishing takes the whole draft, so a change someone else left unpublished goes live with yours: when the draft holds changes you did not make, name them to the human first. Publish with the `saveToken` of the read the human approved, so what goes live is that draft.
+Follow the human's intent: publish when they ask to publish, keep the draft when they ask for a draft, and ask when it is unclear. Publishing takes the whole draft, so a change someone else left unpublished goes live with yours: when the draft holds changes you did not make, name them to the human first. To see them, read the Post as Markdown: the read carries the draft and the published body side by side, whatever Post Revisions are left, so compare the two. Publish with the `saveToken` of the read the human approved, so what goes live is that draft.
 
 After publishing, fetch the Post's public page and confirm the change shows. Public pages are cached: retry a few times over about 20 seconds before calling it failed.
 
-To take a Post off the public site for now, unpublish it; the draft stays. Delete only when the human explicitly asks to delete.
+To throw away a Published Post's unpublished changes, discard them with the document's discard operation rather than editing them back by hand: it returns the draft to what is published and keeps the discarded draft as a Post Revision.
+
+To take a Post off the public site for now, unpublish it; the draft stays. Delete only when the human explicitly asks to delete: deleting a Post is permanent and takes its Post Revisions with it. Delete Post Revisions only when asked, too.
+
+Pinning a Post takes effect at once, without publishing. Never run site-wide operations (deleting unused Media, rebuilding the search index, purging caches) unless the human asks for exactly that.
 
 ## Conflicts
 
-A 409 Edit Conflict means the Post was saved after you read it, and nothing was written. Never retry without the `saveToken`, and never resend the same one.
+Every write to a Post's draft (saving it, setting its Tags, restoring a Post Revision, discarding its changes) and every publish states the `saveToken` of your latest read or write of it; unpublishing changes no draft and takes none, but it does replace the token, so read again before your next write. A 409 Edit Conflict means the Post was saved after you read it, and nothing was written. Never retry without the `saveToken`, and never resend the same one.
 
 1. Read the Post again.
 2. Compare it with the read your write was built on. When only your own earlier writes differ, re-apply your change to the new read and send its `saveToken`.

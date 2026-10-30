@@ -5,8 +5,9 @@ import { parseVideoInput } from "@/features/posts/utils/video-source";
 
 /*
  * Post content as the HTTP API exchanges it in Markdown (ADR 0032): parsed
- * like a paste, except that a video link alone on a line is a video block,
- * and an image must be one the server can show.
+ * like a paste, except that a video's bare address alone on a line is a
+ * video block (`[text](address)` stays a link), and an image must be one the
+ * server can show.
  */
 
 const MEDIA_PATH = /^\/images\/[^/?#\s]+(?:\?\S*)?$/;
@@ -23,33 +24,15 @@ export function isPostMarkdownImage(src: string): boolean {
   }
 }
 
-/** The video a paragraph names when it holds nothing but its link. */
-function videoOfLine(paragraph: JSONContent): JSONContent | null {
-  const [only, ...rest] = paragraph.content ?? [];
-  if (!only || rest.length > 0 || only.type !== "text") return null;
-  if (only.marks?.some((mark) => mark.type !== "link")) return null;
-  const input = parseVideoInput(only.text ?? "");
+/** The video a bare address alone in a paragraph names. */
+function videoOfLine(text: string): JSONContent | null {
+  const input = parseVideoInput(text);
   return input.kind === "video"
     ? {
         type: "video",
         attrs: { ...input.source, title: null, cover: null, duration: null },
       }
     : null;
-}
-
-function liftVideoLinks(
-  blocks: Array<JSONContent>,
-  parentType?: string,
-): Array<JSONContent> {
-  return blocks.map((block, index) => {
-    if (block.type === "paragraph") {
-      // A list item opens with a paragraph.
-      if (parentType === "listItem" && index === 0) return block;
-      return videoOfLine(block) ?? block;
-    }
-    if (!block.content || block.type === "codeBlock") return block;
-    return { ...block, content: liftVideoLinks(block.content, block.type) };
-  });
 }
 
 export interface PostMarkdownContent {
@@ -62,12 +45,12 @@ export function postContentFromMarkdown(markdown: string): PostMarkdownContent {
   const { content, refusedImages } = parseMarkdown(markdown, {
     acceptsImage: isPostMarkdownImage,
     headings: "keep",
+    autolinkLine: videoOfLine,
   });
-  const blocks = liftVideoLinks(content);
   return {
     contentJson: {
       type: "doc",
-      content: blocks.length > 0 ? blocks : [{ type: "paragraph" }],
+      content: content.length > 0 ? content : [{ type: "paragraph" }],
     },
     refusedImages,
   };
@@ -76,5 +59,6 @@ export function postContentFromMarkdown(markdown: string): PostMarkdownContent {
 export function postContentToMarkdown(
   contentJson: JSONContent | null,
 ): string | null {
-  return contentJson ? serializeMarkdown(contentJson) : null;
+  // A body with nothing to write, such as one empty paragraph, is no body.
+  return (contentJson && serializeMarkdown(contentJson)) || null;
 }

@@ -5,6 +5,12 @@ import DatePicker from "@/components/ui/date-picker";
 import { FormField } from "@/components/ui/form-field";
 import { Spinner } from "@/components/ui/spinner";
 import { CategorySelect } from "@/features/categories/components/category-select";
+import { pickedPublishDate } from "@/features/posts/utils/date";
+import {
+  isReservedPostSlug,
+  isValidPostSlug,
+  POST_SLUG_MAX_LENGTH,
+} from "@/features/posts/utils/post-fields";
 import { TagSelector } from "@/features/tags/components/tag-selector";
 import { m } from "@/paraglide/messages";
 import { PostEditorCover } from "./post-editor-cover";
@@ -13,6 +19,8 @@ import type { PostEditorData } from "./types";
 interface PostEditorMetadataProps {
   post: PostEditorData;
   isGeneratingSlug: boolean;
+  /** Set when the last save was refused because another post uses the slug. */
+  slugTaken: boolean;
   onPostChange: (updates: Partial<PostEditorData>) => void;
   onGenerateSlug: () => void;
 }
@@ -20,9 +28,17 @@ interface PostEditorMetadataProps {
 export function PostEditorMetadata({
   post,
   isGeneratingSlug,
+  slugTaken,
   onPostChange,
   onGenerateSlug,
 }: PostEditorMetadataProps) {
+  const slugError = !isValidPostSlug(post.slug ?? "")
+    ? isReservedPostSlug((post.slug ?? "").trim())
+      ? m.editor_meta_slug_reserved()
+      : m.editor_meta_slug_invalid()
+    : slugTaken
+      ? m.editor_meta_slug_taken()
+      : undefined;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 custom-scrollbar">
@@ -45,9 +61,10 @@ export function PostEditorMetadata({
           />
         </FormField>
 
-        <FormField label={m.editor_meta_link()}>
+        <FormField label={m.editor_meta_link()} error={slugError}>
           <SlugInput
             value={post.slug || ""}
+            maxLength={POST_SLUG_MAX_LENGTH}
             onChange={(e) => onPostChange({ slug: e.target.value })}
             generating={isGeneratingSlug}
             onGenerate={onGenerateSlug}
@@ -66,7 +83,9 @@ export function PostEditorMetadata({
             onChange={(dateStr) => {
               if (dateStr && dateStr > post.serverToday) return;
               onPostChange({
-                publishedAt: dateStr ? new Date(`${dateStr}T12:00:00Z`) : null,
+                publishedAt: dateStr
+                  ? pickedPublishDate(dateStr, post.serverToday)
+                  : null,
               });
             }}
           />

@@ -10,12 +10,18 @@ import {
   sql,
 } from "drizzle-orm";
 import { CategoriesTable, PostsTable } from "@/lib/db/schema";
+import {
+  CATEGORY_NAME,
+  keyForWrite,
+  settleUniqueKeys,
+} from "@/lib/db/unique-keys";
+import { uniqueKeyOf } from "@/lib/unicode-text";
 
-export async function insertCategory(
-  db: DB,
-  data: typeof CategoriesTable.$inferInsert,
-) {
-  const [category] = await db.insert(CategoriesTable).values(data).returning();
+export async function insertCategory(db: DB, data: { name: string }) {
+  const [category] = await db
+    .insert(CategoriesTable)
+    .values({ name: data.name, nameKey: uniqueKeyOf(data.name) })
+    .returning();
   return category;
 }
 
@@ -25,12 +31,17 @@ export async function findCategoryById(db: DB, id: number) {
   });
 }
 
+/**
+ * Whether another Category has `name`, compared by its unique key: ignoring
+ * case and NFKC forms.
+ */
 export async function nameExists(
   db: DB,
   name: string,
   options: { excludeId?: number } = {},
 ) {
-  const conditions = [eq(CategoriesTable.name, name)];
+  await settleUniqueKeys(db, CATEGORY_NAME);
+  const conditions = [eq(CategoriesTable.nameKey, uniqueKeyOf(name))];
   if (options.excludeId != null) {
     conditions.push(ne(CategoriesTable.id, options.excludeId));
   }
@@ -104,7 +115,18 @@ export async function updateCategory(
 ) {
   const [category] = await db
     .update(CategoriesTable)
-    .set(data)
+    .set(
+      data.name === undefined
+        ? {}
+        : {
+            name: data.name,
+            nameKey: keyForWrite(
+              CategoriesTable.name,
+              CategoriesTable.nameKey,
+              data.name,
+            ),
+          },
+    )
     .where(eq(CategoriesTable.id, id))
     .returning();
   return category;

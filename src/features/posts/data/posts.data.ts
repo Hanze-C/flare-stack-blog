@@ -8,7 +8,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  like,
   lt,
   ne,
   or,
@@ -38,7 +37,16 @@ import type { PostItem } from "@/features/posts/schema/posts.schema";
 import { HOME_POSTS_PER_PAGE } from "@/features/posts/schema/posts.schema";
 import { isPostBodyEmpty } from "@/features/posts/utils/is-post-body-empty";
 import type { PostStatus, PublicPostSnapshot } from "@/lib/db/schema";
+import { startsWithText } from "@/lib/db/text-match";
 import { newSaveToken, PostsTable } from "@/lib/db/schema";
+import { mediaReferenceGuards } from "@/features/posts/data/post-media.data";
+import {
+  keyForWrite,
+  POST_PUBLIC_SLUG,
+  POST_SLUG,
+  settleUniqueKeys,
+} from "@/lib/db/unique-keys";
+import { uniqueKeyOf } from "@/lib/unicode-text";
 
 const DEFAULT_PAGE_SIZE = 12;
 const DEFAULT_SITEMAP_BATCH_SIZE = 500;
@@ -51,7 +59,6 @@ async function hydratePublicPosts(
     id: number;
     status: PostStatus;
     createdAt: Date;
-    updatedAt: Date;
     pinnedAt: Date | null;
     publicSnapshotJson: PublicPostSnapshot | null;
   }>,
@@ -75,13 +82,36 @@ async function hydratePublicPosts(
 export type SitemapPostRow = {
   id: number;
   slug: string;
-  createdAt: Date | null;
-  updatedAt: Date | null;
   publishedAt: Date | null;
+  /** When publishing last replaced the snapshot; never the draft's updatedAt. */
+  lastPublishedAt: Date | null;
 };
 
-export async function insertPost(db: DB, data: typeof PostsTable.$inferInsert) {
-  const [post] = await db.insert(PostsTable).values(data).returning();
+/**
+ * Media a write puts into the draft, recorded in the same batch so that it
+ * cannot be deleted meanwhile; see `mediaReferenceGuards`.
+ */
+export type MediaReferences = { keys: Array<string>; mediaIds: Array<number> };
+
+export async function insertPost(
+  db: DB,
+  data: Omit<
+    typeof PostsTable.$inferInsert,
+    "slugKey" | "publicSlugKey" | "saveToken"
+  >,
+  options: { media?: MediaReferences } = {},
+) {
+  const saveToken = newSaveToken();
+  const insert = db
+    .insert(PostsTable)
+    .values({ ...data, slugKey: uniqueKeyOf(data.slug), saveToken })
+    .returning();
+  const guards = options.media
+    ? mediaReferenceGuards(db, { saveToken }, options.media)
+    : [];
+  const [post] = guards.length
+    ? (await db.batch([insert, ...guards]))[0]
+    : await insert;
   return post;
 }
 
@@ -277,7 +307,6 @@ export async function getPostsCursor(
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
@@ -303,7 +332,6 @@ export async function getHomePosts(db: DB, requestedPage: number) {
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
@@ -336,8 +364,6 @@ export async function getPublishedPostsForSitemapBatch(
     .select({
       id: PostsTable.id,
       publicSlug: PostsTable.publicSlug,
-      createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
     .from(PostsTable)
@@ -361,10 +387,11 @@ export async function getPublishedPostsForSitemapBatch(
   return rows.map((row) => ({
     id: row.id,
     slug: row.publicSlug ?? row.publicSnapshotJson?.slug ?? "",
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
     publishedAt: row.publicSnapshotJson
       ? new Date(row.publicSnapshotJson.publishedAt)
+      : null,
+    lastPublishedAt: row.publicSnapshotJson?.lastPublishedAt
+      ? new Date(row.publicSnapshotJson.lastPublishedAt)
       : null,
   }));
 }
@@ -372,13 +399,14 @@ export async function getPublishedPostsForSitemapBatch(
 export async function findPostById(db: DB, id: number) {
   const post = await db.query.PostsTable.findFirst({
     where: eq(PostsTable.id, id),
+    columns: { slugKey: false, publicSlugKey: false },
     with: {
       postTags: {
         with: {
-          tag: true,
+          tag: { columns: { nameKey: false } },
         },
       },
-      category: true,
+      category: { columns: { nameKey: false } },
     },
   });
 
@@ -395,7 +423,6 @@ export async function findPinnedPosts(db: DB) {
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
@@ -419,7 +446,6 @@ export async function findPostsByIds(db: DB, ids: number[]) {
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
@@ -465,7 +491,7 @@ export async function findPostBySlug(
     with: {
       postTags: {
         with: {
-          tag: true,
+          tag: { columns: { nameKey: false } },
         },
       },
     },
@@ -529,18 +555,32 @@ export async function updatePost(
       | "saveToken"
       | "draftFingerprint"
       | "publishedFingerprint"
+      | "slugKey"
+      | "publicSlugKey"
     >
   >,
-  options: { saveToken?: string } = {},
+  options: { saveToken?: string; media?: MediaReferences } = {},
 ) {
-  const [written] = await db
+  // Set here rather than by $onUpdate so the media guards can find the row.
+  const saveToken = newSaveToken();
+  const update = db
     .update(PostsTable)
     .set({
       ...data,
+      ...(data.slug !== undefined && {
+        slugKey: keyForWrite(PostsTable.slug, PostsTable.slugKey, data.slug),
+      }),
       ...(changesFingerprintedFields(data) && { draftFingerprint: null }),
+      saveToken,
     })
     .where(postToWrite(id, options.saveToken))
     .returning({ saveToken: PostsTable.saveToken });
+  const guards = options.media
+    ? mediaReferenceGuards(db, { postId: id, saveToken }, options.media)
+    : [];
+  const [written] = guards.length
+    ? (await db.batch([update, ...guards]))[0]
+    : await update;
   if (!written) return null;
   return await findWrittenPost(db, id, written.saveToken);
 }
@@ -623,16 +663,20 @@ export async function findPostSaveToken(db: DB, id: number) {
   return post?.saveToken ?? null;
 }
 
-export async function touchPostUpdatedAt(db: DB, id: number) {
+export async function findPostContentJson(db: DB, id: number) {
   const [post] = await db
-    .update(PostsTable)
-    .set({ updatedAt: new Date(), draftFingerprint: null })
-    .where(eq(PostsTable.id, id))
-    .returning({
-      publicSlug: PostsTable.publicSlug,
-      saveToken: PostsTable.saveToken,
-    });
-  return post;
+    .select({ contentJson: PostsTable.contentJson })
+    .from(PostsTable)
+    .where(eq(PostsTable.id, id));
+  return post?.contentJson ?? null;
+}
+
+export async function findPostSlug(db: DB, id: number) {
+  const [post] = await db
+    .select({ slug: PostsTable.slug })
+    .from(PostsTable)
+    .where(eq(PostsTable.id, id));
+  return post?.slug ?? null;
 }
 
 /**
@@ -667,6 +711,11 @@ export async function writePublicSnapshot(
       ...draft,
       publicSnapshotJson: snapshot,
       publicSlug: snapshot.slug,
+      publicSlugKey: keyForWrite(
+        PostsTable.publicSlug,
+        PostsTable.publicSlugKey,
+        snapshot.slug,
+      ),
       status: "published",
       ...(options.fingerprint && {
         publishedFingerprint: options.fingerprint.value,
@@ -720,6 +769,7 @@ export async function clearPublicSnapshot(db: DB, id: number) {
     .set({
       publicSnapshotJson: null,
       publicSlug: null,
+      publicSlugKey: null,
       publishedFingerprint: null,
       status: "draft",
       updatedAt: sql`${PostsTable.updatedAt}`,
@@ -732,12 +782,17 @@ export async function clearPublicSnapshot(db: DB, id: number) {
   return await findWrittenPost(db, id, written.saveToken);
 }
 
+/**
+ * Whether another Post's live page uses `slug`, compared by its unique key:
+ * ignoring case and NFKC forms.
+ */
 export async function publicSlugExists(
   db: DB,
   slug: string,
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
-  const conditions = [eq(PostsTable.publicSlug, slug)];
+  await settleUniqueKeys(db, POST_PUBLIC_SLUG);
+  const conditions = [eq(PostsTable.publicSlugKey, uniqueKeyOf(slug))];
   if (options.excludeId) {
     conditions.push(ne(PostsTable.id, options.excludeId));
   }
@@ -754,8 +809,10 @@ export async function deletePost(db: DB, id: number) {
 }
 
 /**
- * Check if a slug exists in the database
- * @param slug - The slug to check
+ * Whether another Post uses `slug` as its slug or as the slug of its live
+ * page, which publishing that Post would keep or take, compared by the unique
+ * key: ignoring case and NFKC forms. The database refuses a duplicate slug on
+ * its own; a slug equal to another Post's live page only this check refuses.
  * @param excludeId - Optional post ID to exclude (for editing existing posts)
  */
 export async function slugExists(
@@ -764,7 +821,12 @@ export async function slugExists(
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
   const { excludeId } = options;
-  const conditions = [eq(PostsTable.slug, slug)];
+  await settleUniqueKeys(db, POST_SLUG);
+  await settleUniqueKeys(db, POST_PUBLIC_SLUG);
+  const key = uniqueKeyOf(slug);
+  const conditions = [
+    or(eq(PostsTable.slugKey, key), eq(PostsTable.publicSlugKey, key)),
+  ];
   if (excludeId) {
     conditions.push(ne(PostsTable.id, excludeId));
   }
@@ -784,7 +846,13 @@ export async function findSimilarSlugs(
   baseSlug: string,
   options: { excludeId?: number } = {},
 ) {
-  const conditions = [like(PostsTable.slug, `${baseSlug}-%`)];
+  // Ignores the case of ASCII letters, as slugExists does.
+  const conditions = [
+    or(
+      startsWithText(PostsTable.slug, `${baseSlug}-`),
+      startsWithText(PostsTable.publicSlug, `${baseSlug}-`),
+    ),
+  ];
 
   // 如果是编辑文章，要排除掉自己，防止把自己算作冲突
   if (options.excludeId) {
@@ -792,11 +860,13 @@ export async function findSimilarSlugs(
   }
 
   const results = await db
-    .select({ slug: PostsTable.slug })
+    .select({ slug: PostsTable.slug, publicSlug: PostsTable.publicSlug })
     .from(PostsTable)
     .where(and(...conditions));
 
-  return results.map((r) => r.slug);
+  return results.flatMap((r) =>
+    r.publicSlug ? [r.slug, r.publicSlug] : [r.slug],
+  );
 }
 
 export async function findAdjacentPublicPosts(db: DB, slug: string) {

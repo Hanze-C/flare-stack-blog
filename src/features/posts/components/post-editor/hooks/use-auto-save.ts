@@ -1,11 +1,17 @@
 import type { JSONContent } from "@tiptap/react";
+import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BLOB_UPLOADING_ERROR,
+  CONTENT_TOO_LARGE_ERROR,
   contentHasBlobUrl,
+  contentTooLargeMessage,
   EDIT_CONFLICT_ERROR,
   editConflictOf,
+  isContentTooLarge,
+  isSlugTaken,
   persistableTagIds,
+  SLUG_TAKEN_ERROR,
 } from "../post-editor.model";
 import type {
   EditConflict,
@@ -56,6 +62,11 @@ type MetaSnapshot = {
 };
 
 type SaveResult = "synced" | "dirty" | "failed" | "discarded" | "blocked";
+
+/** Clears the save error, except that another post still uses the slug. */
+function keepSlugTaken(error: string | null) {
+  return error === SLUG_TAKEN_ERROR ? error : null;
+}
 
 function toMeta(post: PostEditorData): MetaSnapshot {
   return {
@@ -115,6 +126,7 @@ export function useAutoSave({
   const saveStatusRef = useRef(saveStatus);
   const saveTokenRef = useRef(saveToken);
   const conflictRef = useRef<EditConflict | null>(null);
+  const tooLargeRef = useRef(false);
 
   onSaveRef.current = onSave;
   getContentRef.current = getContent;
@@ -216,12 +228,13 @@ export function useAutoSave({
       epochAtStart === lastSavedEpochRef.current
     ) {
       assignStatus("SYNCED");
-      setError(null);
+      setError(keepSlugTaken);
       return "synced";
     }
 
     isSaving.current = true;
-    setError(null);
+    tooLargeRef.current = false;
+    setError(keepSlugTaken);
     assignStatus("SAVING");
 
     let settle!: () => void;
@@ -231,13 +244,19 @@ export function useAutoSave({
     inFlightRef.current = gate;
 
     try {
-      await onSaveRef.current(payload, saveTokenRef.current, acceptSaveToken);
+      const outcome = await onSaveRef.current(
+        payload,
+        saveTokenRef.current,
+        acceptSaveToken,
+      );
       if (generationRef.current !== gen) return "discarded";
       lastSavedSnapshot.current = toMeta(payload);
       lastSavedEpochRef.current = epochAtStart;
       if (!isMounted.current) return "discarded";
       setLastSaved(new Date());
-      setError(null);
+      // The rest of the post was saved without a slug another post uses; the
+      // slug field keeps saying so until a save takes a slug again.
+      setError(outcome?.slugTaken ? SLUG_TAKEN_ERROR : null);
       if (isDirtyNow()) {
         assignStatus("PENDING");
         if (enabledRef.current) {
@@ -260,7 +279,15 @@ export function useAutoSave({
       }
       console.error("Auto-save failed:", err);
       assignStatus("ERROR");
-      setError("AUTO_SAVE_FAILED");
+      if (isContentTooLarge(err)) {
+        // Nothing was written; saying why is all there is to do until the
+        // Admin shortens the post.
+        tooLargeRef.current = true;
+        toast.error(contentTooLargeMessage(err));
+        setError(CONTENT_TOO_LARGE_ERROR);
+        return "failed";
+      }
+      setError(isSlugTaken(err) ? SLUG_TAKEN_ERROR : "AUTO_SAVE_FAILED");
       return "failed";
     } finally {
       isSaving.current = false;
@@ -307,7 +334,11 @@ export function useAutoSave({
       }
       if (result === "failed") {
         throw new Error(
-          conflictRef.current ? EDIT_CONFLICT_ERROR : "AUTO_SAVE_FAILED",
+          conflictRef.current
+            ? EDIT_CONFLICT_ERROR
+            : tooLargeRef.current
+              ? CONTENT_TOO_LARGE_ERROR
+              : "AUTO_SAVE_FAILED",
         );
       }
       if (result === "synced") {

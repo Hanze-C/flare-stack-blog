@@ -10,6 +10,43 @@ export const BLOB_UPLOADING_ERROR = "BLOB_UPLOADING";
 /** What `flush` throws once a save was refused; the conflict notice is shown. */
 export const EDIT_CONFLICT_ERROR = "EDIT_CONFLICT";
 
+/** What autosave reports when another post already uses the slug. */
+export const SLUG_TAKEN_ERROR = "SLUG_TAKEN";
+
+/** Whether a failed save was refused because another post uses the slug. */
+export function isSlugTaken(error: unknown) {
+  return error instanceof ORPCError && error.code === "SLUG_TAKEN";
+}
+
+/** What autosave reports when the body is over what a post stores. */
+export const CONTENT_TOO_LARGE_ERROR = "POST_CONTENT_TOO_LARGE";
+
+/** Whether a failed write was refused for the size of the body or snapshot. */
+export function isContentTooLarge(error: unknown) {
+  return error instanceof ORPCError && error.code === CONTENT_TOO_LARGE_ERROR;
+}
+
+/**
+ * What to tell the Admin when the server refused the post for its size: the
+ * body when saving, the published version (code highlighted) when publishing.
+ */
+export function contentTooLargeMessage(error: unknown) {
+  const data: unknown = error instanceof ORPCError ? error.data : null;
+  const limit =
+    data &&
+    typeof data === "object" &&
+    "limit" in data &&
+    typeof data.limit === "number"
+      ? Math.round(data.limit / 1000)
+      : 0;
+  return data &&
+    typeof data === "object" &&
+    "field" in data &&
+    data.field === "publicSnapshot"
+    ? m.editor_snapshot_too_large({ limit })
+    : m.editor_content_too_large({ limit });
+}
+
 /** The conflict a failed write was refused with, if it was an Edit Conflict. */
 export function editConflictOf(error: unknown): EditConflict | null {
   if (!(error instanceof ORPCError) || error.code !== "EDIT_CONFLICT") {
@@ -28,6 +65,18 @@ export function editConflictOf(error: unknown): EditConflict | null {
 }
 
 /**
+ * What to tell the Admin when publishing was refused or failed. An Edit
+ * Conflict is handled apart from this.
+ */
+export function publishErrorMessage(error: unknown) {
+  if (isContentTooLarge(error)) return contentTooLargeMessage(error);
+  if (error instanceof ORPCError && error.code === "PUBLISHED_AT_IN_FUTURE") {
+    return m.editor_action_publish_future_date();
+  }
+  return m.editor_action_publish_failed();
+}
+
+/**
  * What to tell the Admin when discarding Unpublished Changes was refused or
  * failed. An Edit Conflict is handled apart from this.
  */
@@ -38,8 +87,8 @@ export function discardErrorMessage(error: unknown) {
         return m.editor_action_discard_no_changes();
       case "POST_NOT_PUBLISHED":
         return m.editor_action_discard_not_published();
-      case "POST_REVISION_NOT_FOUND":
-        return m.editor_action_discard_no_revision();
+      case "SLUG_TAKEN":
+        return m.editor_action_discard_slug_taken();
     }
   }
   return m.editor_action_discard_failed();
