@@ -130,9 +130,9 @@ export async function buildSitemapXml(env: Env) {
   </url>
   ${posts
     .map((post) => {
-      const lastModifiedAt = formatDate(post.updatedAt, [
+      // The draft's updatedAt would show edits that are not published.
+      const lastModifiedAt = formatDate(post.lastPublishedAt, [
         post.publishedAt,
-        post.createdAt,
       ]);
 
       return `

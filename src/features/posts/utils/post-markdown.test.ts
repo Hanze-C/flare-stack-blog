@@ -319,4 +319,18 @@ describe("Post content as Markdown", () => {
     expect(fromMarkdown("")).toEqual(editorJson(doc({ type: "paragraph" })));
     expect(postContentToMarkdown(null)).toBeNull();
   });
+
+  it("reads a body with nothing to write as null, as the docs say", () => {
+    expect(postContentToMarkdown(doc({ type: "paragraph" }))).toBeNull();
+    expect(postContentToMarkdown(doc(paragraph(text("hi"))))).toBe("hi\n");
+  });
+
+  it("writes underline as ++text++ and reads it back", () => {
+    const content = doc(
+      paragraph(text("a "), text("under", [{ type: "underline" }])),
+    );
+    const markdown = postContentToMarkdown(editorJson(content));
+    expect(markdown).toBe("a ++under++\n");
+    expect(fromMarkdown(markdown ?? "")).toEqual(editorJson(content));
+  });
 });

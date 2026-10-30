@@ -9,6 +9,8 @@ import {
   ImportMediaUrlInputSchema,
   LinkedPostSchema,
   MAX_FILE_SIZE,
+  MEDIA_INVALID_DETAILS,
+  type MediaInvalidDetail,
   MediaKeyInputSchema,
   MediaListPageSchema,
   MediaSelectSchema,
@@ -25,11 +27,45 @@ const mediaErrors = {
     message: "Failed to create media record.",
   },
   MEDIA_IN_USE: { status: 409, message: "Media is referenced by a post." },
-  MEDIA_INVALID: { status: 400, message: "Invalid media upload." },
+  MEDIA_INVALID: {
+    status: 400,
+    message: "Invalid media upload.",
+    data: z.object({
+      detail: z
+        .enum(MEDIA_INVALID_DETAILS)
+        .describe(
+          `Why the file is refused. TYPE_MISMATCH: the bytes are not the image type the file declares. TYPE_UNRECOGNIZED: a downloaded response is not one of ${ACCEPTED_IMAGE_TYPES.join(", ")}. EMPTY: a downloaded response has no bytes. TOO_LARGE: a downloaded response is over ${MAX_FILE_SIZE / 1024 / 1024} MB.`,
+        ),
+    }),
+  },
   MEDIA_NOT_FOUND: { status: 404, message: "Media not found." },
   MEDIA_INVALID_URL: { status: 400, message: "Invalid image URL." },
   MEDIA_IMPORT_FAILED: { status: 400, message: "Could not import image." },
 } as const;
+
+const MEDIA_INVALID_MESSAGES: Record<MediaInvalidDetail, string> = {
+  TYPE_MISMATCH:
+    "The file's bytes are not the image type it declares, so it was not stored.",
+  TYPE_UNRECOGNIZED: `The response is not an accepted image type (${ACCEPTED_IMAGE_TYPES.join(", ")}).`,
+  EMPTY: "The response has no bytes.",
+  TOO_LARGE: `The response is larger than ${MAX_FILE_SIZE / 1024 / 1024} MB.`,
+};
+
+/** The `MEDIA_INVALID` error with the reason the file is refused. */
+function mediaInvalid(
+  errors: {
+    MEDIA_INVALID: (options: {
+      message: string;
+      data: { detail: MediaInvalidDetail };
+    }) => Error;
+  },
+  { detail }: { detail: MediaInvalidDetail },
+) {
+  return errors.MEDIA_INVALID({
+    message: `Invalid media upload: ${MEDIA_INVALID_MESSAGES[detail]}`,
+    data: { detail },
+  });
+}
 
 const imageFile = z
   .file()
@@ -92,7 +128,7 @@ const upload = adminProcedure
     path: "/admin/media",
     summary: "Upload an image",
     description:
-      "Stores an image in the media library from a multipart/form-data body with one part, image. Returns the new Media; use its url as the src of an image in a post body, or its id as a post's coverMediaId. Answers 400 MEDIA_INVALID when the file's bytes are not the type it declares.",
+      "Stores an image in the media library from a multipart/form-data body with one part, image. Returns the new Media; use its url as the src of an image in a post body, or its id as a post's coverMediaId. Answers 400 MEDIA_INVALID when the file's bytes are not the type it declares; data.detail says why.",
     tags: ["Admin Media"],
   })
   .input(
@@ -106,8 +142,8 @@ const upload = adminProcedure
       MEDIA_RECORD_CREATE_FAILED: () => {
         throw errors.MEDIA_RECORD_CREATE_FAILED();
       },
-      MEDIA_INVALID: () => {
-        throw errors.MEDIA_INVALID();
+      MEDIA_INVALID: (error) => {
+        throw mediaInvalid(errors, error);
       },
     }),
   );
@@ -124,7 +160,7 @@ const importFromUrl = adminProcedure
     path: "/admin/media/import",
     summary: "Import an image from a URL",
     description:
-      "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public, MEDIA_IMPORT_FAILED when the download fails, and MEDIA_INVALID when the response is not an accepted image type or its bytes are not that type.",
+      "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public, MEDIA_IMPORT_FAILED when the download fails, and MEDIA_INVALID when the response is not an accepted image type, is empty or over the size limit, or its bytes are not that type; data.detail says which.",
     tags: ["Admin Media"],
   })
   .input(ImportMediaUrlInputSchema)
@@ -140,8 +176,8 @@ const importFromUrl = adminProcedure
       MEDIA_IMPORT_FAILED: () => {
         throw errors.MEDIA_IMPORT_FAILED();
       },
-      MEDIA_INVALID: () => {
-        throw errors.MEDIA_INVALID();
+      MEDIA_INVALID: (error) => {
+        throw mediaInvalid(errors, error);
       },
     }),
   );
@@ -252,7 +288,7 @@ const replace = adminProcedure
     path: "/admin/media/{key}/replace",
     summary: "Replace media file",
     description:
-      "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares.",
+      "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares (data.detail says why).",
     tags: ["Admin Media"],
   })
   .input(
@@ -272,8 +308,8 @@ const replace = adminProcedure
         MEDIA_NOT_FOUND: () => {
           throw errors.MEDIA_NOT_FOUND();
         },
-        MEDIA_INVALID: () => {
-          throw errors.MEDIA_INVALID();
+        MEDIA_INVALID: (error) => {
+          throw mediaInvalid(errors, error);
         },
       },
     ),

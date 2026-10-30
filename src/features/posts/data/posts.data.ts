@@ -75,9 +75,9 @@ async function hydratePublicPosts(
 export type SitemapPostRow = {
   id: number;
   slug: string;
-  createdAt: Date | null;
-  updatedAt: Date | null;
   publishedAt: Date | null;
+  /** When publishing last replaced the snapshot; never the draft's updatedAt. */
+  lastPublishedAt: Date | null;
 };
 
 export async function insertPost(db: DB, data: typeof PostsTable.$inferInsert) {
@@ -336,8 +336,6 @@ export async function getPublishedPostsForSitemapBatch(
     .select({
       id: PostsTable.id,
       publicSlug: PostsTable.publicSlug,
-      createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
     .from(PostsTable)
@@ -361,10 +359,11 @@ export async function getPublishedPostsForSitemapBatch(
   return rows.map((row) => ({
     id: row.id,
     slug: row.publicSlug ?? row.publicSnapshotJson?.slug ?? "",
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
     publishedAt: row.publicSnapshotJson
       ? new Date(row.publicSnapshotJson.publishedAt)
+      : null,
+    lastPublishedAt: row.publicSnapshotJson?.lastPublishedAt
+      ? new Date(row.publicSnapshotJson.lastPublishedAt)
       : null,
   }));
 }

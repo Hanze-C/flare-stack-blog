@@ -139,6 +139,7 @@ async function buildPublicSnapshot(
     categoryId: post.categoryId ?? null,
     publishedAt:
       toIsoOrNull(post.publishedAt) ?? toWholeSecond(new Date()).toISOString(),
+    lastPublishedAt: new Date().toISOString(),
     cover: await resolveSnapshotCover(db, post.coverMediaId),
   };
 }

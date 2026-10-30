@@ -71,6 +71,7 @@ describe("errors declared by post operations", () => {
       "/admin/posts/{id}",
       [
         "400 CONTENT_FORMAT_AMBIGUOUS",
+        "400 CONTENT_JSON_INVALID",
         "400 MARKDOWN_IMAGE_INVALID",
         "404 CATEGORY_NOT_FOUND",
         "404 MEDIA_NOT_FOUND",
@@ -82,7 +83,11 @@ describe("errors declared by post operations", () => {
     [
       "post",
       "/admin/posts",
-      ["400 CONTENT_FORMAT_AMBIGUOUS", "400 MARKDOWN_IMAGE_INVALID"],
+      [
+        "400 CONTENT_FORMAT_AMBIGUOUS",
+        "400 CONTENT_JSON_INVALID",
+        "400 MARKDOWN_IMAGE_INVALID",
+      ],
     ],
     [
       "post",

@@ -131,7 +131,13 @@ describe("POST /api/admin/media", () => {
     for (const file of cases) {
       const { status, body } = await upload(apiKey, file);
       expect(status, file.name).toBe(400);
-      expect(body).toMatchObject({ code: "MEDIA_INVALID" });
+      expect(body).toMatchObject({
+        code: "MEDIA_INVALID",
+        data: { detail: "TYPE_MISMATCH" },
+      });
+      expect((body as { message: string }).message).toContain(
+        "bytes are not the image type",
+      );
     }
   });
 

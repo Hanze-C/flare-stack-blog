@@ -314,4 +314,145 @@ describe("Post content as Markdown over the Admin API", () => {
       },
     ]);
   });
+
+  describe("contentJson follows the Markdown rules", () => {
+    interface ContentJsonError {
+      code: string;
+      message: string;
+      data: {
+        nodeTypes: Array<string>;
+        markTypes: Array<string>;
+        images: Array<string>;
+      };
+    }
+
+    const image = (src: string) => ({
+      type: "doc",
+      content: [{ type: "image", attrs: { src, alt: "x" } }],
+    });
+
+    it("refuses javascript: and file: images, on create and on PATCH", async () => {
+      const apiKey = await seedAdminApiKey();
+      const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+
+      for (const src of ["javascript:alert(1)", "file:///etc/passwd", ""]) {
+        const patch = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+          method: "PATCH",
+          body: { data: { contentJson: image(src) } },
+        });
+        expect(patch.status).toBe(400);
+        const body = (await patch.json()) as ContentJsonError;
+        expect(body.code).toBe("CONTENT_JSON_INVALID");
+        expect(body.data.images).toEqual([src]);
+        if (src) expect(body.message).toContain(src);
+      }
+
+      const create = await callAdminApi(apiKey, "/admin/posts", {
+        method: "POST",
+        body: {
+          data: { title: "Bad", contentJson: image("javascript:alert(1)") },
+        },
+      });
+      expect(create.status).toBe(400);
+
+      expect((await readPost(apiKey, id)).contentJson).toEqual(
+        paragraph("Before"),
+      );
+    });
+
+    it("refuses node and mark types the editor does not know, naming them", async () => {
+      const apiKey = await seedAdminApiKey();
+      const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+
+      const response = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: {
+          data: {
+            contentJson: {
+              type: "doc",
+              content: [
+                { type: "callout", content: [{ type: "paragraph" }] },
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "x",
+                      marks: [{ type: "highlight" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(response.status).toBe(400);
+      const body = (await response.json()) as ContentJsonError;
+      expect(body.code).toBe("CONTENT_JSON_INVALID");
+      expect(body.data.nodeTypes).toEqual(["callout"]);
+      expect(body.data.markTypes).toEqual(["highlight"]);
+      expect(body.message).toContain('"callout"');
+      expect(body.message).toContain('"highlight"');
+      expect((await readPost(apiKey, id)).contentJson).toEqual(
+        paragraph("Before"),
+      );
+    });
+
+    it("keeps accepting what the editor saves", async () => {
+      const apiKey = await seedAdminApiKey();
+      const content = {
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 2 },
+            content: [{ type: "text", text: "Title" }],
+          },
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text: "all marks",
+                marks: [
+                  { type: "bold" },
+                  { type: "underline" },
+                  { type: "link", attrs: { href: "https://example.com" } },
+                ],
+              },
+            ],
+          },
+          { type: "image", attrs: { src: "/images/a.png?width=10" } },
+          { type: "image", attrs: { src: "https://example.com/b.png" } },
+        ],
+      };
+      const id = await createPost(apiKey, { contentJson: content });
+
+      const markdown = await readPost(apiKey, id, "?contentFormat=markdown");
+      expect(markdown.contentMarkdown).toContain("++");
+      const written = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: { data: { contentMarkdown: markdown.contentMarkdown } },
+      });
+      expect(written.status).toBe(200);
+    });
+
+    it("reads an empty body as null, as documented", async () => {
+      const apiKey = await seedAdminApiKey();
+      const id = await createPost(apiKey, {
+        contentJson: { type: "doc", content: [{ type: "paragraph" }] },
+      });
+      expect(
+        (await readPost(apiKey, id, "?contentFormat=markdown")).contentMarkdown,
+      ).toBeNull();
+
+      const written = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: { data: { contentMarkdown: "" }, contentFormat: "markdown" },
+      });
+      expect(written.status).toBe(200);
+      expect(((await written.json()) as ReadPost).contentMarkdown).toBeNull();
+    });
+  });
 });

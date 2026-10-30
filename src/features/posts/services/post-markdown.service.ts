@@ -3,6 +3,7 @@ import * as PostRepo from "@/features/posts/data/posts.data";
 import { NullableJsonContentSchema } from "@/features/posts/schema/json-content.schema";
 import type { PostContentFormat } from "@/features/posts/schema/posts.schema";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
+import { inspectPostContent } from "@/features/posts/utils/post-content-rules";
 import type { VideoMeta } from "@/features/posts/utils/video-source";
 import {
   videoMetaOf,
@@ -117,6 +118,31 @@ function asJsonWrite(contentJson: JSONContent) {
   );
 }
 
+/**
+ * What keeps `contentJson` from being stored: node or mark types the editor
+ * does not know, and images the server cannot show, the rule Markdown images
+ * follow. A body that passes reads as Markdown and writes back unchanged.
+ */
+async function invalidContentJson(contentJson: JSONContent) {
+  const { nodeTypes, markTypes, imageSources } =
+    inspectPostContent(contentJson);
+  let images: Array<string> = [];
+  if (imageSources.length > 0) {
+    const { isPostMarkdownImage } = await loadPostMarkdown();
+    images = [
+      ...new Set(imageSources.filter((src) => !isPostMarkdownImage(src))),
+    ];
+  }
+  return nodeTypes.length + markTypes.length + images.length > 0
+    ? ({
+        reason: "CONTENT_JSON_INVALID",
+        nodeTypes,
+        markTypes,
+        images,
+      } as const)
+    : null;
+}
+
 interface ContentFields {
   contentJson?: JSONContent | null;
   contentMarkdown?: string;
@@ -133,7 +159,11 @@ export async function resolveMarkdownContent<T extends ContentFields>(
   postId?: number,
 ) {
   const { contentMarkdown, ...rest } = data;
-  if (contentMarkdown === undefined) return ok(rest);
+  if (contentMarkdown === undefined) {
+    if (!rest.contentJson) return ok(rest);
+    const invalid = await invalidContentJson(rest.contentJson);
+    return invalid ? err(invalid) : ok(rest);
+  }
   if (rest.contentJson !== undefined) {
     return err({ reason: "CONTENT_FORMAT_AMBIGUOUS" });
   }

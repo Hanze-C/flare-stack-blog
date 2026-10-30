@@ -48,7 +48,7 @@ const HasUnpublishedChangesSchema = z
   );
 
 const MARKDOWN_RULES =
-  "CommonMark with GFM tables, strikethrough and autolinks. It carries headings, bold, italic, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, fenced code blocks with their language (a mermaid block renders as a diagram), tables with column alignment, inline math as $…$, block math with $$ alone on the lines before and after it, images and videos. A Bilibili or YouTube link alone in a paragraph is a video block. Headings stay within levels 2 to 4: when there is an H1 every heading moves one level down, and anything below level 4 becomes level 4. Images must be http(s) addresses or Media paths (/images/<key>). Table column widths are not carried, and a table cell holds a single line. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.";
+  "CommonMark with GFM tables, strikethrough and autolinks. It carries headings, bold, italic, underline as ++text++, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, fenced code blocks with their language (a mermaid block renders as a diagram), tables with column alignment, inline math as $…$, block math with $$ alone on the lines before and after it, images and videos. A Bilibili or YouTube link alone in a paragraph is a video block. Headings stay within levels 2 to 4: when there is an H1 every heading moves one level down, and anything below level 4 becomes level 4. Images must be http(s) addresses or Media paths (/images/<key>). Table column widths are not carried, and a table cell holds a single line. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.";
 
 export const PostContentFormatSchema = z
   .enum(["json", "markdown"])
@@ -63,15 +63,21 @@ export const ContentMarkdownOutputSchema = z
   .nullable()
   .optional()
   .describe(
-    "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
+    "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body, which includes a body with no content, such as one empty paragraph. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
   );
 
 const ContentMarkdownInputSchema = z
   .string()
   .optional()
   .describe(
-    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal.`,
+    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal. An empty string writes an empty body.`,
   );
+
+const CONTENT_JSON_RULES =
+  "The body as TipTap JSON, held to the same rules as Markdown: only the editor's node types (doc, text, paragraph, heading, blockquote, bulletList, orderedList, listItem, codeBlock, horizontalRule, hardBreak, table, tableRow, tableHeader, tableCell, image, video, inlineMath, blockMath) and mark types (bold, italic, underline, strike, code, link), and images whose src is an http(s) address or a Media path (/images/<key>). Anything else is refused with 400 CONTENT_JSON_INVALID naming it. Send either contentJson or contentMarkdown, not both.";
+
+const ContentJsonInputSchema =
+  NullableJsonContentSchema.optional().describe(CONTENT_JSON_RULES);
 
 const PostTitleInputSchema = z
   .string()
@@ -139,7 +145,7 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  * endpoints and a PATCH carrying `pinnedAt` is refused.
  */
 const PostUpdateSchema = createUpdateSchema(PostsTable, {
-  contentJson: NullableJsonContentSchema.optional(),
+  contentJson: ContentJsonInputSchema,
   title: PostTitleInputSchema.optional(),
   slug: PostSlugInputSchema.optional(),
   publishedAt: (schema) => schema.describe(PUBLISHED_AT_RULES),
@@ -404,7 +410,7 @@ const CreatePostDataSchema = z.strictObject({
     `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. A unique slug is generated from it.`,
   ),
   summary: z.string().nullable().optional(),
-  contentJson: NullableJsonContentSchema.optional(),
+  contentJson: ContentJsonInputSchema,
   contentMarkdown: ContentMarkdownInputSchema,
 });
 

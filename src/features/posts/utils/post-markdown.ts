@@ -76,5 +76,6 @@ export function postContentFromMarkdown(markdown: string): PostMarkdownContent {
 export function postContentToMarkdown(
   contentJson: JSONContent | null,
 ): string | null {
-  return contentJson ? serializeMarkdown(contentJson) : null;
+  // A body with nothing to write, such as one empty paragraph, is no body.
+  return (contentJson && serializeMarkdown(contentJson)) || null;
 }

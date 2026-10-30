@@ -77,11 +77,26 @@ const postErrors = {
       images: z.array(z.string()).describe("The refused image addresses."),
     }),
   },
+  CONTENT_JSON_INVALID: {
+    status: 400,
+    message:
+      "contentJson holds node or mark types the editor does not know, or images that are not http(s) addresses or Media paths (/images/<key>).",
+    data: z.object({
+      nodeTypes: z
+        .array(z.string())
+        .describe("The node types the editor does not know."),
+      markTypes: z
+        .array(z.string())
+        .describe("The mark types the editor does not know."),
+      images: z.array(z.string()).describe("The refused image addresses."),
+    }),
+  },
 } as const;
 
 const markdownContentErrors = {
   CONTENT_FORMAT_AMBIGUOUS: postErrors.CONTENT_FORMAT_AMBIGUOUS,
   MARKDOWN_IMAGE_INVALID: postErrors.MARKDOWN_IMAGE_INVALID,
+  CONTENT_JSON_INVALID: postErrors.CONTENT_JSON_INVALID,
 } as const;
 
 const postNotFoundErrors = {
@@ -90,7 +105,13 @@ const postNotFoundErrors = {
 
 type MarkdownContentError =
   | { reason: "CONTENT_FORMAT_AMBIGUOUS" }
-  | { reason: "MARKDOWN_IMAGE_INVALID"; images: Array<string> };
+  | { reason: "MARKDOWN_IMAGE_INVALID"; images: Array<string> }
+  | {
+      reason: "CONTENT_JSON_INVALID";
+      nodeTypes: Array<string>;
+      markTypes: Array<string>;
+      images: Array<string>;
+    };
 
 function throwMarkdownContentError(
   error: MarkdownContentError,
@@ -99,6 +120,14 @@ function throwMarkdownContentError(
     MARKDOWN_IMAGE_INVALID: (options: {
       message: string;
       data: { images: Array<string> };
+    }) => Error;
+    CONTENT_JSON_INVALID: (options: {
+      message: string;
+      data: {
+        nodeTypes: Array<string>;
+        markTypes: Array<string>;
+        images: Array<string>;
+      };
     }) => Error;
   },
 ): never {
@@ -110,6 +139,21 @@ function throwMarkdownContentError(
       throw errors.MARKDOWN_IMAGE_INVALID({
         message: `${error.images.length > 1 ? "Images" : "Image"} ${list} must be an http(s) address or a Media path (/images/<key>). Upload local images as Media and use their path.`,
         data: { images: error.images },
+      });
+    }
+    case "CONTENT_JSON_INVALID": {
+      const { nodeTypes, markTypes, images } = error;
+      const quoted = (list: Array<string>) =>
+        list.map((item) => `"${item}"`).join(", ");
+      const problems = [
+        nodeTypes.length > 0 && `unknown node types ${quoted(nodeTypes)}`,
+        markTypes.length > 0 && `unknown mark types ${quoted(markTypes)}`,
+        images.length > 0 &&
+          `images ${quoted(images)}, which must be http(s) addresses or Media paths (/images/<key>)`,
+      ].filter(Boolean);
+      throw errors.CONTENT_JSON_INVALID({
+        message: `contentJson is refused: ${problems.join("; ")}.`,
+        data: { nodeTypes, markTypes, images },
       });
     }
     default:
@@ -239,7 +283,7 @@ const update = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Update a post",
     description:
-      "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data), whichever format it was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+      "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)

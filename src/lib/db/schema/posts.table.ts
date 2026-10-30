@@ -30,6 +30,10 @@ export type PublicPostSnapshot = {
   tagIds: Array<number>;
   categoryId: number | null;
   publishedAt: string;
+  // When publishing last wrote this snapshot, ISO 8601: the sitemap's lastmod,
+  // since the draft's updatedAt would show edits nobody has published. Absent
+  // from snapshots written before it existed, which fall back to publishedAt.
+  lastPublishedAt?: string;
   // Snapshots written before pinning left the snapshot may still carry a
   // pinnedAt; nothing reads it.
   cover: PublicPostCover | null;

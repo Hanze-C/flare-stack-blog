@@ -2,7 +2,7 @@ import { desc, isNotNull, sql } from "drizzle-orm";
 import { Feed } from "feed";
 import type { SiteConfig } from "@/features/config/config.schema";
 import * as ConfigService from "@/features/config/service/config.service";
-import { convertToPlainText } from "@/features/posts/utils/content";
+import { renderFeedHtml } from "@/features/posts/utils/feed-html";
 import { getDb } from "@/lib/db";
 import { PostsTable } from "@/lib/db/schema";
 import { serverEnv } from "@/lib/env/server.env";
@@ -74,7 +74,7 @@ export async function buildFeed(env: Env, executionCtx: ExecutionContext) {
       id: post.id.toString(),
       link: `https://${DOMAIN}/post/${encodeURIComponent(post.publicSlug ?? snapshot.slug)}`,
       description: snapshot.summary ?? "",
-      content: convertToPlainText(snapshot.contentJson),
+      content: renderFeedHtml(snapshot.contentJson, `https://${DOMAIN}`),
       author: [feedAuthor],
       date: new Date(snapshot.publishedAt),
     });

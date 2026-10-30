@@ -14,6 +14,7 @@ import * as PostRevisionService from "@/features/posts/services/post-revisions.s
 import * as PostService from "@/features/posts/services/posts.service";
 import { unwrap } from "@/lib/errors";
 import * as Storage from "./data/media.storage";
+import { MAX_FILE_SIZE } from "./media.schema";
 import * as MediaService from "./service/media.service";
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -665,6 +666,48 @@ describe("MediaService", () => {
 
       expect(result.fileName).toBe("sunset.png");
       expect(result.mimeType).toBe("image/png");
+      vi.unstubAllGlobals();
+    });
+
+    it("says why an imported response is refused", async () => {
+      const respond = (body: BodyInit, contentType: string) =>
+        vi.stubGlobal(
+          "fetch",
+          vi.fn().mockResolvedValue(
+            new Response(body, {
+              status: 200,
+              headers: { "content-type": contentType },
+            }),
+          ),
+        );
+      const importResult = () =>
+        MediaService.importFromUrl(adminContext, {
+          url: "https://example.com/photos/a.png",
+        });
+
+      respond("<html></html>", "text/html");
+      expect((await importResult()).error).toEqual({
+        reason: "MEDIA_INVALID",
+        detail: "TYPE_UNRECOGNIZED",
+      });
+
+      respond(new Uint8Array(0), "image/png");
+      expect((await importResult()).error).toEqual({
+        reason: "MEDIA_INVALID",
+        detail: "EMPTY",
+      });
+
+      respond(new Uint8Array(MAX_FILE_SIZE + 1), "image/png");
+      expect((await importResult()).error).toEqual({
+        reason: "MEDIA_INVALID",
+        detail: "TOO_LARGE",
+      });
+
+      respond("not a png", "image/png");
+      expect((await importResult()).error).toEqual({
+        reason: "MEDIA_INVALID",
+        detail: "TYPE_MISMATCH",
+      });
       vi.unstubAllGlobals();
     });
 
