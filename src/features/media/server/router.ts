@@ -57,6 +57,7 @@ const multipartImageBody = oo.spec(
               },
             },
             required: ["image"],
+            additionalProperties: false,
           },
           encoding: {
             image: { contentType: ACCEPTED_IMAGE_TYPES.join(", ") },
