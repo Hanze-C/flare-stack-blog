@@ -502,6 +502,8 @@
   "editor_conflict_reload_failed": "没能载入最新版本，请再试一次。",
   "editor_action_publish_failed": "发布未完成，请再试一次。",
   "editor_action_publish_future_date": "发布日期晚于现在，改成现在或更早的时间后再发布。",
+  "editor_content_too_large": "保存失败：文章正文超过了单篇约 {limit} KB 的上限。请精简内容，或拆成几篇文章。",
+  "editor_snapshot_too_large": "发布失败：文章发布后的版本（含代码高亮）超过了单篇约 {limit} KB 的上限。请精简内容，或拆成几篇文章。",
   "editor_action_image_uploading": "图片还在上传，等完成后再发布。",
   "editor_action_unpublish_failed": "取消发布未完成，请再试一次。",
   "editor_action_discard_failed": "放弃修改未完成，请再试一次。",

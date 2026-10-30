@@ -44,6 +44,7 @@ import {
 } from "@/features/posts/utils/content";
 import { truncateGeneratedSlug } from "@/features/posts/utils/post-fields";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
+import { contentTooLarge } from "@/features/posts/utils/post-content-size";
 import { sameJson } from "@/features/posts/utils/same-json";
 import {
   isFuturePublishDate,
@@ -393,6 +394,9 @@ async function insertDraftWithGeneratedSlug(
  */
 export async function createDraft(context: DbContext, data: CreatePostData) {
   const contentJson = normalizePostContent(data.contentJson ?? null);
+  const tooLarge = contentTooLarge("contentJson", contentJson);
+  if (tooLarge) return err(tooLarge);
+
   const references = await bodyMediaReferences(context.db, contentJson);
   if (references.error) return references;
 
@@ -627,6 +631,8 @@ export async function updatePost(
           contentJson: normalizePostContent(data.data.contentJson),
         }
       : data.data;
+  const tooLarge = contentTooLarge("contentJson", updateData.contentJson);
+  if (tooLarge) return err(tooLarge);
 
   // A save that changes nothing writes nothing, so it keeps the saveToken an
   // open editor holds. A stated token still has to be the current one.
@@ -789,6 +795,8 @@ export async function publishPost(
     publishedPost,
     snapshotContent,
   );
+  const snapshotTooLarge = contentTooLarge("publicSnapshot", snapshot);
+  if (snapshotTooLarge) return err(snapshotTooLarge);
   const previousPublicSlug = publishedPost.publicSlug;
   const fingerprint = await calculateDraftFingerprint({
     ...publishedPost,

@@ -36,6 +36,11 @@ import * as PostMarkdownService from "@/features/posts/services/post-markdown.se
 import * as PostRevisionService from "@/features/posts/services/post-revisions.service";
 import * as PostService from "@/features/posts/services/posts.service";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
+import {
+  CONTENT_SIZE_RULES,
+  POST_CONTENT_JSON_LIMIT_BYTES,
+  PUBLIC_SNAPSHOT_LIMIT_BYTES,
+} from "@/features/posts/utils/post-content-size";
 import { videoSourceOf } from "@/features/posts/utils/video-source";
 import { getPostPublisher } from "@/lib/do/post-publisher-binding";
 import { adminProcedure } from "@/lib/orpc/procedure";
@@ -111,7 +116,52 @@ const postErrors = {
         .describe("The refused link addresses, such as javascript: or data:."),
     }),
   },
+  POST_CONTENT_TOO_LARGE: {
+    status: 413,
+    message: `The post body is larger than the ${POST_CONTENT_JSON_LIMIT_BYTES} bytes a post stores.`,
+    data: z.object({
+      field: z
+        .enum(["contentJson", "publicSnapshot"])
+        .describe(
+          "What is too large: contentJson, the body as stored (after any Markdown conversion), or publicSnapshot, the Public Content Snapshot, which also holds the highlighted code HTML.",
+        ),
+      limit: z.number().int().describe("The most bytes it may take."),
+      size: z.number().int().describe("The bytes it would take."),
+    }),
+  },
 } as const;
+
+const contentSizeErrors = {
+  POST_CONTENT_TOO_LARGE: postErrors.POST_CONTENT_TOO_LARGE,
+} as const;
+
+/** Throws the 413 for a body or snapshot over its stored limit. */
+function throwContentTooLarge(
+  error: {
+    field: "contentJson" | "publicSnapshot";
+    limit: number;
+    size: number;
+  },
+  errors: {
+    POST_CONTENT_TOO_LARGE: (options: {
+      message: string;
+      data: {
+        field: "contentJson" | "publicSnapshot";
+        limit: number;
+        size: number;
+      };
+    }) => Error;
+  },
+): never {
+  const what =
+    error.field === "contentJson"
+      ? "The post body"
+      : "The Public Content Snapshot (the body with its code highlighted)";
+  throw errors.POST_CONTENT_TOO_LARGE({
+    message: `${what} takes ${error.size} bytes stored, over the ${error.limit} bytes a post keeps. Shorten the post or split it into several posts. Nothing was written.`,
+    data: { field: error.field, limit: error.limit, size: error.size },
+  });
+}
 
 const markdownContentErrors = {
   CONTENT_FORMAT_AMBIGUOUS: postErrors.CONTENT_FORMAT_AMBIGUOUS,
@@ -301,13 +351,16 @@ const videoMeta = adminProcedure
   });
 
 const create = adminProcedure
-  .errors({ ...markdownContentErrors, ...contentImageErrors })
+  .errors({
+    ...markdownContentErrors,
+    ...contentImageErrors,
+    ...contentSizeErrors,
+  })
   .route({
     method: "POST",
     path: "/admin/posts",
     summary: "Create a draft post",
-    description:
-      "With data, creates a new draft post carrying that content. An image shown by a Media path (/images/<key>) must be existing Media: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and creates nothing. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
+    description: `With data, creates a new draft post carrying that content. An image shown by a Media path (/images/<key>) must be existing Media: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and creates nothing. ${CONTENT_SIZE_RULES} Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.`,
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
@@ -322,6 +375,7 @@ const create = adminProcedure
     return unwrapResult(PostService.createDraft(context, data.data), {
       CONTENT_IMAGE_NOT_FOUND: ({ images }) =>
         throwContentImageNotFound(images, errors),
+      POST_CONTENT_TOO_LARGE: (error) => throwContentTooLarge(error, errors),
     });
   });
 
@@ -330,6 +384,7 @@ const update = adminProcedure
     ...postNotFoundErrors,
     ...markdownContentErrors,
     ...contentImageErrors,
+    ...contentSizeErrors,
     MEDIA_NOT_FOUND: postErrors.MEDIA_NOT_FOUND,
     CATEGORY_NOT_FOUND: postErrors.CATEGORY_NOT_FOUND,
     SLUG_TAKEN: postErrors.SLUG_TAKEN,
@@ -339,8 +394,7 @@ const update = adminProcedure
     method: "PATCH",
     path: "/admin/posts/{id}",
     summary: "Update a post",
-    description:
-      "Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. An image the body shows by a Media path (/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+    description: `Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. ${CONTENT_SIZE_RULES} The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. An image the body shows by a Media path (/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.`,
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
@@ -373,6 +427,7 @@ const update = adminProcedure
         SLUG_TAKEN: () => {
           throw errors.SLUG_TAKEN();
         },
+        POST_CONTENT_TOO_LARGE: (error) => throwContentTooLarge(error, errors),
       },
     );
     return PostMarkdownService.inContentFormat(post, contentFormat);
@@ -401,14 +456,14 @@ const publishPost = adminProcedure
     ...postNotFoundErrors,
     PUBLISHED_AT_IN_FUTURE: postErrors.PUBLISHED_AT_IN_FUTURE,
     PUBLIC_SLUG_TAKEN: postErrors.PUBLIC_SLUG_TAKEN,
+    ...contentSizeErrors,
     ...editConflictErrors,
   })
   .route({
     method: "POST",
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
-    description:
-      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
+    description: `Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. Answers 413 POST_CONTENT_TOO_LARGE, writing nothing, when the serialized Public Content Snapshot (the body with its code highlighted, which is larger than the draft) takes more than ${PUBLIC_SNAPSHOT_LIMIT_BYTES} bytes; shorten the post. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.`,
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)
@@ -430,6 +485,7 @@ const publishPost = adminProcedure
       PUBLIC_SLUG_TAKEN: () => {
         throw errors.PUBLIC_SLUG_TAKEN();
       },
+      POST_CONTENT_TOO_LARGE: (error) => throwContentTooLarge(error, errors),
     });
   });
 

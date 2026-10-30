@@ -23,6 +23,7 @@ import {
   PUBLICATION_DATE_MIN,
   parsePublicationDate,
 } from "@/features/posts/utils/date";
+import { CONTENT_SIZE_RULES } from "@/features/posts/utils/post-content-size";
 import { NullableJsonContentSchema } from "./json-content.schema";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
@@ -73,6 +74,8 @@ export const ContentMarkdownOutputSchema = z
     "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body, which includes a body with no content, such as one empty paragraph. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
   );
 
+const SIZE_RULES = CONTENT_SIZE_RULES;
+
 const LINK_RULES =
   "A link whose address has a scheme other than http, https, ftp, ftps, mailto, tel, callto, sms, cid or xmpp, such as javascript: or data:, is refused with CONTENT_LINK_INVALID naming it. Site paths, #fragments and relative addresses are kept.";
 
@@ -80,14 +83,14 @@ const ContentMarkdownInputSchema = z
   .string()
   .optional()
   .describe(
-    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. ${LINK_RULES} The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal. An empty string writes an empty body.`,
+    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. ${LINK_RULES} ${SIZE_RULES} The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal. An empty string writes an empty body.`,
   );
 
 const CONTENT_JSON_RULES =
   "The body as TipTap JSON, held to the same rules as Markdown: only the editor's node types (doc, text, paragraph, heading, blockquote, bulletList, orderedList, listItem, codeBlock, horizontalRule, hardBreak, table, tableRow, tableHeader, tableCell, image, video, inlineMath, blockMath) and mark types (bold, italic, underline, strike, code, link), and images whose src is an http(s) address or a Media path (/images/<key>). Anything else is refused with 400 CONTENT_JSON_INVALID naming it. Send either contentJson or contentMarkdown, not both.";
 
 const ContentJsonInputSchema = NullableJsonContentSchema.optional().describe(
-  `${CONTENT_JSON_RULES} ${LINK_RULES}`,
+  `${CONTENT_JSON_RULES} ${LINK_RULES} ${SIZE_RULES}`,
 );
 
 const TITLE_FORMAT_RULE =

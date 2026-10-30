@@ -509,6 +509,8 @@
   "editor_conflict_reload_failed": "The latest version could not be loaded. Try again.",
   "editor_action_publish_failed": "Publishing did not finish. Try again.",
   "editor_action_publish_future_date": "The publication date is later than now. Change it to now or earlier, then publish.",
+  "editor_content_too_large": "Could not save: the post body is over the roughly {limit} KB a post can hold. Shorten it or split it into several posts.",
+  "editor_snapshot_too_large": "Could not publish: the published version of this post, with its code highlighted, is over the roughly {limit} KB a post can hold. Shorten the post or split it into several posts.",
   "editor_action_image_uploading": "Images are still uploading. Wait until they finish, then publish.",
   "editor_action_unpublish_failed": "Unpublishing did not finish. Try again.",
   "editor_action_discard_failed": "Discarding did not finish. Try again.",
