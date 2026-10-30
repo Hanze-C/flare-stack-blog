@@ -78,23 +78,26 @@ export function hasPublicTag(tagId: number): SQL {
   return sql`EXISTS (SELECT 1 FROM ${PostPublicTagsTable} WHERE ${PostPublicTagsTable.postId} = ${PostsTable.id} AND ${PostPublicTagsTable.tagId} = ${tagId})`;
 }
 
-/** The Post publicly carries a Tag of this name. */
+/**
+ * The Post publicly carries a Tag of this name, ignoring case: a public page
+ * is addressed by name, and a name in the wrong case is still that Tag.
+ */
 export function hasPublicTagNamed(tagName: string): SQL {
   return sql`EXISTS (
     SELECT 1
     FROM ${PostPublicTagsTable}
     JOIN ${TagsTable} ON ${TagsTable.id} = ${PostPublicTagsTable.tagId}
-    WHERE ${PostPublicTagsTable.postId} = ${PostsTable.id} AND ${TagsTable.name} = ${tagName}
+    WHERE ${PostPublicTagsTable.postId} = ${PostsTable.id} AND lower(${TagsTable.name}) = lower(${tagName})
   )`;
 }
 
-/** The Post's public Category has this name. */
+/** The Post's public Category has this name, ignoring case. */
 export function hasPublicCategoryNamed(categoryName: string): SQL {
   return sql`EXISTS (
     SELECT 1
     FROM ${CategoriesTable}
     WHERE ${CategoriesTable.id} = ${PostsTable.publicCategoryId}
-      AND ${CategoriesTable.name} = ${categoryName}
+      AND lower(${CategoriesTable.name}) = lower(${categoryName})
   )`;
 }
 
