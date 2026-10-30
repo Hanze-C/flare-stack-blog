@@ -17,6 +17,7 @@ import {
 import {
   BLOB_UPLOADING_ERROR,
   discardErrorMessage,
+  CONTENT_TOO_LARGE_ERROR,
   EDIT_CONFLICT_ERROR,
   editConflictOf,
   publishErrorMessage,
@@ -134,7 +135,11 @@ export function usePostActions({
       await flush();
     } catch (error) {
       const reason = error instanceof Error ? error.message : "";
-      if (reason !== EDIT_CONFLICT_ERROR) {
+      // A body too large to save was already explained by the save itself.
+      if (
+        reason !== EDIT_CONFLICT_ERROR &&
+        reason !== CONTENT_TOO_LARGE_ERROR
+      ) {
         toast.error(
           reason === BLOB_UPLOADING_ERROR
             ? m.editor_action_image_uploading()

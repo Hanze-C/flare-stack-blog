@@ -60,6 +60,7 @@ describe("errors declared by post operations", () => {
         "404 POST_NOT_FOUND",
         "409 EDIT_CONFLICT",
         "409 PUBLIC_SLUG_TAKEN",
+        "413 POST_CONTENT_TOO_LARGE",
       ],
     ],
     ["post", "/admin/posts/{id}/unpublish", ["404 POST_NOT_FOUND"]],
@@ -79,6 +80,7 @@ describe("errors declared by post operations", () => {
         "404 POST_NOT_FOUND",
         "409 EDIT_CONFLICT",
         "409 SLUG_TAKEN",
+        "413 POST_CONTENT_TOO_LARGE",
       ],
     ],
     [
@@ -89,6 +91,7 @@ describe("errors declared by post operations", () => {
         "400 CONTENT_JSON_INVALID",
         "400 CONTENT_LINK_INVALID",
         "400 MARKDOWN_IMAGE_INVALID",
+        "413 POST_CONTENT_TOO_LARGE",
       ],
     ],
     [

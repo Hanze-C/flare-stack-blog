@@ -1,10 +1,14 @@
 import type { JSONContent } from "@tiptap/react";
+import { toast } from "sonner";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BLOB_UPLOADING_ERROR,
+  CONTENT_TOO_LARGE_ERROR,
   contentHasBlobUrl,
+  contentTooLargeMessage,
   EDIT_CONFLICT_ERROR,
   editConflictOf,
+  isContentTooLarge,
   isSlugTaken,
   persistableTagIds,
   SLUG_TAKEN_ERROR,
@@ -122,6 +126,7 @@ export function useAutoSave({
   const saveStatusRef = useRef(saveStatus);
   const saveTokenRef = useRef(saveToken);
   const conflictRef = useRef<EditConflict | null>(null);
+  const tooLargeRef = useRef(false);
 
   onSaveRef.current = onSave;
   getContentRef.current = getContent;
@@ -228,6 +233,7 @@ export function useAutoSave({
     }
 
     isSaving.current = true;
+    tooLargeRef.current = false;
     setError(keepSlugTaken);
     assignStatus("SAVING");
 
@@ -273,6 +279,14 @@ export function useAutoSave({
       }
       console.error("Auto-save failed:", err);
       assignStatus("ERROR");
+      if (isContentTooLarge(err)) {
+        // Nothing was written; saying why is all there is to do until the
+        // Admin shortens the post.
+        tooLargeRef.current = true;
+        toast.error(contentTooLargeMessage(err));
+        setError(CONTENT_TOO_LARGE_ERROR);
+        return "failed";
+      }
       setError(isSlugTaken(err) ? SLUG_TAKEN_ERROR : "AUTO_SAVE_FAILED");
       return "failed";
     } finally {
@@ -320,7 +334,11 @@ export function useAutoSave({
       }
       if (result === "failed") {
         throw new Error(
-          conflictRef.current ? EDIT_CONFLICT_ERROR : "AUTO_SAVE_FAILED",
+          conflictRef.current
+            ? EDIT_CONFLICT_ERROR
+            : tooLargeRef.current
+              ? CONTENT_TOO_LARGE_ERROR
+              : "AUTO_SAVE_FAILED",
         );
       }
       if (result === "synced") {

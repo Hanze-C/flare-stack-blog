@@ -132,7 +132,7 @@
             "method": "POST",
             "path": "/admin/posts",
             "summary": "Create a draft post",
-            "description": "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
+            "description": "With data, creates a new draft post carrying that content. A post stores at most 800000 bytes of serialized contentJson, measured after any Markdown is converted, which makes it larger. A body over that is refused with 413 POST_CONTENT_TOO_LARGE, whose data holds the limit and the size, and nothing is written. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
             "tags": ["Admin Posts"]
           }
         }
@@ -145,7 +145,7 @@
             "method": "PATCH",
             "path": "/admin/posts/{id}",
             "summary": "Update a post",
-            "description": "Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+            "description": "Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. A post stores at most 800000 bytes of serialized contentJson, measured after any Markdown is converted, which makes it larger. A body over that is refused with 413 POST_CONTENT_TOO_LARGE, whose data holds the limit and the size, and nothing is written. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
             "tags": ["Admin Posts"]
           }
         }
@@ -170,7 +170,7 @@
             "method": "POST",
             "path": "/admin/posts/{id}/publish",
             "summary": "Publish a post",
-            "description": "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case, and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
+            "description": "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case, and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. Answers 413 POST_CONTENT_TOO_LARGE, writing nothing, when the serialized Public Content Snapshot (the body with its code highlighted, which is larger than the draft) takes more than 800000 bytes; shorten the post. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
             "tags": ["Admin Posts"]
           }
         }

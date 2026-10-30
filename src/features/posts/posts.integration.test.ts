@@ -232,11 +232,13 @@ describe("Posts Integration", () => {
         ],
       };
 
-      const created = await PostService.createDraft(adminContext, {
-        title: "External Draft",
-        summary: "Created with content",
-        contentJson,
-      });
+      const created = unwrap(
+        await PostService.createDraft(adminContext, {
+          title: "External Draft",
+          summary: "Created with content",
+          contentJson,
+        }),
+      );
 
       expect(created.id).not.toBe(reusableDraft.id);
 
@@ -259,14 +261,18 @@ describe("Posts Integration", () => {
     });
 
     it("creates a post per call so consecutive creates never collide", async () => {
-      const first = await PostService.createDraft(adminContext, {
-        title: "First Note",
-        contentJson: null,
-      });
-      const second = await PostService.createDraft(adminContext, {
-        title: "Second Note",
-        contentJson: null,
-      });
+      const first = unwrap(
+        await PostService.createDraft(adminContext, {
+          title: "First Note",
+          contentJson: null,
+        }),
+      );
+      const second = unwrap(
+        await PostService.createDraft(adminContext, {
+          title: "Second Note",
+          contentJson: null,
+        }),
+      );
 
       expect(first.id).not.toBe(second.id);
 

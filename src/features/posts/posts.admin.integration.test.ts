@@ -291,7 +291,7 @@ describe("Admin posts API for external editors", () => {
         PostService.createDraft(context, {
           title: "Same Title",
           contentJson: null,
-        }),
+        }).then(unwrap),
       ),
     );
 
@@ -309,10 +309,12 @@ describe("Admin posts API for external editors", () => {
     const context = createAdminTestContext();
     const slugs: string[] = [];
     for (let index = 0; index < 3; index += 1) {
-      const { id } = await PostService.createDraft(context, {
-        title: "Seq Title",
-        contentJson: null,
-      });
+      const { id } = unwrap(
+        await PostService.createDraft(context, {
+          title: "Seq Title",
+          contentJson: null,
+        }),
+      );
       const post = await PostService.findPostById(context, { id });
       slugs.push(post?.slug ?? "");
     }

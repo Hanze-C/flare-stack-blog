@@ -375,6 +375,51 @@ it("tells the Admin to change a publication date that is in the future", async (
   );
 });
 
+function tooLarge(field: "contentJson" | "publicSnapshot") {
+  return new ORPCError("POST_CONTENT_TOO_LARGE", {
+    status: 413,
+    defined: true,
+    data: { field, limit: 800_000, size: 900_000 },
+  });
+}
+
+it("says the post is too large to save instead of a generic failure", async () => {
+  const save = vi.fn<PostEditorSave>(async () => {
+    throw tooLarge("contentJson");
+  });
+  const editor = await renderPostEditorPage(save);
+
+  typeInto(editor, "more");
+
+  await waitFor(
+    () =>
+      expect(toast.error).toHaveBeenCalledWith(
+        m.editor_content_too_large({ limit: 800 }),
+      ),
+    AUTOSAVE_WAIT,
+  );
+  expect(m.editor_content_too_large({ limit: 800 })).toContain("800");
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("says the published version is too large when publishing is refused for it", async () => {
+  await renderPostEditorPage(createServer().save);
+  publish.mockRejectedValue(tooLarge("publicSnapshot"));
+
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_header_publish() })[0]!,
+  );
+
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(
+      m.editor_snapshot_too_large({ limit: 800 }),
+    ),
+  );
+  expect(toast.error).not.toHaveBeenCalledWith(
+    m.editor_action_publish_failed(),
+  );
+});
+
 it("keeps autosaving and holds back publishing while the slug is taken", async () => {
   const server = createServer();
   const save = vi.fn<PostEditorSave>(async (...args) => {
