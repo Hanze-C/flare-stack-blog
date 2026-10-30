@@ -2,6 +2,7 @@ import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { FriendLinksTable } from "@/lib/db/schema";
 import type { Messages } from "@/lib/i18n";
+import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
 
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 
@@ -86,8 +87,8 @@ export const createCreateFriendLinkSchema = (m: Messages) =>
 // === Admin inputs ===
 export const GetAllFriendLinksInputSchema = z.strictObject({
   search: z.string().max(200).optional(),
-  offset: z.number().optional(),
-  limit: z.number().optional(),
+  offset: PageOffsetSchema.optional(),
+  limit: pageLimitSchema(100).optional(),
   status: z.enum(["pending", "approved", "rejected"]).optional(),
 });
 

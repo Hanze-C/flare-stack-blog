@@ -1,6 +1,7 @@
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { COMMENT_STATUSES, CommentsTable } from "@/lib/db/schema";
+import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
@@ -41,15 +42,15 @@ const CommentWithUserSchema = CommentSelectSchema.extend({
 // Public API Schemas
 export const GetCommentsByPostIdInputSchema = z.object({
   postId: z.number(),
-  offset: z.number().optional(),
-  limit: z.number().optional(),
+  offset: PageOffsetSchema.optional(),
+  limit: pageLimitSchema(100).optional(),
 });
 
 export const GetRepliesByRootIdInputSchema = z.object({
   postId: z.number(),
   rootId: z.number(),
-  offset: z.number().optional(),
-  limit: z.number().optional(),
+  offset: PageOffsetSchema.optional(),
+  limit: pageLimitSchema(100).optional(),
 });
 
 const ReplyWithUserAndReplyToSchema = CommentWithUserSchema.extend({
@@ -101,8 +102,8 @@ export const GetThreadByCommentIdInputSchema = z.object({
 });
 
 export const GetMyCommentsInputSchema = z.object({
-  offset: z.number().optional(),
-  limit: z.number().optional(),
+  offset: PageOffsetSchema.optional(),
+  limit: pageLimitSchema(100).optional(),
   status: z.enum(COMMENT_STATUSES).optional(),
 });
 

@@ -96,3 +96,38 @@ describe("unknown fields", () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe("pagination", () => {
+  it.each([
+    ["/admin/posts?limit=2.5"],
+    ["/admin/posts?limit=-5"],
+    ["/admin/posts?limit=0"],
+    ["/admin/posts?limit=51"],
+    ["/admin/posts?offset=-1"],
+    ["/admin/posts?offset=1.5"],
+    ["/admin/media?limit=2.5"],
+    ["/admin/media?cursor=-1"],
+    ["/admin/friend-links?offset=-1"],
+    ["/posts?limit=2.5"],
+    ["/posts?cursor=-1"],
+    ["/posts/1/comments?limit=101"],
+  ])("refuses %s with 400", async (path) => {
+    const apiKey = await seedAdminApiKey();
+
+    const response = await callApi(apiKey, path);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("takes whole numbers within range", async () => {
+    const apiKey = await seedAdminApiKey();
+    await createPost(apiKey, "One");
+    await createPost(apiKey, "Two");
+
+    const response = await callApi(apiKey, "/admin/posts?limit=1&offset=1");
+
+    expect(response.status).toBe(200);
+    const page = (await response.json()) as { items: Array<unknown> };
+    expect(page.items).toHaveLength(1);
+  });
+});

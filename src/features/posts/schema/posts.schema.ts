@@ -6,6 +6,11 @@ import {
 } from "@/features/categories/categories.schema";
 import { TagSelectSchema } from "@/features/tags/tags.schema";
 import { POST_STATUSES, PostsTable } from "@/lib/db/schema";
+import {
+  IdCursorSchema,
+  PageOffsetSchema,
+  pageLimitSchema,
+} from "@/lib/orpc/pagination";
 import { NullableJsonContentSchema } from "./json-content.schema";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
@@ -206,8 +211,8 @@ export const PostCategoryNameSchema = z
   .optional();
 
 export const GetPostsCursorInputSchema = z.object({
-  cursor: z.number().optional(),
-  limit: z.number().optional(),
+  cursor: IdCursorSchema.optional(),
+  limit: pageLimitSchema(50).optional(),
   tagName: PostTagNameSchema,
   categoryName: PostCategoryNameSchema,
   uncategorized: z.boolean().optional(),
@@ -273,8 +278,8 @@ export const GetPostsInputSchema = z.strictObject({
     .positive()
     .optional()
     .describe("Only posts currently carrying this tag."),
-  offset: z.number().optional(),
-  limit: z.number().optional(),
+  offset: PageOffsetSchema.optional(),
+  limit: pageLimitSchema(50).optional(),
   status: z.enum(POST_STATUSES).optional(),
   hasUnpublishedChanges: z
     .boolean()
