@@ -166,19 +166,19 @@ export function PostHistoryPage({
           </Button>
         </div>
       </header>
-      {history.restoreFailure && (
-        <Callout
-          role="alert"
-          tone={history.restoreFailure.editConflict ? "warning" : "danger"}
-          icon={CircleAlert}
-          className="post-editor-conflict"
-        >
-          <strong>{m.editor_history_toast_restore_failed()}</strong>
-          <p>{history.restoreFailure.message}</p>
-        </Callout>
-      )}
       <div className="post-history-body">
         <section className="post-history-content">
+          {history.restoreFailure && (
+            <Callout
+              role="alert"
+              tone={history.restoreFailure.editConflict ? "warning" : "danger"}
+              icon={CircleAlert}
+              className="post-editor-conflict"
+            >
+              <strong>{m.editor_history_toast_restore_failed()}</strong>
+              <p>{history.restoreFailure.message}</p>
+            </Callout>
+          )}
           <PostEditorHistoryDocument
             snapshot={history.selectedRevision?.snapshotJson ?? null}
             isLoading={history.isRevisionLoading}

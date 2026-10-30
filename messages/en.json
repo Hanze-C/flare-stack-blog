@@ -475,7 +475,7 @@
   "editor_meta_cover_empty": "No cover",
   "editor_meta_tags_empty": "No tags",
   "editor_history_readonly": "History · Read only",
-  "editor_history_restore_hint": "Restore to continue editing. Your public post stays unchanged until you publish.",
+  "editor_history_restore_hint": "Restoring only affects the draft; the public page updates when you publish.",
   "editor_info_title": "Post details",
   "editor_info_done": "Done",
   "editor_content_placeholder": "Start writing...",

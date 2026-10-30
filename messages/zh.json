@@ -468,7 +468,7 @@
   "editor_meta_cover_empty": "未设置封面",
   "editor_meta_tags_empty": "未设置标签",
   "editor_history_readonly": "历史版本 · 只读",
-  "editor_history_restore_hint": "恢复后仍需发布，公开内容不会立即改变。",
+  "editor_history_restore_hint": "恢复仅影响草稿，已发布页面在重新发布后才会更新。",
   "editor_info_title": "文章信息",
   "editor_info_done": "完成",
   "editor_content_placeholder": "开始记录...",
