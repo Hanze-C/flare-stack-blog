@@ -512,7 +512,14 @@ describe("Admin posts list for external editors", () => {
       await context.db.insert(PostsTable).values(bulk.slice(index, index + 20));
     }
 
-    const page = await listPosts(apiKey, "includeContent=true&limit=100");
+    // Above the limit is refused rather than cut to it.
+    const tooMany = await callAdminApi(
+      apiKey,
+      "/admin/posts?includeContent=true&limit=100",
+    );
+    expect(tooMany.status).toBe(400);
+
+    const page = await listPosts(apiKey, "includeContent=true&limit=50");
 
     expect(page.items).toHaveLength(50);
     expect(page.total).toBe(55);
