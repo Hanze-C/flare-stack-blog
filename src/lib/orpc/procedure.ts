@@ -1,5 +1,7 @@
+import type { AnyContractProcedure } from "@orpc/contract";
 import { ORPCError, os } from "@orpc/server";
 import { z } from "zod";
+import { sendsApiKey } from "@/lib/auth/api-key-guard";
 import type { RateLimitOptions } from "@/lib/do/rate-limiter";
 import { getRateLimiter } from "@/lib/do/rate-limiter-binding";
 import { serverEnv } from "@/lib/env/server.env";
@@ -57,7 +59,7 @@ export const turnstileErrors = {
   },
 } as const;
 
-export const publicProcedure = os.$context<ApiContext>().errors({
+const accessErrors = {
   UNAUTHORIZED: {
     status: 401,
     message: "Authentication is required.",
@@ -66,7 +68,9 @@ export const publicProcedure = os.$context<ApiContext>().errors({
     status: 403,
     message: "Permission denied.",
   },
-});
+} as const;
+
+export const publicProcedure = os.$context<ApiContext>().errors(accessErrors);
 
 export const optionalSessionProcedure = publicProcedure.use(
   async ({ context, next }) => {
@@ -105,6 +109,32 @@ export const adminProcedure = authProcedure.use(
     return next();
   },
 );
+
+const refuseApiKey = os
+  .$context<ApiContext>()
+  .errors({ FORBIDDEN: accessErrors.FORBIDDEN })
+  .middleware(async ({ context, errors, next }) => {
+    if (sendsApiKey(context.headers)) {
+      throw errors.FORBIDDEN({
+        message: "Only an Admin's browser session can do this, not an API Key.",
+      });
+    }
+    return next();
+  });
+
+/**
+ * An Admin operation of the admin UI that an API Key cannot call, such as
+ * generating a Pairing Code: a key must not mint keys. The API document leaves
+ * these operations out (`isBrowserSessionOnly`), since an agent cannot use them.
+ */
+export const browserAdminProcedure = adminProcedure.use(refuseApiKey);
+
+export function isBrowserSessionOnly(procedure: AnyContractProcedure) {
+  const { middlewares } = procedure["~orpc"] as {
+    middlewares?: ReadonlyArray<unknown>;
+  };
+  return middlewares?.includes(refuseApiKey) ?? false;
+}
 
 // A signed-in User gets a bucket of their own; the IP bucket behind it only
 // caps what one network can do through many accounts.

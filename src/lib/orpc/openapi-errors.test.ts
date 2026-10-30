@@ -235,6 +235,15 @@ describe("rate limit and Turnstile errors", () => {
     );
   });
 
+  it("is declared by the Pairing Code exchange, with its one not found", () => {
+    expect(declaredErrors("post", "/pairing")).toEqual([
+      "401 UNAUTHORIZED",
+      "403 FORBIDDEN",
+      "404 PAIRING_CODE_NOT_FOUND",
+      "429 RATE_LIMITED",
+    ]);
+  });
+
   it("is declared by no operation that does not run the middleware", () => {
     expect(declaredErrors("get", "/posts")).not.toContain("429 RATE_LIMITED");
     expect(declaredErrors("get", "/me/comments")).not.toContain(
