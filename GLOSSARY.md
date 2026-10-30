@@ -146,7 +146,7 @@ _Avoid_: New commit, fork update
 - An **Admin** assigns a **Category** by choosing an existing one while editing a **Post**. Editing a **Post** does not create a **Category**.
 - **Categories** and **Tags** are managed on one Admin page.
 - Deleting a **Category** is allowed. **Posts** that had it become uncategorized. Deleting a **Tag** removes its Post associations.
-- A **Category** is identified by a unique name.
+- A **Category** is identified by a unique name. **Category** names, **Tag** names and **Post** slugs are unique ignoring case and Unicode compatibility forms (fullwidth letters, no-break spaces), and are stored as written. Names, slugs and titles hold no control or format characters.
 - The public site can list **Published Posts** by **Category**, and can apply a **Category** filter and a **Tag** filter together.
 - A **Post** can have zero or more **Post Revisions**.
 - A **Post** can have zero or more **Comment Threads**.
@@ -165,6 +165,7 @@ _Avoid_: New commit, fork update
 - Editing or autosaving a **Post** does not update the **Public Content Snapshot**.
 - Unpublishing a **Published Post** discards its **Public Content Snapshot**, making it a **Draft Post**, and removes it from public listing, detail, and search.
 - Restoring a **Post Revision** first saves the current editable **Post** as a **Post Revision**, then restores the editable content, **Category** and **Tags**. It does not replace or discard the **Public Content Snapshot**.
+- Discarding **Unpublished Changes** first saves the current editable **Post** as a **Post Revision**, then writes the draft from the **Public Content Snapshot** and the **Public Usage** of its **Category** and **Tags**. It reads no **Post Revision**, so deleting **Post Revisions** never stops it.
 - Publishing with a new slug replaces the **Public Content Snapshot** slug. The previous public slug does not remain reachable.
 - A **Published Post** has a publication date for display and listing order. The date is a past or current server date, never a future date. First publication without a date uses server time.
 - A **Post Revision** belongs to exactly one **Post**.
@@ -180,6 +181,7 @@ _Avoid_: New commit, fork update
 - Public listings and counts of **Comments** exclude deleted **Comments**, except that a deleted root remains visible as a placeholder when its thread still has published replies, and a deleted reply remains visible as a placeholder in a visible thread.
 - A **Reply** notifies the author of the targeted **Comment**, not the rest of the **Comment Thread**. A new root **Comment** by a non-**Admin** notifies the **Admin**.
 - A **Reply** belongs to exactly one **Comment Thread**.
+- A **Post** body can show **Media** by its path only while that **Media** exists; an image a draft already showed before its **Media** was gone may stay.
 - A **Media** item cannot be deleted from the media library while it appears in the editable **Post**, in a **Public Content Snapshot** or in a **Post Revision**, so restoring a **Post Revision** never brings back a deleted image. Deleting the **Post Revision** releases it.
 - A user-submitted **Friend Link** belongs to its submitting **User**; review notifications use that **User**’s account email. An admin-created **Friend Link** may have no submitting **User**.
 - A rejected **Friend Link** can be revised and resubmitted by its submitting **User**.

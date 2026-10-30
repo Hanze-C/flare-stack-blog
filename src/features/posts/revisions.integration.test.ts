@@ -6,6 +6,7 @@ import {
   seedAdminApiKey,
 } from "tests/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as MediaRepo from "@/features/media/data/media.data";
 import { fetchVideoMeta } from "@/features/posts/services/video-meta.service";
 import { PostsTable } from "@/lib/db/schema";
 import { createApiContext } from "@/lib/orpc/create-context";
@@ -44,7 +45,15 @@ vi.mock("@/features/posts/data/post-revisions.data", async (importOriginal) => {
   };
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  // The bodies show this Media by its path, which must exist.
+  await MediaRepo.insertMedia(createAdminTestContext().db, {
+    key: "cover.png",
+    url: "/images/cover.png",
+    fileName: "cover.png",
+    mimeType: "image/png",
+    sizeInBytes: 10,
+  });
   beforeRestoreWrite.run = null;
   vi.mocked(fetchVideoMeta).mockReset();
   vi.mocked(fetchVideoMeta).mockResolvedValue({

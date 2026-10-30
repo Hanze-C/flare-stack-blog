@@ -441,7 +441,7 @@
   "editor_title_placeholder": "在此输入文章标题...",
   "editor_meta_link": "链接",
   "editor_meta_slug_invalid": "链接不能为空，也不能包含空格或 / ? # % \\ 等字符，改好之前不会保存",
-  "editor_meta_slug_taken": "其他文章已在使用这个链接（不区分大小写），换一个才能保存",
+  "editor_meta_slug_taken": "其他文章已在使用这个链接（不区分大小写与全角半角），换一个才能保存",
   "editor_meta_date": "日期",
   "editor_meta_tags": "标签",
   "editor_meta_category": "分类",
@@ -490,6 +490,7 @@
   "editor_history_error_post_not_found": "文章已经不存在。",
   "editor_history_error_revision_not_found": "该版本已不存在。",
   "editor_history_error_invalid_snapshot": "这份版本无法恢复。",
+  "editor_history_error_slug_taken": "其他文章现在使用了这份版本的链接，无法恢复。请先修改那篇文章的链接。",
   "editor_history_error_edit_conflict": "这篇文章在你打开历史记录后又被保存过。再次恢复会替换那次保存，被替换的内容会先存为一个版本。",
   "editor_leave_title": "离开页面？",
   "editor_leave_message": "您有正在保存的更改。离开可能会导致部分数据丢失。",
@@ -504,9 +505,9 @@
   "editor_action_image_uploading": "图片还在上传，等完成后再发布。",
   "editor_action_unpublish_failed": "取消发布未完成，请再试一次。",
   "editor_action_discard_failed": "放弃修改未完成，请再试一次。",
+  "editor_action_discard_slug_taken": "其他文章现在使用了已发布的链接，无法放弃修改。请先修改那篇文章的链接。",
   "editor_action_discard_no_changes": "草稿和已发布的版本已经一致，没有可放弃的修改。",
   "editor_action_discard_not_published": "这篇文章还没有发布，没有可以回到的已发布版本。",
-  "editor_action_discard_no_revision": "找不到已发布版本的记录，无法放弃修改。",
   "editor_action_slug_set": "URL slug 已设置",
   "editor_action_slug_set_desc": [
     {

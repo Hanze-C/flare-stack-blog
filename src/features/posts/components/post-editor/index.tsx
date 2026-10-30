@@ -15,6 +15,7 @@ import { postContentOf } from "@/features/posts/editor/extensions/image-placehol
 import { postRevisionListQuery } from "@/features/posts/queries";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
 import { POST_TITLE_MAX_LENGTH } from "@/features/posts/utils/post-fields";
+import { withoutControlCharacters } from "@/lib/unicode-text";
 import { m } from "@/paraglide/messages";
 import { useDeletePost } from "../post-manager/hooks";
 import { postStateOf, publishActionLabel } from "../post-state";
@@ -373,7 +374,11 @@ function TextareaTitle({
   return (
     <textarea
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      // A title holds no line break or hidden character (the API refuses
+      // them), so Enter and pasted ones do not stop it from saving.
+      onChange={(e) =>
+        onChange(withoutControlCharacters(e.target.value, { emoji: true }))
+      }
       rows={1}
       maxLength={POST_TITLE_MAX_LENGTH}
       placeholder={m.editor_title_placeholder()}

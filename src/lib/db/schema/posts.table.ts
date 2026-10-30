@@ -43,11 +43,22 @@ export function newSaveToken() {
   return crypto.randomUUID();
 }
 
-export const CategoriesTable = sqliteTable("categories", {
-  id,
-  name: text().notNull().unique(),
-  createdAt,
-});
+// A name's or slug's key, uniqueKeyOf (src/lib/unicode-text), is what
+// uniqueness compares: case and NFKC forms aside. Each write of the value
+// writes it. Null means not computed yet (migration 0029); the app computes it
+// before its next uniqueness check. A key ending in U+0001 and the row's id is
+// parked: the row was a duplicate before keys existed and keeps its value,
+// which no other row can take (unique-keys.data.ts).
+export const CategoriesTable = sqliteTable(
+  "categories",
+  {
+    id,
+    name: text().notNull().unique(),
+    nameKey: text("name_key"),
+    createdAt,
+  },
+  (table) => [uniqueIndex("categories_name_key_unique").on(table.nameKey)],
+);
 
 export const PostsTable = sqliteTable(
   "posts",
@@ -56,12 +67,14 @@ export const PostsTable = sqliteTable(
     title: text().notNull(),
     summary: text(),
     slug: text().notNull().unique(),
+    slugKey: text("slug_key"),
 
     contentJson: text("content_json", { mode: "json" }).$type<JSONContent>(),
     publicSnapshotJson: text("public_snapshot_json", {
       mode: "json",
     }).$type<PublicPostSnapshot>(),
     publicSlug: text("public_slug"),
+    publicSlugKey: text("public_slug_key"),
     status: text("status", { enum: POST_STATUSES }).notNull().default("draft"),
     publishedAt: integer("published_at", { mode: "timestamp" }),
     pinnedAt: integer("pinned_at", { mode: "timestamp" }),
@@ -95,6 +108,8 @@ export const PostsTable = sqliteTable(
   },
   (table) => [
     uniqueIndex("posts_public_slug_unique").on(table.publicSlug),
+    uniqueIndex("posts_slug_key_unique").on(table.slugKey),
+    uniqueIndex("posts_public_slug_key_unique").on(table.publicSlugKey),
     index("published_at_idx").on(table.publishedAt, table.status),
     index("created_at_idx").on(table.createdAt),
     index("posts_cover_media_id_idx").on(table.coverMediaId),
@@ -103,11 +118,16 @@ export const PostsTable = sqliteTable(
   ],
 );
 
-export const TagsTable = sqliteTable("tags", {
-  id,
-  name: text().notNull().unique(),
-  createdAt,
-});
+export const TagsTable = sqliteTable(
+  "tags",
+  {
+    id,
+    name: text().notNull().unique(),
+    nameKey: text("name_key"),
+    createdAt,
+  },
+  (table) => [uniqueIndex("tags_name_key_unique").on(table.nameKey)],
+);
 
 export const PostTagsTable = sqliteTable(
   "post_tags",
@@ -174,7 +194,11 @@ export const postTagsRelations = relations(PostTagsTable, ({ one }) => ({
 }));
 
 // ==================== types ====================
-export type Tag = typeof TagsTable.$inferSelect;
-export type Category = typeof CategoriesTable.$inferSelect;
-export type Post = typeof PostsTable.$inferSelect;
+// Unique keys are the database's to compare by, not part of what is read.
+export type Tag = Omit<typeof TagsTable.$inferSelect, "nameKey">;
+export type Category = Omit<typeof CategoriesTable.$inferSelect, "nameKey">;
+export type Post = Omit<
+  typeof PostsTable.$inferSelect,
+  "slugKey" | "publicSlugKey"
+>;
 export type PostStatus = (typeof POST_STATUSES)[number];

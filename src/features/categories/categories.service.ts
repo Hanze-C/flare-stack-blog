@@ -9,6 +9,7 @@ import type {
   GetCategoriesInput,
   UpdateCategoryInput,
 } from "@/features/categories/categories.schema";
+import { CATEGORY_NAME, isUniqueViolation } from "@/lib/db/unique-keys";
 import { err, ok } from "@/lib/errors";
 
 async function invalidateCategoryRelatedCache(
@@ -70,10 +71,17 @@ export const createCategory = async (
     return err({ reason: "CATEGORY_NAME_ALREADY_EXISTS" });
   }
 
-  const category = await CategoryRepo.insertCategory(context.db, {
-    name: data.name,
-  });
-  return ok(category);
+  try {
+    return ok(
+      await CategoryRepo.insertCategory(context.db, { name: data.name }),
+    );
+  } catch (error) {
+    // A concurrent create or rename took the name after the check.
+    if (isUniqueViolation(error, CATEGORY_NAME)) {
+      return err({ reason: "CATEGORY_NAME_ALREADY_EXISTS" });
+    }
+    throw error;
+  }
 };
 
 export async function updateCategory(
@@ -98,11 +106,20 @@ export async function updateCategory(
     context.db,
     data.id,
   );
-  const category = await CategoryRepo.updateCategory(
-    context.db,
-    data.id,
-    data.data,
-  );
+  let category;
+  try {
+    category = await CategoryRepo.updateCategory(
+      context.db,
+      data.id,
+      data.data,
+    );
+  } catch (error) {
+    // A concurrent create or rename took the name after the check.
+    if (isUniqueViolation(error, CATEGORY_NAME)) {
+      return err({ reason: "CATEGORY_NAME_ALREADY_EXISTS" });
+    }
+    throw error;
+  }
 
   // The new name is public at once, so search follows (not left to a rebuild).
   if (data.data.name && data.data.name !== existing.name) {

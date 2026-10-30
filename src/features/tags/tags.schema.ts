@@ -2,13 +2,14 @@ import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { TagsTable } from "@/lib/db/schema";
 import { atLeastOneField } from "@/lib/orpc/changes";
+import { hasControlCharacter } from "@/lib/unicode-text";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 
 export const TagSelectSchema = createSelectSchema(TagsTable, {
   createdAt: coercedDate,
-});
+}).omit({ nameKey: true });
 
 export const TagWithCountSchema = TagSelectSchema.extend({
   postCount: z.number(),
@@ -51,8 +52,12 @@ const TagNameInputSchema = z
   .trim()
   .min(1)
   .max(50)
+  .refine((name) => !hasControlCharacter(name, { emoji: true }), {
+    message:
+      "A name cannot contain control or format characters (Unicode Cc or Cf).",
+  })
   .describe(
-    "Name, trimmed: not empty, at most 50 characters. No other tag may have it, ignoring case: that answers 409 TAG_NAME_ALREADY_EXISTS.",
+    "Name, trimmed: not empty, at most 50 characters. It cannot contain control or format characters (Unicode Cc or Cf, such as a tab, a zero width space or a bidirectional control); a zero width joiner inside an emoji is fine. No other tag may have it, compared ignoring case and Unicode compatibility forms (NFKC, so fullwidth ＡＢＣ equals abc): that answers 409 TAG_NAME_ALREADY_EXISTS. It is stored as written.",
   );
 
 export const CreateTagInputSchema = z.strictObject({

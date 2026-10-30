@@ -16,7 +16,9 @@ import type {
   RestorePostRevisionInput,
 } from "@/features/posts/schema/post-revisions.schema";
 import { parseRevisionSnapshot } from "@/features/posts/schema/post-revisions.schema";
+import { removeCodeBlockHighlighting } from "@/features/posts/utils/apply-code-block-highlighting";
 import { calculatePostHash } from "@/features/posts/utils/sync";
+import { isUniqueViolation, POST_SLUG } from "@/lib/db/unique-keys";
 import { ms } from "@/lib/duration";
 import { err, ok } from "@/lib/errors";
 
@@ -54,6 +56,21 @@ async function hashSnapshot(snapshot: PostRevisionSnapshot) {
     coverMediaId: snapshot.coverMediaId ?? null,
     categoryId: snapshot.categoryId ?? null,
   });
+}
+
+/**
+ * Whether writing `slug` into the draft of `post` would take another Post's
+ * slug or live page. The slug the draft already has stays its own.
+ */
+async function slugTakenByAnotherPost(
+  db: DB,
+  post: { id: number; slug: string },
+  slug: string,
+) {
+  return (
+    slug !== post.slug &&
+    (await PostRepo.slugExists(db, slug, { excludeId: post.id }))
+  );
 }
 
 /** A conditional restore wrote nothing: tell a missing Post from a newer save. */
@@ -209,18 +226,30 @@ export async function restorePostRevision(
     });
   }
 
-  const restoredPost = await PostRevisionRepo.restorePostSnapshot(context.db, {
-    postId: data.postId,
-    snapshot: targetSnapshot,
-    backupRevision: {
-      reason: "restore_backup",
-      snapshotJson: currentSnapshot,
-      snapshotHash: currentHash,
-      restoredFromRevisionId: revision.id,
-    },
-    // Without a stated token, still write only the draft that was backed up.
-    saveToken: data.saveToken ?? post.saveToken,
-  });
+  if (await slugTakenByAnotherPost(context.db, post, targetSnapshot.slug)) {
+    return err({ reason: "SLUG_TAKEN" });
+  }
+
+  let restoredPost;
+  try {
+    restoredPost = await PostRevisionRepo.restorePostSnapshot(context.db, {
+      postId: data.postId,
+      snapshot: targetSnapshot,
+      backupRevision: {
+        reason: "restore_backup",
+        snapshotJson: currentSnapshot,
+        snapshotHash: currentHash,
+        restoredFromRevisionId: revision.id,
+      },
+      // Without a stated token, still write only the draft that was backed up.
+      saveToken: data.saveToken ?? post.saveToken,
+    });
+  } catch (error) {
+    // Another Post took the slug after the check.
+    if (isUniqueViolation(error, POST_SLUG))
+      return err({ reason: "SLUG_TAKEN" });
+    throw error;
+  }
 
   if (!restoredPost) {
     return editConflictOrNotFound(context.db, post.id);
@@ -238,12 +267,13 @@ export async function restorePostRevision(
 }
 
 /**
- * Makes the draft of a Published Post match what was published again: the
- * content of the latest publish revision and the Category and Tags the public
- * site shows are written into it, after the draft as it is now is saved as a
- * revision. The public site is not
- * touched. With `saveToken`, a draft saved since that token was read is left
- * as it is and answers EDIT_CONFLICT.
+ * Makes the draft of a Published Post match what was published again, from
+ * the Public Content Snapshot itself: its title, summary, slug, publication
+ * date, cover and body (without the code highlighting publishing added), and
+ * the Category and Tags the public site shows. The draft as it is now is
+ * saved as a revision first. No Post Revision is read, so deleting them never
+ * stops a discard. The public site is not touched. With `saveToken`, a draft
+ * saved since that token was read is left as it is and answers EDIT_CONFLICT.
  */
 export async function discardUnpublishedChanges(
   context: DbContext,
@@ -256,7 +286,8 @@ export async function discardUnpublishedChanges(
   if (data.saveToken !== undefined && data.saveToken !== found.saveToken) {
     return err({ reason: "EDIT_CONFLICT", saveToken: found.saveToken });
   }
-  if (found.status !== "published") {
+  const snapshot = found.publicSnapshotJson;
+  if (found.status !== "published" || !snapshot) {
     return err({ reason: "POST_NOT_PUBLISHED" });
   }
 
@@ -270,43 +301,32 @@ export async function discardUnpublishedChanges(
     return err({ reason: "NO_UNPUBLISHED_CHANGES" });
   }
 
-  const [revision] = await PostRevisionRepo.findLatestPublishRevisions(
-    context.db,
-    [post.id],
-  );
-  const parsedSnapshot = parseRevisionSnapshot(revision?.snapshotJson);
-  if (!revision || !parsedSnapshot) {
-    return err({ reason: "POST_REVISION_NOT_FOUND" });
-  }
-  // Category and Tags are the public ones, not the revision's: they are what
-  // the public site shows, and may have changed since the revision was taken.
+  // Category and Tags are the public ones: the snapshot's ids are not read
+  // (ADR 0033), and a Category or Tag deleted since is already gone from them.
   const publicIds = UnpublishedChangesService.publicIdsOf(
     (
       await PublicAssignmentRepo.findPublicAssignments(context.db, [post.id])
     ).get(post.id),
   );
-  // Writing them must leave the draft as it was published. If the publish did
-  // not leave a revision of what it published, this one is not it.
-  const publishedFingerprint =
-    await UnpublishedChangesService.fingerprintOfPublished(
-      parsedSnapshot,
-      publicIds,
-    );
-  if (publishedFingerprint !== post.publishedFingerprint) {
-    return err({ reason: "POST_REVISION_NOT_FOUND" });
-  }
-
-  const targetSnapshot = {
-    ...parsedSnapshot,
+  const coverMediaId = snapshot.cover?.mediaId ?? null;
+  const targetSnapshot: PostRevisionSnapshot = {
+    title: snapshot.title,
+    summary: snapshot.summary,
+    slug: snapshot.slug,
+    status: "published",
+    publishedAt: snapshot.publishedAt,
+    contentJson: removeCodeBlockHighlighting(snapshot.contentJson),
     categoryId: publicIds.categoryId,
     tagIds: publicIds.tagIds,
-    coverMediaId: parsedSnapshot.coverMediaId ?? null,
+    coverMediaId:
+      coverMediaId != null &&
+      (await MediaRepo.findMediaById(context.db, coverMediaId))
+        ? coverMediaId
+        : null,
   };
-  if (
-    targetSnapshot.coverMediaId != null &&
-    !(await MediaRepo.findMediaById(context.db, targetSnapshot.coverMediaId))
-  ) {
-    targetSnapshot.coverMediaId = null;
+
+  if (await slugTakenByAnotherPost(context.db, post, targetSnapshot.slug)) {
+    return err({ reason: "SLUG_TAKEN" });
   }
 
   const currentSnapshot = toRevisionSnapshot(post);
@@ -317,11 +337,24 @@ export async function discardUnpublishedChanges(
       reason: "restore_backup",
       snapshotJson: currentSnapshot,
       snapshotHash: await hashSnapshot(currentSnapshot),
-      restoredFromRevisionId: revision.id,
     },
+    // The draft is now what was published, so its fingerprint is the
+    // published one. It equals the stored one unless the body came back from
+    // the snapshot in a form that hashes differently from the draft it was
+    // built from; either way discarding leaves no Unpublished Changes.
+    publishedFingerprint:
+      await UnpublishedChangesService.fingerprintOfPublished(
+        targetSnapshot,
+        publicIds,
+      ),
     // Without a stated token, still write only the draft that was backed up.
     saveToken: data.saveToken ?? post.saveToken,
+  }).catch((error: unknown) => {
+    // Another Post took the slug after the check.
+    if (isUniqueViolation(error, POST_SLUG)) return "SLUG_TAKEN" as const;
+    throw error;
   });
+  if (discarded === "SLUG_TAKEN") return err({ reason: "SLUG_TAKEN" });
   if (!discarded) {
     return editConflictOrNotFound(context.db, post.id);
   }

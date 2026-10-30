@@ -1,6 +1,11 @@
 import { env } from "cloudflare:workers";
-import { createMockExecutionCtx, seedAdminApiKey } from "tests/test-utils";
+import {
+  createMockExecutionCtx,
+  createTestContext,
+  seedAdminApiKey,
+} from "tests/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as MediaRepo from "@/features/media/data/media.data";
 import { fetchVideoMeta } from "@/features/posts/services/video-meta.service";
 import { createApiContext } from "@/lib/orpc/create-context";
 import { openAPIHandler } from "@/lib/orpc/openapi-handler";
@@ -87,6 +92,14 @@ describe("Post content as Markdown over the Admin API", () => {
       "```mermaid\nflowchart LR\n  A --> B\n```",
       "![cover](/images/cover.png)",
     ].join("\n\n");
+    // Media paths must name existing Media.
+    await MediaRepo.insertMedia(createTestContext().db, {
+      key: "cover.png",
+      url: "/images/cover.png",
+      fileName: "cover.png",
+      mimeType: "image/png",
+      sizeInBytes: 10,
+    });
 
     const id = await createPost(apiKey, { contentMarkdown: markdown });
 

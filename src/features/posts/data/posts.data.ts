@@ -39,6 +39,14 @@ import { isPostBodyEmpty } from "@/features/posts/utils/is-post-body-empty";
 import type { PostStatus, PublicPostSnapshot } from "@/lib/db/schema";
 import { startsWithText } from "@/lib/db/text-match";
 import { newSaveToken, PostsTable } from "@/lib/db/schema";
+import { mediaReferenceGuards } from "@/features/posts/data/post-media.data";
+import {
+  keyForWrite,
+  POST_PUBLIC_SLUG,
+  POST_SLUG,
+  settleUniqueKeys,
+} from "@/lib/db/unique-keys";
+import { uniqueKeyOf } from "@/lib/unicode-text";
 
 const DEFAULT_PAGE_SIZE = 12;
 const DEFAULT_SITEMAP_BATCH_SIZE = 500;
@@ -80,8 +88,31 @@ export type SitemapPostRow = {
   lastPublishedAt: Date | null;
 };
 
-export async function insertPost(db: DB, data: typeof PostsTable.$inferInsert) {
-  const [post] = await db.insert(PostsTable).values(data).returning();
+/**
+ * Media a write puts into the draft, recorded in the same batch so that it
+ * cannot be deleted meanwhile; see `mediaReferenceGuards`.
+ */
+export type MediaReferences = { keys: Array<string>; mediaIds: Array<number> };
+
+export async function insertPost(
+  db: DB,
+  data: Omit<
+    typeof PostsTable.$inferInsert,
+    "slugKey" | "publicSlugKey" | "saveToken"
+  >,
+  options: { media?: MediaReferences } = {},
+) {
+  const saveToken = newSaveToken();
+  const insert = db
+    .insert(PostsTable)
+    .values({ ...data, slugKey: uniqueKeyOf(data.slug), saveToken })
+    .returning();
+  const guards = options.media
+    ? mediaReferenceGuards(db, { saveToken }, options.media)
+    : [];
+  const [post] = guards.length
+    ? (await db.batch([insert, ...guards]))[0]
+    : await insert;
   return post;
 }
 
@@ -371,13 +402,14 @@ export async function getPublishedPostsForSitemapBatch(
 export async function findPostById(db: DB, id: number) {
   const post = await db.query.PostsTable.findFirst({
     where: eq(PostsTable.id, id),
+    columns: { slugKey: false, publicSlugKey: false },
     with: {
       postTags: {
         with: {
-          tag: true,
+          tag: { columns: { nameKey: false } },
         },
       },
-      category: true,
+      category: { columns: { nameKey: false } },
     },
   });
 
@@ -464,7 +496,7 @@ export async function findPostBySlug(
     with: {
       postTags: {
         with: {
-          tag: true,
+          tag: { columns: { nameKey: false } },
         },
       },
     },
@@ -528,18 +560,32 @@ export async function updatePost(
       | "saveToken"
       | "draftFingerprint"
       | "publishedFingerprint"
+      | "slugKey"
+      | "publicSlugKey"
     >
   >,
-  options: { saveToken?: string } = {},
+  options: { saveToken?: string; media?: MediaReferences } = {},
 ) {
-  const [written] = await db
+  // Set here rather than by $onUpdate so the media guards can find the row.
+  const saveToken = newSaveToken();
+  const update = db
     .update(PostsTable)
     .set({
       ...data,
+      ...(data.slug !== undefined && {
+        slugKey: keyForWrite(PostsTable.slug, PostsTable.slugKey, data.slug),
+      }),
       ...(changesFingerprintedFields(data) && { draftFingerprint: null }),
+      saveToken,
     })
     .where(postToWrite(id, options.saveToken))
     .returning({ saveToken: PostsTable.saveToken });
+  const guards = options.media
+    ? mediaReferenceGuards(db, { postId: id, saveToken }, options.media)
+    : [];
+  const [written] = guards.length
+    ? (await db.batch([update, ...guards]))[0]
+    : await update;
   if (!written) return null;
   return await findWrittenPost(db, id, written.saveToken);
 }
@@ -622,6 +668,14 @@ export async function findPostSaveToken(db: DB, id: number) {
   return post?.saveToken ?? null;
 }
 
+export async function findPostContentJson(db: DB, id: number) {
+  const [post] = await db
+    .select({ contentJson: PostsTable.contentJson })
+    .from(PostsTable)
+    .where(eq(PostsTable.id, id));
+  return post?.contentJson ?? null;
+}
+
 export async function findPostSlug(db: DB, id: number) {
   const [post] = await db
     .select({ slug: PostsTable.slug })
@@ -662,6 +716,11 @@ export async function writePublicSnapshot(
       ...draft,
       publicSnapshotJson: snapshot,
       publicSlug: snapshot.slug,
+      publicSlugKey: keyForWrite(
+        PostsTable.publicSlug,
+        PostsTable.publicSlugKey,
+        snapshot.slug,
+      ),
       status: "published",
       ...(options.fingerprint && {
         publishedFingerprint: options.fingerprint.value,
@@ -715,6 +774,7 @@ export async function clearPublicSnapshot(db: DB, id: number) {
     .set({
       publicSnapshotJson: null,
       publicSlug: null,
+      publicSlugKey: null,
       publishedFingerprint: null,
       status: "draft",
       updatedAt: sql`${PostsTable.updatedAt}`,
@@ -727,21 +787,17 @@ export async function clearPublicSnapshot(db: DB, id: number) {
   return await findWrittenPost(db, id, written.saveToken);
 }
 
-/** `column` equals `slug`, ignoring the case of ASCII letters. */
-function sameSlug(
-  column: typeof PostsTable.slug | typeof PostsTable.publicSlug,
-  slug: string,
-) {
-  return sql`lower(${column}) = lower(${slug})`;
-}
-
-/** Whether another Post's live page uses `slug`, ignoring case. */
+/**
+ * Whether another Post's live page uses `slug`, compared by its unique key:
+ * ignoring case and NFKC forms.
+ */
 export async function publicSlugExists(
   db: DB,
   slug: string,
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
-  const conditions = [sameSlug(PostsTable.publicSlug, slug)];
+  await settleUniqueKeys(db, POST_PUBLIC_SLUG);
+  const conditions = [eq(PostsTable.publicSlugKey, uniqueKeyOf(slug))];
   if (options.excludeId) {
     conditions.push(ne(PostsTable.id, options.excludeId));
   }
@@ -758,8 +814,10 @@ export async function deletePost(db: DB, id: number) {
 }
 
 /**
- * Whether another Post uses `slug`, ignoring case, as its slug or as the slug
- * of its live page, which publishing that Post would keep or take.
+ * Whether another Post uses `slug` as its slug or as the slug of its live
+ * page, which publishing that Post would keep or take, compared by the unique
+ * key: ignoring case and NFKC forms. The database refuses a duplicate slug on
+ * its own; a slug equal to another Post's live page only this check refuses.
  * @param excludeId - Optional post ID to exclude (for editing existing posts)
  */
 export async function slugExists(
@@ -768,8 +826,11 @@ export async function slugExists(
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
   const { excludeId } = options;
+  await settleUniqueKeys(db, POST_SLUG);
+  await settleUniqueKeys(db, POST_PUBLIC_SLUG);
+  const key = uniqueKeyOf(slug);
   const conditions = [
-    or(sameSlug(PostsTable.slug, slug), sameSlug(PostsTable.publicSlug, slug)),
+    or(eq(PostsTable.slugKey, key), eq(PostsTable.publicSlugKey, key)),
   ];
   if (excludeId) {
     conditions.push(ne(PostsTable.id, excludeId));

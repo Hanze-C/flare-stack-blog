@@ -1,3 +1,4 @@
+import { ORPCError } from "@orpc/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -112,7 +113,9 @@ export function usePostHistory({
         return;
       }
       toast.error(m.editor_history_toast_restore_failed(), {
-        description: getRestoreErrorMessage(error.message),
+        description: getRestoreErrorMessage(
+          error instanceof ORPCError ? error.code : error.message,
+        ),
       });
     },
   });

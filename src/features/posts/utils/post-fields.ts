@@ -1,3 +1,5 @@
+import { hasControlCharacter } from "@/lib/unicode-text";
+
 /**
  * Rules for a Post's title and slug, shared by the API schemas and the admin
  * editor, which leaves a value out of its autosave until it follows them.
@@ -12,18 +14,32 @@ export const POST_SLUG_MAX_LENGTH = 200;
  */
 const GENERATED_SLUG_MAX_LENGTH = 180;
 
-// URL delimiters (/ ? # %), the backslash, whitespace and control characters.
-const SLUG_FORBIDDEN_CHARACTER = /[/?#%\\\s\p{Cc}]/u;
+// URL delimiters (/ ? # %), the backslash, whitespace (no-break spaces too),
+// and control and format characters (zero width, bidirectional controls).
+const SLUG_FORBIDDEN_CHARACTER = /[/?#%\\\s\p{Cc}\p{Cf}]/u;
 
 /** Whether `slug`, already trimmed, can be a Post's slug. */
 export function isPostSlugFormat(slug: string) {
   return !SLUG_FORBIDDEN_CHARACTER.test(slug) && slug !== "." && slug !== "..";
 }
 
+/**
+ * Whether `title`, already trimmed, has no control or format character
+ * (Unicode Cc or Cf), such as NUL, a tab or a zero width space. A zero width
+ * joiner inside an emoji is part of it.
+ */
+export function isPostTitleFormat(title: string) {
+  return !hasControlCharacter(title, { emoji: true });
+}
+
 /** Whether the API would take `title` as a Post's title. */
 export function isValidPostTitle(title: string) {
   const trimmed = title.trim();
-  return trimmed.length > 0 && trimmed.length <= POST_TITLE_MAX_LENGTH;
+  return (
+    trimmed.length > 0 &&
+    trimmed.length <= POST_TITLE_MAX_LENGTH &&
+    isPostTitleFormat(trimmed)
+  );
 }
 
 /** Whether the API would take `slug` as a Post's slug. */

@@ -71,6 +71,7 @@ describe("errors declared by post operations", () => {
       "/admin/posts/{id}",
       [
         "400 CONTENT_FORMAT_AMBIGUOUS",
+        "400 CONTENT_IMAGE_NOT_FOUND",
         "400 CONTENT_JSON_INVALID",
         "400 CONTENT_LINK_INVALID",
         "400 MARKDOWN_IMAGE_INVALID",
@@ -86,6 +87,7 @@ describe("errors declared by post operations", () => {
       "/admin/posts",
       [
         "400 CONTENT_FORMAT_AMBIGUOUS",
+        "400 CONTENT_IMAGE_NOT_FOUND",
         "400 CONTENT_JSON_INVALID",
         "400 CONTENT_LINK_INVALID",
         "400 MARKDOWN_IMAGE_INVALID",
@@ -96,10 +98,10 @@ describe("errors declared by post operations", () => {
       "/admin/posts/{id}/discard-changes",
       [
         "404 POST_NOT_FOUND",
-        "404 POST_REVISION_NOT_FOUND",
         "409 EDIT_CONFLICT",
         "409 NO_UNPUBLISHED_CHANGES",
         "409 POST_NOT_PUBLISHED",
+        "409 SLUG_TAKEN",
       ],
     ],
     [
@@ -115,6 +117,7 @@ describe("errors declared by post operations", () => {
         "404 POST_NOT_FOUND",
         "404 POST_REVISION_NOT_FOUND",
         "409 EDIT_CONFLICT",
+        "409 SLUG_TAKEN",
       ],
     ],
     ["delete", "/admin/posts/{postId}/revisions", ["404 POST_NOT_FOUND"]],

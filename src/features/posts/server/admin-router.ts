@@ -61,13 +61,23 @@ const postErrors = {
   SLUG_TAKEN: {
     status: 409,
     message:
-      "Another post already uses this slug, or a case variant of it, as its slug or live page.",
+      "Another post already uses this slug, or a variant of it differing only in case or Unicode compatibility form (NFKC), as its slug or live page.",
   },
   MEDIA_NOT_FOUND: { status: 404, message: "Media not found." },
   CATEGORY_NOT_FOUND: { status: 404, message: "Category not found." },
   CONTENT_FORMAT_AMBIGUOUS: {
     status: 400,
     message: "Send contentJson or contentMarkdown, not both.",
+  },
+  CONTENT_IMAGE_NOT_FOUND: {
+    status: 400,
+    message:
+      "The body shows an image by a Media path (/images/<key>) that no Media has.",
+    data: z.object({
+      images: z
+        .array(z.string())
+        .describe("The image addresses whose Media does not exist."),
+    }),
   },
   MARKDOWN_IMAGE_INVALID: {
     status: 400,
@@ -109,6 +119,26 @@ const markdownContentErrors = {
   CONTENT_JSON_INVALID: postErrors.CONTENT_JSON_INVALID,
   CONTENT_LINK_INVALID: postErrors.CONTENT_LINK_INVALID,
 } as const;
+
+const contentImageErrors = {
+  CONTENT_IMAGE_NOT_FOUND: postErrors.CONTENT_IMAGE_NOT_FOUND,
+} as const;
+
+function throwContentImageNotFound(
+  images: Array<string>,
+  errors: {
+    CONTENT_IMAGE_NOT_FOUND: (options: {
+      message: string;
+      data: { images: Array<string> };
+    }) => Error;
+  },
+): never {
+  const list = images.map((src) => `"${src}"`).join(", ");
+  throw errors.CONTENT_IMAGE_NOT_FOUND({
+    message: `No Media has ${images.length > 1 ? "the images" : "the image"} ${list}. Upload it as Media first, or remove it from the body.`,
+    data: { images },
+  });
+}
 
 const postNotFoundErrors = {
   POST_NOT_FOUND: postErrors.POST_NOT_FOUND,
@@ -271,13 +301,13 @@ const videoMeta = adminProcedure
   });
 
 const create = adminProcedure
-  .errors(markdownContentErrors)
+  .errors({ ...markdownContentErrors, ...contentImageErrors })
   .route({
     method: "POST",
     path: "/admin/posts",
     summary: "Create a draft post",
     description:
-      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
+      "With data, creates a new draft post carrying that content. An image shown by a Media path (/images/<key>) must be existing Media: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and creates nothing. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
@@ -289,13 +319,17 @@ const create = adminProcedure
       input.data,
     );
     if (data.error) throwMarkdownContentError(data.error, errors);
-    return PostService.createDraft(context, data.data);
+    return unwrapResult(PostService.createDraft(context, data.data), {
+      CONTENT_IMAGE_NOT_FOUND: ({ images }) =>
+        throwContentImageNotFound(images, errors),
+    });
   });
 
 const update = adminProcedure
   .errors({
     ...postNotFoundErrors,
     ...markdownContentErrors,
+    ...contentImageErrors,
     MEDIA_NOT_FOUND: postErrors.MEDIA_NOT_FOUND,
     CATEGORY_NOT_FOUND: postErrors.CATEGORY_NOT_FOUND,
     SLUG_TAKEN: postErrors.SLUG_TAKEN,
@@ -306,7 +340,7 @@ const update = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Update a post",
     description:
-      "Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+      "Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. An image the body shows by a Media path (/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
@@ -331,6 +365,8 @@ const update = adminProcedure
         MEDIA_NOT_FOUND: () => {
           throw errors.MEDIA_NOT_FOUND();
         },
+        CONTENT_IMAGE_NOT_FOUND: ({ images }) =>
+          throwContentImageNotFound(images, errors),
         CATEGORY_NOT_FOUND: () => {
           throw errors.CATEGORY_NOT_FOUND();
         },
@@ -372,7 +408,7 @@ const publishPost = adminProcedure
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
     description:
-      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case, and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
+      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)
@@ -421,8 +457,8 @@ const unpublishPost = adminProcedure
 const discardChanges = adminProcedure
   .errors({
     ...postNotFoundErrors,
-    POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND,
     ...discardChangesErrors,
+    SLUG_TAKEN: postErrors.SLUG_TAKEN,
     ...editConflictErrors,
   })
   .route({
@@ -430,7 +466,7 @@ const discardChanges = adminProcedure
     path: "/admin/posts/{id}/discard-changes",
     summary: "Discard a post's unpublished changes",
     description:
-      "Makes the draft of a published post that has unpublished changes (hasUnpublishedChanges) match the published version again: title, summary, slug, body, publication date, cover, category and tags. The draft as it is now is first saved as a Post Revision, so the discarded changes can be restored from the revision list. The published page is not touched. Answers 409 POST_NOT_PUBLISHED for a draft post and 409 NO_UNPUBLISHED_CHANGES when the draft already matches. With saveToken, only the draft that token was read from is discarded; if the post was saved since, it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Returns the post's new saveToken.",
+      "Makes the draft of a published post that has unpublished changes (hasUnpublishedChanges) match the published version again: title, summary, slug, body, publication date, cover, category and tags, read from the published version itself, so it works whatever Post Revisions were deleted. The draft as it is now is first saved as a Post Revision (reason restore_backup), so the discarded changes can be restored from the revision list. The published page is not touched. Answers 409 POST_NOT_PUBLISHED for a draft post, 409 NO_UNPUBLISHED_CHANGES when the draft already matches, and 409 SLUG_TAKEN when another post's draft has taken the published slug meanwhile. With saveToken, only the draft that token was read from is discarded; if the post was saved since, it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Returns the post's new saveToken.",
     tags: ["Admin Posts"],
   })
   .input(DiscardPostChangesInputSchema)
@@ -442,14 +478,14 @@ const discardChanges = adminProcedure
         POST_NOT_FOUND: () => {
           throw errors.POST_NOT_FOUND();
         },
-        POST_REVISION_NOT_FOUND: () => {
-          throw errors.POST_REVISION_NOT_FOUND();
-        },
         POST_NOT_PUBLISHED: () => {
           throw errors.POST_NOT_PUBLISHED();
         },
         NO_UNPUBLISHED_CHANGES: () => {
           throw errors.NO_UNPUBLISHED_CHANGES();
+        },
+        SLUG_TAKEN: () => {
+          throw errors.SLUG_TAKEN();
         },
         EDIT_CONFLICT: ({ saveToken }) => {
           throw errors.EDIT_CONFLICT({ data: { saveToken } });
@@ -550,6 +586,7 @@ const restoreRevision = adminProcedure
     ...postNotFoundErrors,
     POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND,
     POST_REVISION_INVALID_SNAPSHOT: postErrors.POST_REVISION_INVALID_SNAPSHOT,
+    SLUG_TAKEN: postErrors.SLUG_TAKEN,
     ...editConflictErrors,
   })
   .route({
@@ -557,7 +594,7 @@ const restoreRevision = adminProcedure
     path: "/admin/posts/{postId}/revisions/{revisionId}/restore",
     summary: "Restore a post revision",
     description:
-      "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without saveToken it restores over whatever the draft is when the restore starts, and answers 409 EDIT_CONFLICT in the same way if a save lands while it runs, so no save is overwritten without being kept in the revision of the draft.",
+      "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. Answers 409 SLUG_TAKEN, writing nothing, when another post now uses the revision's slug. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without saveToken it restores over whatever the draft is when the restore starts, and answers 409 EDIT_CONFLICT in the same way if a save lands while it runs, so no save is overwritten without being kept in the revision of the draft.",
     tags: ["Admin Posts"],
   })
   .input(RestorePostRevisionInputSchema)
@@ -573,6 +610,9 @@ const restoreRevision = adminProcedure
       POST_REVISION_INVALID_SNAPSHOT: () => {
         throw errors.POST_REVISION_INVALID_SNAPSHOT();
       },
+      SLUG_TAKEN: () => {
+        throw errors.SLUG_TAKEN();
+      },
       EDIT_CONFLICT: ({ saveToken }) => {
         throw errors.EDIT_CONFLICT({ data: { saveToken } });
       },
@@ -586,7 +626,7 @@ const deleteRevisions = adminProcedure
     path: "/admin/posts/{postId}/revisions",
     summary: "Delete post revisions",
     description:
-      "A post that does not exist answers 404 POST_NOT_FOUND. Ids the post has no revision for are left out of deletedIds.",
+      "Permanently deletes the listed Post Revisions of the post; ids that are not its revisions are skipped, and deletedIds lists what was deleted. A post that does not exist answers 404 POST_NOT_FOUND. Revisions are history, not the draft: deleting them leaves the draft, its saveToken and the published page as they are, so it takes no saveToken. It cannot be undone. A restore_backup revision is the only copy of a draft that a restore or a discard replaced, so deleting it loses those changes for good. Media used only by deleted revisions is no longer in use and can then be deleted. Publishing, unpublishing and discard-changes do not need any revision.",
     tags: ["Admin Posts"],
   })
   .input(DeletePostRevisionsInputSchema)

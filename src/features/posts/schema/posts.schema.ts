@@ -14,6 +14,7 @@ import {
 } from "@/lib/orpc/pagination";
 import {
   isPostSlugFormat,
+  isPostTitleFormat,
   POST_SLUG_MAX_LENGTH,
   POST_TITLE_MAX_LENGTH,
 } from "@/features/posts/utils/post-fields";
@@ -89,17 +90,21 @@ const ContentJsonInputSchema = NullableJsonContentSchema.optional().describe(
   `${CONTENT_JSON_RULES} ${LINK_RULES}`,
 );
 
+const TITLE_FORMAT_RULE =
+  "It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, a tab, a zero width space or a bidirectional control); a zero width joiner inside an emoji is fine.";
+
 const PostTitleInputSchema = z
   .string()
   .trim()
   .min(1)
   .max(POST_TITLE_MAX_LENGTH)
+  .refine(isPostTitleFormat, { message: TITLE_FORMAT_RULE })
   .describe(
-    `Title, trimmed. It must not be empty and holds at most ${POST_TITLE_MAX_LENGTH} characters.`,
+    `Title, trimmed. It must not be empty and holds at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE}`,
   );
 
 const SLUG_FORMAT_RULE =
-  "cannot contain / ? # % \\, whitespace or control characters, or be . or ..";
+  "cannot contain / ? # % \\, whitespace (no-break spaces included), or control or format characters (Unicode Cc or Cf, such as a zero width space), or be . or ..";
 
 const PostSlugInputSchema = z
   .string()
@@ -108,7 +113,7 @@ const PostSlugInputSchema = z
   .max(POST_SLUG_MAX_LENGTH)
   .refine(isPostSlugFormat, { message: `A slug ${SLUG_FORMAT_RULE}.` })
   .describe(
-    `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. No other post may use it, ignoring case, as its slug or as the slug of its live page: that answers 409 SLUG_TAKEN.`,
+    `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. No other post may use it as its slug or as the slug of its live page, compared ignoring case and Unicode compatibility forms (NFKC, so fullwidth ＡＢＣ equals abc): that answers 409 SLUG_TAKEN. It is stored as written.`,
   );
 
 const PUBLISHED_AT_RULES = `Publication date, ISO 8601: a date such as 2026-10-01, or a date and time such as 2026-10-01T08:30:00Z or 2026-10-01T08:30:00+08:00. A time with no Z or offset is read as UTC, and a date alone as the start of that day in UTC. A day the calendar does not have (2026-02-30) answers 400, and so does a date before ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} or from ${PUBLICATION_DATE_MAX.toISOString().slice(0, 10)} on. Stored to the whole second. Publishing refuses it with 400 PUBLISHED_AT_IN_FUTURE while it is later than the server's current time. Null lets the next publish set it to that time.`;
@@ -160,6 +165,8 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
   draftFingerprint: true,
   publishedFingerprint: true,
   publicCategoryId: true,
+  slugKey: true,
+  publicSlugKey: true,
 });
 /**
  * Strict on purpose, and narrower than the table.
@@ -194,6 +201,8 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
     saveToken: true,
     draftFingerprint: true,
     publishedFingerprint: true,
+    slugKey: true,
+    publicSlugKey: true,
   })
   .extend({ contentMarkdown: ContentMarkdownInputSchema })
   .strict();
@@ -440,7 +449,7 @@ export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
  */
 const CreatePostDataSchema = z.strictObject({
   title: PostTitleInputSchema.describe(
-    `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. A unique slug is generated from it.`,
+    `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE} A unique slug is generated from it.`,
   ),
   summary: z.string().nullable().optional(),
   contentJson: ContentJsonInputSchema,

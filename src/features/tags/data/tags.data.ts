@@ -8,6 +8,8 @@ import {
   PostTagsTable,
   TagsTable,
 } from "@/lib/db/schema";
+import { keyForWrite, settleUniqueKeys, TAG_NAME } from "@/lib/db/unique-keys";
+import { uniqueKeyOf } from "@/lib/unicode-text";
 
 /**
  * Get all tags, optionally sorted
@@ -85,22 +87,28 @@ export async function findTagById(db: DB, id: number) {
 /**
  * Insert a new tag
  */
-export async function insertTag(db: DB, data: typeof TagsTable.$inferInsert) {
-  const [tag] = await db.insert(TagsTable).values(data).returning();
+export async function insertTag(db: DB, data: { name: string }) {
+  const [tag] = await db
+    .insert(TagsTable)
+    .values({ name: data.name, nameKey: uniqueKeyOf(data.name) })
+    .returning();
   return tag;
 }
 
 /**
  * Update a tag
  */
-export async function updateTag(
-  db: DB,
-  id: number,
-  data: Partial<Omit<typeof TagsTable.$inferInsert, "id" | "createdAt">>,
-) {
+export async function updateTag(db: DB, id: number, data: { name?: string }) {
   const [tag] = await db
     .update(TagsTable)
-    .set(data)
+    .set(
+      data.name === undefined
+        ? {}
+        : {
+            name: data.name,
+            nameKey: keyForWrite(TagsTable.name, TagsTable.nameKey, data.name),
+          },
+    )
     .where(eq(TagsTable.id, id))
     .returning();
   return tag;
@@ -220,7 +228,8 @@ export async function findMissingTagIds(db: DB, ids: Array<number>) {
 }
 
 /**
- * Check if a tag name exists, ignoring the case of ASCII letters
+ * Whether another Tag has `name`, compared by its unique key: ignoring case
+ * and NFKC forms.
  */
 export async function nameExists(
   db: DB,
@@ -228,7 +237,8 @@ export async function nameExists(
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
   const { excludeId } = options;
-  const conditions = [sql`lower(${TagsTable.name}) = lower(${name})`];
+  await settleUniqueKeys(db, TAG_NAME);
+  const conditions = [eq(TagsTable.nameKey, uniqueKeyOf(name))];
   if (excludeId) {
     conditions.push(ne(TagsTable.id, excludeId));
   }

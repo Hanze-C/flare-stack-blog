@@ -448,7 +448,7 @@
   "editor_title_placeholder": "Enter post title here...",
   "editor_meta_link": "Link",
   "editor_meta_slug_invalid": "The link can't be empty or contain spaces or characters like / ? # % \\. It isn't saved until it's fixed.",
-  "editor_meta_slug_taken": "Another post already uses this link (ignoring case). Choose another to save it.",
+  "editor_meta_slug_taken": "Another post already uses this link (ignoring case and full-width letters). Choose another to save it.",
   "editor_meta_date": "Date",
   "editor_meta_tags": "Tags",
   "editor_meta_category": "Category",
@@ -497,6 +497,7 @@
   "editor_history_error_post_not_found": "The post no longer exists.",
   "editor_history_error_revision_not_found": "That version no longer exists.",
   "editor_history_error_invalid_snapshot": "This version cannot be restored.",
+  "editor_history_error_slug_taken": "Another post now uses this version's link, so it cannot be restored. Change that post's link first.",
   "editor_history_error_edit_conflict": "The post was saved since you opened its history. Restoring again replaces that save; what it replaces is kept as a version first.",
   "editor_leave_title": "Leave Page?",
   "editor_leave_message": "You have unsaved changes. Leaving may cause data loss.",
@@ -511,9 +512,9 @@
   "editor_action_image_uploading": "Images are still uploading. Wait until they finish, then publish.",
   "editor_action_unpublish_failed": "Unpublishing did not finish. Try again.",
   "editor_action_discard_failed": "Discarding did not finish. Try again.",
+  "editor_action_discard_slug_taken": "Another post now uses the published link, so the changes cannot be discarded. Change that post's link first.",
   "editor_action_discard_no_changes": "The draft already matches the published version, so there is nothing to discard.",
   "editor_action_discard_not_published": "This post is not published, so there is no published version to go back to.",
-  "editor_action_discard_no_revision": "The published version could not be found, so the changes cannot be discarded.",
   "editor_action_slug_set": "URL Slug Set",
   "editor_action_slug_set_desc": [
     {

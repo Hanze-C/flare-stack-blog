@@ -14,6 +14,7 @@ import type {
   TagWithCount,
   UpdateTagInput,
 } from "@/features/tags/tags.schema";
+import { isUniqueViolation, TAG_NAME } from "@/lib/db/unique-keys";
 import { err, ok } from "@/lib/errors";
 
 /**
@@ -111,11 +112,15 @@ export const createTag = async (context: DbContext, data: CreateTagInput) => {
     return err({ reason: "TAG_NAME_ALREADY_EXISTS" });
   }
 
-  const tag = await TagRepo.insertTag(context.db, {
-    name: data.name,
-  });
-
-  return ok(tag);
+  try {
+    return ok(await TagRepo.insertTag(context.db, { name: data.name }));
+  } catch (error) {
+    // A concurrent create or rename took the name after the check.
+    if (isUniqueViolation(error, TAG_NAME)) {
+      return err({ reason: "TAG_NAME_ALREADY_EXISTS" });
+    }
+    throw error;
+  }
 };
 
 /**
@@ -144,7 +149,16 @@ export async function updateTag(
     data.id,
   );
 
-  const tag = await TagRepo.updateTag(context.db, data.id, data.data);
+  let tag;
+  try {
+    tag = await TagRepo.updateTag(context.db, data.id, data.data);
+  } catch (error) {
+    // A concurrent create or rename took the name after the check.
+    if (isUniqueViolation(error, TAG_NAME)) {
+      return err({ reason: "TAG_NAME_ALREADY_EXISTS" });
+    }
+    throw error;
+  }
 
   // The new name is public at once, so search follows (not left to a rebuild).
   if (data.data.name && data.data.name !== existingTag.name) {

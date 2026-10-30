@@ -67,6 +67,29 @@ export function extractAllImageKeys(doc: JSONContent | null): Array<string> {
   return Array.from(new Set(keys)); // 去重
 }
 
+/**
+ * The images the body shows from the media library by its path,
+ * `/images/{key}` (a full URL is an external image even when its path looks
+ * the same), with the Media key each names. These must exist.
+ */
+export function extractMediaPathImages(
+  doc: JSONContent | null | undefined,
+): Array<{ src: string; key: string }> {
+  const images: Array<{ src: string; key: string }> = [];
+
+  function traverse(node: JSONContent) {
+    const src = node.type === "image" ? node.attrs?.src : undefined;
+    if (typeof src === "string" && src.startsWith("/images/")) {
+      const key = extractImageKey(src);
+      if (key) images.push({ src, key });
+    }
+    node.content?.forEach(traverse);
+  }
+
+  if (doc) traverse(doc);
+  return images;
+}
+
 export function convertToPlainText(doc: JSONContent | null): string {
   if (!doc) return "";
   const textParts: Array<string> = [];

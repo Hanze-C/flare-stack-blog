@@ -8,6 +8,7 @@ import {
   PostsTable,
   PostTagsTable,
 } from "@/lib/db/schema";
+import { keyForWrite } from "@/lib/db/unique-keys";
 import { findPostById } from "./posts.data";
 
 function normalizeTagIds(tagIds: Array<number>) {
@@ -150,6 +151,8 @@ export async function restorePostSnapshot(
       snapshotHash: string;
       restoredFromRevisionId?: number | null;
     };
+    /** Replaces the Post's published fingerprint, when given. */
+    publishedFingerprint?: string;
     saveToken?: string;
   },
 ) {
@@ -165,6 +168,11 @@ export async function restorePostSnapshot(
         title: data.snapshot.title,
         summary: data.snapshot.summary,
         slug: data.snapshot.slug,
+        slugKey: keyForWrite(
+          PostsTable.slug,
+          PostsTable.slugKey,
+          data.snapshot.slug,
+        ),
         publishedAt: data.snapshot.publishedAt
           ? new Date(data.snapshot.publishedAt)
           : null,
@@ -175,6 +183,9 @@ export async function restorePostSnapshot(
             ? null
             : sql`(SELECT id FROM categories WHERE id = ${data.snapshot.categoryId})`,
         draftFingerprint: null,
+        ...(data.publishedFingerprint !== undefined && {
+          publishedFingerprint: data.publishedFingerprint,
+        }),
         saveToken,
       })
       .where(
