@@ -341,6 +341,8 @@ const generateSlug = adminProcedure
     method: "GET",
     path: "/admin/posts/slug",
     summary: "Generate a post slug",
+    description:
+      "Makes a slug from a title that no other post uses, without saving anything. Pass excludeId to leave out the post being edited.",
     tags: ["Admin Posts"],
   })
   .input(GenerateSlugInputSchema)

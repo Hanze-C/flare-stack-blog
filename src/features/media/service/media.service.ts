@@ -12,9 +12,13 @@ import {
 import { getImageDimensions } from "@/features/media/utils/image-dimensions";
 import { matchesDeclaredImageType } from "@/features/media/utils/image-signature";
 import {
+  cleanMediaName,
   getContentTypeFromKey,
   getOriginalImageUrl,
   getTransformSourceUrl,
+  importedMediaName,
+  imageExtensionOf,
+  isSameImageType,
   parseImageTransform,
   isGifKey,
 } from "@/features/media/utils/media.utils";
@@ -49,7 +53,9 @@ export async function upload(
     const mediaRecord = await MediaRepo.insertMedia(context.db, {
       key: uploaded.key,
       url: uploaded.url,
-      fileName: uploaded.fileName,
+      fileName:
+        cleanMediaName(uploaded.fileName) ||
+        `image.${imageExtensionOf(uploaded.mimeType)}`,
       mimeType: uploaded.mimeType,
       sizeInBytes: uploaded.sizeInBytes,
       width,
@@ -164,7 +170,9 @@ export async function updateMediaName(
  * Puts a new file at an existing key. Posts keep naming the key, so their
  * drafts, Public Content Snapshots and Post Revisions are not written: the
  * cached copies of the key are purged instead, and every address of it,
- * public pages and editor alike, serves the new file from then on.
+ * public pages and editor alike, serves the new file from then on. The new
+ * file must be the same image type: the key's extension and the content type
+ * served at it would otherwise disagree.
  */
 export async function replaceImage(
   context: DbContext & { executionCtx: ExecutionContext },
@@ -179,6 +187,9 @@ export async function replaceImage(
   if (!matchesDeclaredImageType(buffer, input.file.type)) {
     return mediaInvalid("TYPE_MISMATCH");
   }
+  if (!isSameImageType(input.file.type, existing.mimeType)) {
+    return mediaInvalid("TYPE_CHANGED");
+  }
   const dimensions = getImageDimensions(buffer);
   await Storage.putToR2(context.env, input.file, input.key);
   // Only the Media record's own address changes, so a page that already
@@ -186,7 +197,7 @@ export async function replaceImage(
   const url = `${getOriginalImageUrl(input.key)}?v=${Date.now()}`;
   const updated = await MediaRepo.updateMediaFile(context.db, input.key, {
     url,
-    fileName: input.file.name || existing.fileName,
+    fileName: cleanMediaName(input.file.name) || existing.fileName,
     mimeType: input.file.type || existing.mimeType,
     sizeInBytes: input.file.size,
     width: dimensions?.width,
@@ -224,7 +235,7 @@ export async function deleteUnused(
 
 export async function importFromUrl(
   context: DbContext & { executionCtx: ExecutionContext },
-  input: { url: string },
+  input: { url: string; name?: string },
 ) {
   const parsed = parseImageUrl(input.url);
   if (!parsed) {
@@ -263,9 +274,11 @@ export async function importFromUrl(
     return mediaInvalid("TOO_LARGE");
   }
 
-  const file = new File([buffer], fileNameFromUrl(parsed, mime), {
-    type: mime,
-  });
+  const file = new File(
+    [buffer],
+    importedMediaName(input.name ?? lastPathPart(parsed), mime),
+    { type: mime },
+  );
   return upload(context, { file });
 }
 
@@ -277,16 +290,14 @@ function parseImageUrl(raw: string): URL | null {
   }
 }
 
-function fileNameFromUrl(url: URL, mimeType: string) {
-  const last = decodeURIComponent(
-    url.pathname.split("/").filter(Boolean).pop() || "",
-  );
-  if (last && /\.(jpe?g|png|webp|gif)$/i.test(last)) return last;
-  const ext =
-    mimeType === "image/jpeg" || mimeType === "image/jpg"
-      ? "jpg"
-      : mimeType.split("/")[1] || "jpg";
-  return `image.${ext}`;
+/** The last part of the address path, decoded; empty when it has none or is not valid UTF-8 escapes. */
+function lastPathPart(url: URL) {
+  const last = url.pathname.split("/").filter(Boolean).pop() ?? "";
+  try {
+    return decodeURIComponent(last);
+  } catch {
+    return "";
+  }
 }
 
 // An SVG opened at its own address is a document on the site origin. Served

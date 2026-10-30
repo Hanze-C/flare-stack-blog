@@ -565,7 +565,7 @@ describe("MediaService", () => {
 
   describe("Replace and import", () => {
     it("replaces the file at the same key", async () => {
-      const original = pngFile("old.png", "old");
+      const original = jpegFile("old.jpg", 32);
       const uploaded = unwrap(
         await MediaService.upload(adminContext, { file: original }),
       );
@@ -644,6 +644,201 @@ describe("MediaService", () => {
 
       expect(result.error?.reason).toBe("MEDIA_INVALID");
       expect(Storage.putToR2).not.toHaveBeenCalled();
+    });
+
+    it("refuses a replacement of another image type, writing nothing", async () => {
+      const media = unwrap(
+        await MediaService.upload(adminContext, {
+          file: pngFile("keep.png", "old"),
+        }),
+      );
+      vi.mocked(Storage.putToR2).mockClear();
+      vi.mocked(purgeWorkersCache).mockClear();
+
+      const asJpeg = await MediaService.replaceImage(adminContext, {
+        key: media.key,
+        file: jpegFile("other.jpg", 64),
+      });
+      expect(asJpeg.error).toEqual({
+        reason: "MEDIA_INVALID",
+        detail: "TYPE_CHANGED",
+      });
+      const asSvg = await MediaService.replaceImage(adminContext, {
+        key: media.key,
+        file: new File(
+          ['<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>'],
+          "other.svg",
+          { type: "image/svg+xml" },
+        ),
+      });
+      expect(asSvg.error).toEqual({
+        reason: "MEDIA_INVALID",
+        detail: "TYPE_CHANGED",
+      });
+
+      expect(Storage.putToR2).not.toHaveBeenCalled();
+      expect(purgeWorkersCache).not.toHaveBeenCalled();
+      const [kept] = (
+        await MediaService.getMediaList(adminContext, { search: "keep" })
+      ).items;
+      expect(kept).toMatchObject({
+        fileName: "keep.png",
+        mimeType: "image/png",
+      });
+    });
+
+    it("takes jpg and jpeg as one type when replacing", async () => {
+      const media = unwrap(
+        await MediaService.upload(adminContext, {
+          file: new File(
+            [new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])],
+            "photo.jpg",
+            { type: "image/jpg" },
+          ),
+        }),
+      );
+      const replaced = await MediaService.replaceImage(adminContext, {
+        key: media.key,
+        file: jpegFile("photo2.jpeg", 40),
+      });
+      expect(replaced.error).toBeNull();
+    });
+
+    it("cleans the file name of an upload and of a replacement", async () => {
+      const media = unwrap(
+        await MediaService.upload(adminContext, {
+          file: pngFile("a\u202Eb\u0000.png", "named"),
+        }),
+      );
+      expect(media.fileName).toBe("ab.png");
+
+      const replaced = unwrap(
+        await MediaService.replaceImage(adminContext, {
+          key: media.key,
+          file: pngFile("\u200B  \t", "again"),
+        }),
+      );
+      // Nothing usable left in the new name: the old one stays.
+      expect(replaced.fileName).toBe("ab.png");
+
+      const long = unwrap(
+        await MediaService.upload(adminContext, {
+          file: pngFile(`${"n".repeat(400)}.png`, "long"),
+        }),
+      );
+      expect(long.fileName).toHaveLength(255);
+      expect(long.fileName.endsWith(".png")).toBe(true);
+    });
+
+    describe("naming an imported image", () => {
+      function serve(contentType: string, body: BodyInit) {
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (input: URL) => {
+            const url = new URL(input);
+            if (url.hostname === "cloudflare-dns.com") {
+              return Response.json({
+                Status: 0,
+                Answer:
+                  url.searchParams.get("type") === "A"
+                    ? [{ type: 1, data: "93.184.216.34" }]
+                    : [],
+              });
+            }
+            return new Response(body, {
+              status: 200,
+              headers: { "content-type": contentType },
+            });
+          }),
+        );
+      }
+
+      it.each([
+        [
+          "a name in the path",
+          "https://example.com/photos/sunset.png",
+          undefined,
+          "sunset.png",
+        ],
+        [
+          "a path with an encoded name",
+          "https://example.com/p/%E6%97%A5%E8%90%BD.png",
+          undefined,
+          "日落.png",
+        ],
+        [
+          "a path with no extension",
+          "https://example.com/photos/12345",
+          undefined,
+          "12345.png",
+        ],
+        [
+          "a query string only",
+          "https://example.com/photos/12345?size=large",
+          undefined,
+          "12345.png",
+        ],
+        [
+          "another image extension",
+          "https://example.com/photos/pic.jpg",
+          undefined,
+          "pic.png",
+        ],
+        [
+          "a dotted name that is no extension",
+          "https://example.com/files/v1.2",
+          undefined,
+          "v1.2.png",
+        ],
+        ["no path", "https://example.com/", undefined, "image.png"],
+        [
+          "a broken escape",
+          "https://example.com/%E0%A4%A.png",
+          undefined,
+          "image.png",
+        ],
+        [
+          "a name sent with it",
+          "https://example.com/photos/12345",
+          "Team photo",
+          "Team photo.png",
+        ],
+        [
+          "a name sent with its own extension",
+          "https://example.com/x",
+          "cover.PNG",
+          "cover.PNG",
+        ],
+        [
+          "a name sent with another extension",
+          "https://example.com/x",
+          "cover.jpeg",
+          "cover.png",
+        ],
+      ])("names it after %s", async (_case, url, name, expected) => {
+        serve("image/png", await pngFile("x.png", "x").arrayBuffer());
+        const result = unwrap(
+          await MediaService.importFromUrl(adminContext, { url, name }),
+        );
+        expect(result.fileName).toBe(expected);
+        // The key takes its extension from the name, so it names the type.
+        expect(result.key.toLowerCase().endsWith(".png")).toBe(true);
+        vi.unstubAllGlobals();
+      });
+
+      it("gives an SVG the svg extension, not svg+xml", async () => {
+        serve(
+          "image/svg+xml",
+          '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>',
+        );
+        const result = unwrap(
+          await MediaService.importFromUrl(adminContext, {
+            url: "https://example.com/logo",
+          }),
+        );
+        expect(result.fileName).toBe("logo.svg");
+        vi.unstubAllGlobals();
+      });
     });
 
     it("imports a public image URL into Media", async () => {

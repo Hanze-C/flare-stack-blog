@@ -146,7 +146,7 @@ _Avoid_: New commit, fork update
 - An **Admin** assigns a **Category** by choosing an existing one while editing a **Post**. Editing a **Post** does not create a **Category**.
 - **Categories** and **Tags** are managed on one Admin page.
 - Deleting a **Category** is allowed. **Posts** that had it become uncategorized. Deleting a **Tag** removes its Post associations.
-- A **Category** is identified by a unique name. **Category** names, **Tag** names and **Post** slugs are unique ignoring case and Unicode compatibility forms (fullwidth letters, no-break spaces), and are stored as written. Names, slugs and titles hold no control or format characters; summaries hold none besides tab and line breaks.
+- A **Category** is identified by a unique name. **Category** names, **Tag** names and **Post** slugs are unique ignoring case (ß, ẞ and ss are one) and Unicode compatibility forms (fullwidth letters, no-break spaces), and ignoring characters that show nothing, such as a variation selector after an emoji; they are stored as written. Names, slugs and titles hold no control or format characters; summaries hold none besides tab and line breaks. A **Post** slug is never `pinned` or `popular` (the public API's list paths), in any case, and never holds `^`, which the public page cannot open.
 - The public site can list **Published Posts** by **Category**, and can apply a **Category** filter and a **Tag** filter together.
 - A **Post** can have zero or more **Post Revisions**.
 - A **Post** can have zero or more **Comment Threads**.
@@ -183,6 +183,7 @@ _Avoid_: New commit, fork update
 - A **Reply** belongs to exactly one **Comment Thread**.
 - A **Post** body can show **Media** by its path, alone or on the blog's own address, only while that **Media** exists; an image a draft already showed by that path before its **Media** was gone may stay. The same path on another address is an external image.
 - A **Media** item cannot be deleted from the media library while it appears in the editable **Post**, in a **Public Content Snapshot** or in a **Post Revision**, so restoring a **Post Revision** never brings back a deleted image. Deleting the **Post Revision** releases it.
+- A **Media** file name follows the rules of a **Tag** name (trimmed, not empty, no control or format characters) up to 255 characters. Replacing a **Media** file keeps its image type; another type is refused, because the key's extension and the type served at it must agree.
 - A user-submitted **Friend Link** belongs to its submitting **User**; review notifications use that **User**’s account email. An admin-created **Friend Link** may have no submitting **User**.
 - A rejected **Friend Link** can be revised and resubmitted by its submitting **User**.
 - Only an approved **Friend Link** appears on the public friend-links page.

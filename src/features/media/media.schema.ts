@@ -1,8 +1,10 @@
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { MediaTable, POST_STATUSES } from "@/lib/db/schema";
+import { MEDIA_NAME_MAX_LENGTH } from "@/features/media/utils/media.utils";
 import { IdCursorSchema, pageLimitSchema } from "@/lib/orpc/pagination";
 import { coercedDate } from "@/lib/orpc/dates";
+import { hasControlCharacter } from "@/lib/unicode-text";
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 /** Why a file is refused with MEDIA_INVALID. */
@@ -11,6 +13,7 @@ export const MEDIA_INVALID_DETAILS = [
   "TYPE_UNRECOGNIZED",
   "EMPTY",
   "TOO_LARGE",
+  "TYPE_CHANGED",
 ] as const;
 export type MediaInvalidDetail = (typeof MEDIA_INVALID_DETAILS)[number];
 
@@ -98,9 +101,22 @@ export const MediaKeyInputSchema = z.strictObject({
   key: z.string(),
 });
 
+/** A Media's file name, held to the rules of a Tag or Category name. */
+const MediaNameInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MEDIA_NAME_MAX_LENGTH)
+  .refine((name) => !hasControlCharacter(name, { emoji: true }), {
+    message:
+      "A name cannot contain control or format characters (Unicode Cc or Cf).",
+  });
+
 export const UpdateMediaNameInputSchema = z.strictObject({
   key: z.string().min(1),
-  name: z.string().min(1),
+  name: MediaNameInputSchema.describe(
+    `The new file name, trimmed: not empty, at most ${MEDIA_NAME_MAX_LENGTH} characters. It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, a tab, a zero width space or a bidirectional control); a zero width joiner inside an emoji is fine. It is stored as written; the key and address do not change.`,
+  ),
 });
 
 export const GetMediaListInputSchema = z.strictObject({
@@ -112,6 +128,9 @@ export const GetMediaListInputSchema = z.strictObject({
 
 export const ImportMediaUrlInputSchema = z.strictObject({
   url: z.string().min(1),
+  name: MediaNameInputSchema.optional().describe(
+    "File name for the imported image, held to the same rules as a rename. Omit it to take the name from the last part of the address. Either way the name ends in the extension of the image type that was downloaded (a name with another image extension has it replaced), and a name with nothing usable is image.<extension>.",
+  ),
 });
 
 export type UpdateMediaNameInput = z.infer<typeof UpdateMediaNameInputSchema>;

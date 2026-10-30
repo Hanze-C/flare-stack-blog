@@ -1,4 +1,4 @@
-import { hasControlCharacter } from "@/lib/unicode-text";
+import { hasControlCharacter, uniqueKeyOf } from "@/lib/unicode-text";
 
 /**
  * Rules for a Post's title and slug, shared by the API schemas and the admin
@@ -16,11 +16,27 @@ const GENERATED_SLUG_MAX_LENGTH = 180;
 
 // URL delimiters (/ ? # %), the backslash, whitespace (no-break spaces too),
 // and control and format characters (zero width, bidirectional controls).
-const SLUG_FORBIDDEN_CHARACTER = /[/?#%\\\s\p{Cc}\p{Cf}]/u;
+// The caret is forbidden too: a request path carries it as %5E or raw
+// depending on who parses it, so the router's canonical-path redirect sends
+// its page to itself forever. Every other printable ASCII symbol opens its
+// page (checked against the running app).
+const SLUG_FORBIDDEN_CHARACTER = /[/?#%\\^\s\p{Cc}\p{Cf}]/u;
+
+/**
+ * Slugs the public API keeps for itself: GET /api/posts/pinned and
+ * /api/posts/popular are lists, so a Post with either slug could not be read
+ * by slug there. Compared by unique key, so case and fullwidth forms count.
+ */
+export const RESERVED_POST_SLUGS: ReadonlyArray<string> = ["pinned", "popular"];
 
 /** Whether `slug`, already trimmed, can be a Post's slug. */
 export function isPostSlugFormat(slug: string) {
   return !SLUG_FORBIDDEN_CHARACTER.test(slug) && slug !== "." && slug !== "..";
+}
+
+/** Whether `slug`, already trimmed, is one the public API keeps for itself. */
+export function isReservedPostSlug(slug: string) {
+  return RESERVED_POST_SLUGS.includes(uniqueKeyOf(slug));
 }
 
 /**
@@ -59,7 +75,8 @@ export function isValidPostSlug(slug: string) {
   return (
     trimmed.length > 0 &&
     trimmed.length <= POST_SLUG_MAX_LENGTH &&
-    isPostSlugFormat(trimmed)
+    isPostSlugFormat(trimmed) &&
+    !isReservedPostSlug(trimmed)
   );
 }
 
