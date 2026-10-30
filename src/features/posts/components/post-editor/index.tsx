@@ -14,7 +14,10 @@ import { CodeBlockHighlightProvider } from "@/features/posts/editor/extensions/c
 import { postContentOf } from "@/features/posts/editor/extensions/image-placeholder";
 import { postRevisionListQuery } from "@/features/posts/queries";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
-import { POST_TITLE_MAX_LENGTH } from "@/features/posts/utils/post-fields";
+import {
+  isValidPostSlug,
+  POST_TITLE_MAX_LENGTH,
+} from "@/features/posts/utils/post-fields";
 import { withoutControlCharacters } from "@/lib/unicode-text";
 import { m } from "@/paraglide/messages";
 import { useDeletePost } from "../post-manager/hooks";
@@ -281,6 +284,9 @@ export function PostEditor({
           processState={processState}
           canPublish={canPublish}
           conflicted={conflict !== null}
+          slugWithheld={
+            !isValidPostSlug(post.slug) || saveError === SLUG_TAKEN_ERROR
+          }
           hasPublicSnapshot={post.hasPublicSnapshot}
           hasUnpublishedChanges={state === "published-changed"}
           publicSlug={post.hasPublicSnapshot ? publicSlug : null}

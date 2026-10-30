@@ -425,6 +425,7 @@
       }
     }
   ],
+  "editor_status_saved_except_link": "Saved {time}, except the link",
   "editor_status_draft_saved": "Draft saved",
   "editor_status_paused": "Autosave paused",
   "editor_code_language": "Code language",

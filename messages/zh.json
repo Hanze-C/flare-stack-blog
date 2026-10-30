@@ -418,6 +418,7 @@
       }
     }
   ],
+  "editor_status_saved_except_link": "已保存 {time}，链接除外",
   "editor_status_draft_saved": "草稿已保存",
   "editor_status_paused": "自动保存已暂停",
   "editor_code_language": "代码语言",

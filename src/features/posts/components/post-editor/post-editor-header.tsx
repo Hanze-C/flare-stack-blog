@@ -28,6 +28,8 @@ interface PostEditorHeaderProps {
   canPublish: boolean;
   /** A save was refused; going live or back to a draft waits for the Admin. */
   conflicted: boolean;
+  /** The link was left out of the saves: invalid, reserved or taken. */
+  slugWithheld: boolean;
   hasPublicSnapshot: boolean;
   /** The draft differs from the published version. */
   hasUnpublishedChanges: boolean;
@@ -47,6 +49,7 @@ function saveLabel(
   saveStatus: SaveStatus,
   lastSaved: Date | null,
   conflicted: boolean,
+  slugWithheld: boolean,
 ) {
   switch (saveStatus) {
     case "ERROR":
@@ -58,16 +61,18 @@ function saveLabel(
       return m.editor_status_saving();
     case "PENDING":
       return m.editor_status_unsaved();
-    default:
-      return lastSaved
-        ? m.editor_status_saved({
-            time: lastSaved.toLocaleTimeString([], {
-              hour12: false,
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
-          })
-        : m.editor_status_draft_saved();
+    default: {
+      if (!lastSaved) return m.editor_status_draft_saved();
+      const time = lastSaved.toLocaleTimeString([], {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      // The rest was saved; the field says why the link was not.
+      return slugWithheld
+        ? m.editor_status_saved_except_link({ time })
+        : m.editor_status_saved({ time });
+    }
   }
 }
 
@@ -77,6 +82,7 @@ export function PostEditorHeader({
   processState,
   canPublish,
   conflicted,
+  slugWithheld,
   hasPublicSnapshot,
   hasUnpublishedChanges,
   publicSlug,
@@ -177,7 +183,9 @@ export function PostEditorHeader({
           ) : saveStatus === "SYNCED" ? (
             <Check size={15} />
           ) : null}
-          <span>{saveLabel(saveStatus, lastSaved, conflicted)}</span>
+          <span>
+            {saveLabel(saveStatus, lastSaved, conflicted, slugWithheld)}
+          </span>
         </p>
       </div>
       <div className="post-editor-header-actions">
