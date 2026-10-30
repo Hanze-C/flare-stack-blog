@@ -3,6 +3,7 @@ import * as PostRepo from "@/features/posts/data/posts.data";
 import { NullableJsonContentSchema } from "@/features/posts/schema/json-content.schema";
 import type { PostContentFormat } from "@/features/posts/schema/posts.schema";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
+import { refusedLinks } from "@/features/posts/utils/refused-links";
 import type { VideoMeta } from "@/features/posts/utils/video-source";
 import {
   videoMetaOf,
@@ -125,7 +126,8 @@ interface ContentFields {
 /**
  * `data` with its `contentMarkdown` turned into `contentJson`, ready for the
  * usual write path. `postId` names the Post being replaced, whose videos and
- * images keep what Markdown cannot carry.
+ * images keep what Markdown cannot carry. A body in either format with a
+ * link the post could not show is refused.
  */
 export async function resolveMarkdownContent<T extends ContentFields>(
   context: DbContext,
@@ -133,7 +135,11 @@ export async function resolveMarkdownContent<T extends ContentFields>(
   postId?: number,
 ) {
   const { contentMarkdown, ...rest } = data;
-  if (contentMarkdown === undefined) return ok(rest);
+  if (contentMarkdown === undefined) {
+    const links = refusedLinks(rest.contentJson);
+    if (links.length > 0) return err({ reason: "CONTENT_LINK_INVALID", links });
+    return ok(rest);
+  }
   if (rest.contentJson !== undefined) {
     return err({ reason: "CONTENT_FORMAT_AMBIGUOUS" });
   }
@@ -144,6 +150,8 @@ export async function resolveMarkdownContent<T extends ContentFields>(
   if (refusedImages.length > 0) {
     return err({ reason: "MARKDOWN_IMAGE_INVALID", images: refusedImages });
   }
+  const links = refusedLinks(contentJson);
+  if (links.length > 0) return err({ reason: "CONTENT_LINK_INVALID", links });
 
   const previous =
     postId === undefined

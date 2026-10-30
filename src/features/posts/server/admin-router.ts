@@ -77,11 +77,22 @@ const postErrors = {
       images: z.array(z.string()).describe("The refused image addresses."),
     }),
   },
+  CONTENT_LINK_INVALID: {
+    status: 400,
+    message:
+      "Links must be http(s), mailto or tel addresses, site paths or #fragments.",
+    data: z.object({
+      links: z
+        .array(z.string())
+        .describe("The refused link addresses, such as javascript: or data:."),
+    }),
+  },
 } as const;
 
 const markdownContentErrors = {
   CONTENT_FORMAT_AMBIGUOUS: postErrors.CONTENT_FORMAT_AMBIGUOUS,
   MARKDOWN_IMAGE_INVALID: postErrors.MARKDOWN_IMAGE_INVALID,
+  CONTENT_LINK_INVALID: postErrors.CONTENT_LINK_INVALID,
 } as const;
 
 const postNotFoundErrors = {
@@ -90,7 +101,8 @@ const postNotFoundErrors = {
 
 type MarkdownContentError =
   | { reason: "CONTENT_FORMAT_AMBIGUOUS" }
-  | { reason: "MARKDOWN_IMAGE_INVALID"; images: Array<string> };
+  | { reason: "MARKDOWN_IMAGE_INVALID"; images: Array<string> }
+  | { reason: "CONTENT_LINK_INVALID"; links: Array<string> };
 
 function throwMarkdownContentError(
   error: MarkdownContentError,
@@ -99,6 +111,10 @@ function throwMarkdownContentError(
     MARKDOWN_IMAGE_INVALID: (options: {
       message: string;
       data: { images: Array<string> };
+    }) => Error;
+    CONTENT_LINK_INVALID: (options: {
+      message: string;
+      data: { links: Array<string> };
     }) => Error;
   },
 ): never {
@@ -110,6 +126,13 @@ function throwMarkdownContentError(
       throw errors.MARKDOWN_IMAGE_INVALID({
         message: `${error.images.length > 1 ? "Images" : "Image"} ${list} must be an http(s) address or a Media path (/images/<key>). Upload local images as Media and use their path.`,
         data: { images: error.images },
+      });
+    }
+    case "CONTENT_LINK_INVALID": {
+      const list = error.links.map((href) => `"${href}"`).join(", ");
+      throw errors.CONTENT_LINK_INVALID({
+        message: `${error.links.length > 1 ? "Links" : "Link"} ${list} must be an http(s), mailto or tel address, a site path or a #fragment. Links such as javascript: or data: cannot be shown on a post.`,
+        data: { links: error.links },
       });
     }
     default:
