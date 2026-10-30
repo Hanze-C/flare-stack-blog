@@ -231,7 +231,7 @@ describe("Tag operations", () => {
     expect(renamed.status).toBe(200);
     expect(renamed.json).toMatchObject({ id: tagId, name: "beta" });
 
-    const set = await call<{ saveToken: string | null }>(
+    const set = await call<{ saveToken: string }>(
       apiKey,
       `/admin/posts/${post.json.id}/tags`,
       { method: "PUT", body: { tagIds: [tagId] } },
@@ -243,8 +243,8 @@ describe("Tag operations", () => {
       method: "PUT",
       body: { tagIds: [] },
     });
-    expect(missing.status).toBe(200);
-    expect(missing.json).toEqual({ saveToken: null });
+    expect(missing.status).toBe(404);
+    expect(missing.json).toMatchObject({ code: "POST_NOT_FOUND" });
 
     const ofPost = await call(apiKey, `/admin/posts/${post.json.id}/tags`);
     expect(ofPost.status).toBe(200);

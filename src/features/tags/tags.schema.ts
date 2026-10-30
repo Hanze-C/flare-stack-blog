@@ -39,9 +39,8 @@ export const DeleteTagResultSchema = z.object({ success: z.boolean() });
 export const SetPostTagsResultSchema = z.object({
   saveToken: z
     .string()
-    .nullable()
     .describe(
-      "The post's saveToken after the write, to state on your next save or publish. Null when the post does not exist.",
+      "The post's saveToken after the write, to state on your next save or publish.",
     ),
 });
 
