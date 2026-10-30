@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
+import { toast } from "sonner";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { formatDate } from "@/lib/utils";
 import { m } from "@/paraglide/messages";
@@ -41,12 +42,9 @@ vi.mock("@tanstack/react-router", () => ({
     createElement("a", null, children),
 }));
 
-const connectedAt = "2026-10-30T08:00:00.000Z";
-const waiting: PairingStatus = {
-  state: "waiting",
-  code: "ABCD-EFGH",
-  expiresAt: "2026-10-30T08:10:00.000Z",
-};
+const connectedAt = new Date("2026-10-30T08:00:00.000Z");
+const expiresAt = new Date("2026-10-30T08:10:00.000Z");
+const waiting: PairingStatus = { state: "waiting", expiresAt };
 const connected: PairingStatus = {
   state: "connected",
   agent: { name: "Claude Code", apiKeyId: "key-1", connectedAt },
@@ -58,7 +56,7 @@ const pairedKey = {
   start: "fsb_ab",
   createdAt: connectedAt,
   lastRequest: "2026-10-30T09:30:00.000Z",
-  metadata: { createdBy: "pairing" },
+  metadata: { source: "pairing", agentName: "Claude Code" },
 };
 const manualKey = {
   id: "key-2",
@@ -125,7 +123,7 @@ beforeEach(() => {
   pairing.status.mockResolvedValue({ state: "none" });
   pairing.generate.mockResolvedValue({
     code: "ABCD-EFGH",
-    expiresAt: waiting.expiresAt,
+    expiresAt,
   });
   pairing.cancel.mockResolvedValue(undefined);
   authKeys.list.mockResolvedValue({ data: { apiKeys: [] }, error: null });
@@ -233,13 +231,74 @@ it("generates a code and shows the sentence for the agent with the configured do
 });
 
 it("writes the code as ABCD-EFGH whatever case or separator the server uses", async () => {
-  pairing.status.mockResolvedValue({ ...waiting, code: "abcdefgh" });
+  pairing.generate.mockResolvedValue({ code: "abcdefgh", expiresAt });
+  pairing.status.mockResolvedValue(waiting);
   mountPage();
+  await flush();
+  fireEvent.click(
+    screen.getByRole("button", { name: m.agent_skill_pair_regenerate() }),
+  );
   await flush();
   expect(screen.getByText(/配对码：ABCD-EFGH$/)).toBeTruthy();
 });
 
+it("shows the waiting state without a code after a reload, since the server keeps none", async () => {
+  pairing.status.mockResolvedValue(waiting);
+  mountPage();
+  await flush();
+  expect(screen.getByText(m.agent_skill_pair_code_hidden())).toBeTruthy();
+  expect(screen.getByText(m.agent_skill_pair_waiting())).toBeTruthy();
+  expect(screen.queryByText(/配对码：/)).toBeNull();
+  expect(
+    screen.getByRole("button", { name: m.agent_skill_pair_regenerate() }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: m.agent_skill_pair_cancel() }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: m.agent_skill_pair_copy() }),
+  ).toBeNull();
+});
+
+it("does not keep the code in any storage", async () => {
+  const setItem = vi.spyOn(Storage.prototype, "setItem");
+  mountPage();
+  await flush();
+  pairing.status.mockResolvedValue(waiting);
+  fireEvent.click(
+    screen.getByRole("button", { name: m.agent_skill_pair_generate() }),
+  );
+  await flush();
+  expect(screen.getByText(/配对码：ABCD-EFGH$/)).toBeTruthy();
+  expect(setItem).not.toHaveBeenCalled();
+  expect(document.cookie).not.toContain("ABCD");
+});
+
+it("does not show a code that another tab replaced", async () => {
+  mountPage();
+  await flush();
+  pairing.status.mockResolvedValue(waiting);
+  fireEvent.click(
+    screen.getByRole("button", { name: m.agent_skill_pair_generate() }),
+  );
+  await flush();
+  expect(screen.getByText(/配对码：ABCD-EFGH$/)).toBeTruthy();
+
+  pairing.status.mockResolvedValue({
+    state: "waiting",
+    expiresAt: new Date("2026-10-30T08:12:00.000Z"),
+  });
+  await tick(2000);
+  await settle();
+  expect(screen.queryByText(/配对码：/)).toBeNull();
+  expect(screen.getByText(m.agent_skill_pair_code_hidden())).toBeTruthy();
+});
+
 it("polls every 2 seconds while a code is waiting and stops once an agent connects", async () => {
+  authKeys.list.mockResolvedValue({
+    data: { apiKeys: [pairedKey] },
+    error: null,
+  });
   pairing.status.mockResolvedValue(waiting);
   mountPage();
   await flush();
@@ -330,6 +389,10 @@ it("says an expired code has expired and offers a new one", async () => {
 });
 
 it("shows which agent connected and when", async () => {
+  authKeys.list.mockResolvedValue({
+    data: { apiKeys: [pairedKey] },
+    error: null,
+  });
   pairing.status.mockResolvedValue(connected);
   mountPage();
   await flush();
@@ -344,6 +407,10 @@ it("shows which agent connected and when", async () => {
 });
 
 it("asks before revoking, then deletes the key the code issued", async () => {
+  authKeys.list.mockResolvedValue({
+    data: { apiKeys: [pairedKey] },
+    error: null,
+  });
   pairing.status.mockResolvedValue(connected);
   mountPage();
   await flush();
@@ -353,22 +420,56 @@ it("asks before revoking, then deletes the key the code issued", async () => {
     m.agent_skill_pair_revoke_desc({ name: "Claude Code" }),
   );
   expect(authKeys.delete).not.toHaveBeenCalled();
+  authKeys.list.mockResolvedValue({ data: { apiKeys: [] }, error: null });
   fireEvent.click(
     within(dialog).getByRole("button", {
       name: m.agent_skill_pair_revoke_confirm(),
     }),
   );
   await flush();
+  await settle();
   expect(authKeys.delete).toHaveBeenCalledWith({ keyId: "key-1" });
-  expect(
-    screen.getByText(m.agent_skill_pair_revoked({ name: "Claude Code" })),
-  ).toBeTruthy();
+  expect(toast.success).toHaveBeenCalledWith(
+    m.agent_skill_pair_revoked({ name: "Claude Code" }),
+  );
+  // Status still says connected; the missing key sends the tab back to the start.
   expect(
     screen.queryByRole("button", { name: "不是此 agent？撤销" }),
   ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: m.agent_skill_pair_generate() }),
+  ).toBeTruthy();
+});
+
+it("starts over when the connected agent's key was deleted elsewhere", async () => {
+  pairing.status.mockResolvedValue(connected);
+  authKeys.list.mockResolvedValue({
+    data: { apiKeys: [manualKey] },
+    error: null,
+  });
+  mountPage();
+  await flush();
+  await settle();
+  expect(screen.queryByText(/已连接：/)).toBeNull();
+  expect(
+    screen.getByRole("button", { name: m.agent_skill_pair_generate() }),
+  ).toBeTruthy();
+});
+
+it("keeps showing the connected agent when the key list cannot be read", async () => {
+  pairing.status.mockResolvedValue(connected);
+  authKeys.list.mockResolvedValue({ data: null, error: new Error("offline") });
+  mountPage();
+  await flush();
+  await settle();
+  expect(screen.getByText(/已连接：Claude Code/)).toBeTruthy();
 });
 
 it("leaves the key alone when the revoke confirmation is dismissed", async () => {
+  authKeys.list.mockResolvedValue({
+    data: { apiKeys: [pairedKey] },
+    error: null,
+  });
   pairing.status.mockResolvedValue(connected);
   mountPage();
   await flush();

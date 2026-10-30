@@ -40,7 +40,7 @@ beforeEach(() => {
           name: "Claude Code · 2026-10-30",
           start: "fsb_ab",
           createdAt,
-          metadata: { createdBy: "pairing" },
+          metadata: { source: "pairing", agentName: "Claude Code" },
         },
         {
           id: "key-2",
@@ -51,10 +51,10 @@ beforeEach(() => {
         },
         {
           id: "key-3",
-          name: "Stored as text",
+          name: "Other metadata",
           start: "fsb_ef",
           createdAt,
-          metadata: JSON.stringify({ createdBy: "pairing" }),
+          metadata: { createdBy: "pairing" },
         },
       ],
     },
@@ -80,7 +80,7 @@ function mountPage() {
   );
 }
 
-it("marks the keys created by pairing, whichever way the metadata arrives", async () => {
+it("marks only the keys whose metadata says pairing created them", async () => {
   mountPage();
   const rows = await screen.findAllByRole("row");
   const badge = m.settings_api_keys_paired_badge();
@@ -89,7 +89,7 @@ it("marks the keys created by pairing, whichever way the metadata arrives", asyn
   expect(
     within(cell("Claude Code · 2026-10-30")).getByText(badge),
   ).toBeTruthy();
-  expect(within(cell("Stored as text")).getByText(badge)).toBeTruthy();
+  expect(within(cell("Other metadata")).queryByText(badge)).toBeNull();
   expect(within(cell("CI script")).queryByText(badge)).toBeNull();
 });
 

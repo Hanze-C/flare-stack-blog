@@ -881,6 +881,7 @@
   "agent_skill_pair_prompt": "Use the flare-stack-blog skill to connect to {site}. Pairing code: {code}",
   "agent_skill_pair_copy": "Copy this sentence",
   "agent_skill_pair_copied": "Sentence copied",
+  "agent_skill_pair_code_hidden": "The pairing code is shown only when it is generated. Regenerate to get a new one.",
   "agent_skill_pair_waiting": "Waiting for the agent to connect",
   "agent_skill_pair_connected": "Connected: {name}, {time}",
   "agent_skill_pair_not_this": "Not this agent? Revoke",

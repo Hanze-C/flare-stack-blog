@@ -874,6 +874,7 @@
   "agent_skill_pair_prompt": "使用 flare-stack-blog skill 连接 {site}，配对码：{code}",
   "agent_skill_pair_copy": "复制这段话",
   "agent_skill_pair_copied": "已复制这段话",
+  "agent_skill_pair_code_hidden": "配对码仅在生成时显示。需要新的配对码时，请重新生成。",
   "agent_skill_pair_waiting": "等待 agent 连接",
   "agent_skill_pair_connected": "已连接：{name}，{time}",
   "agent_skill_pair_not_this": "不是此 agent？撤销",

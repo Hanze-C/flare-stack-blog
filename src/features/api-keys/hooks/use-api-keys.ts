@@ -14,23 +14,6 @@ export type ApiKeyListItem = {
   metadata?: unknown;
 };
 
-/** Whether pairing created the key, as the exchange marks it in `metadata`. */
-export function isPairedKey(key: Pick<ApiKeyListItem, "metadata">) {
-  let metadata = key.metadata;
-  if (typeof metadata === "string") {
-    try {
-      metadata = JSON.parse(metadata);
-    } catch {
-      return false;
-    }
-  }
-  return (
-    typeof metadata === "object" &&
-    metadata !== null &&
-    (metadata as { createdBy?: unknown }).createdBy === "pairing"
-  );
-}
-
 function readListedKeys(data: unknown): ApiKeyListItem[] {
   if (!data) return [];
   if (Array.isArray(data)) return data as ApiKeyListItem[];

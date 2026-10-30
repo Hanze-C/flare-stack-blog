@@ -1,5 +1,6 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import ConfirmationModal from "@/components/ui/confirmation-modal";
@@ -21,7 +22,9 @@ function formatPairingCode(code: string) {
 
 export function PairingStep() {
   const {
-    status,
+    state,
+    agent,
+    code,
     isLoading,
     isError,
     reload,
@@ -32,8 +35,10 @@ export function PairingStep() {
   } = usePairing();
   const { data: domain } = useSuspenseQuery(siteDomainQuery);
   const { deleteKey, isDeleting } = useApiKeys();
-  const [revokeOpen, setRevokeOpen] = useState(false);
-  const [revokedKeyId, setRevokedKeyId] = useState<string | null>(null);
+  const [pendingRevoke, setPendingRevoke] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
   const revokeRef = useRef<HTMLButtonElement>(null);
   const generateRef = useRef<HTMLButtonElement>(null);
 
@@ -56,8 +61,6 @@ export function PairingStep() {
     </Button>
   );
 
-  const state = status?.state ?? "none";
-  const agent = status?.agent;
   let body;
   if (isError) {
     body = (
@@ -79,18 +82,21 @@ export function PairingStep() {
         {m.agent_skill_pair_loading()}
       </p>
     );
-  } else if (state === "waiting" && status?.code) {
-    const prompt = m.agent_skill_pair_prompt({
-      site: `https://${domain}`,
-      code: formatPairingCode(status.code),
-    });
+  } else if (state === "waiting") {
     body = (
       <>
-        <CopyLine
-          text={prompt}
-          copyLabel={m.agent_skill_pair_copy()}
-          copiedLabel={m.agent_skill_pair_copied()}
-        />
+        {code ? (
+          <CopyLine
+            text={m.agent_skill_pair_prompt({
+              site: `https://${domain}`,
+              code: formatPairingCode(code),
+            })}
+            copyLabel={m.agent_skill_pair_copy()}
+            copiedLabel={m.agent_skill_pair_copied()}
+          />
+        ) : (
+          <p className="agent-skill-hint">{m.agent_skill_pair_code_hidden()}</p>
+        )}
         <p className="agent-skill-waiting" role="status">
           <Spinner />
           {m.agent_skill_pair_waiting()}
@@ -109,28 +115,25 @@ export function PairingStep() {
       </>
     );
   } else if (state === "connected" && agent) {
-    const revoked = revokedKeyId === agent.apiKeyId;
     body = (
       <>
-        <Callout role="status" tone={revoked ? "info" : "success"}>
-          {revoked
-            ? m.agent_skill_pair_revoked({ name: agent.name })
-            : m.agent_skill_pair_connected({
-                name: agent.name,
-                time: formatDate(agent.connectedAt, { includeTime: true }),
-              })}
+        <Callout role="status" tone="success">
+          {m.agent_skill_pair_connected({
+            name: agent.name,
+            time: formatDate(agent.connectedAt, { includeTime: true }),
+          })}
         </Callout>
         <div className="agent-skill-actions">
-          {!revoked && (
-            <Button
-              ref={revokeRef}
-              variant="plain"
-              tone="danger"
-              onClick={() => setRevokeOpen(true)}
-            >
-              {m.agent_skill_pair_not_this()}
-            </Button>
-          )}
+          <Button
+            ref={revokeRef}
+            variant="plain"
+            tone="danger"
+            onClick={() =>
+              setPendingRevoke({ id: agent.apiKeyId, name: agent.name })
+            }
+          >
+            {m.agent_skill_pair_not_this()}
+          </Button>
           {generateButton(m.agent_skill_pair_another())}
         </div>
       </>
@@ -159,20 +162,24 @@ export function PairingStep() {
       <p className="agent-skill-hint">{m.agent_skill_pair_hint()}</p>
       {body}
       <ConfirmationModal
-        isOpen={revokeOpen}
-        onClose={() => setRevokeOpen(false)}
+        isOpen={!!pendingRevoke}
+        onClose={() => setPendingRevoke(null)}
         onConfirm={async () => {
-          if (!agent || isDeleting) return;
+          if (!pendingRevoke || isDeleting) return;
           try {
-            await deleteKey(agent.apiKeyId);
-            setRevokedKeyId(agent.apiKeyId);
-            setRevokeOpen(false);
+            await deleteKey(pendingRevoke.id);
+            toast.success(
+              m.agent_skill_pair_revoked({ name: pendingRevoke.name }),
+            );
+            setPendingRevoke(null);
           } catch {
             /* Keep the dialog for retry. */
           }
         }}
         title={m.agent_skill_pair_revoke_title()}
-        message={m.agent_skill_pair_revoke_desc({ name: agent?.name ?? "" })}
+        message={m.agent_skill_pair_revoke_desc({
+          name: pendingRevoke?.name ?? "",
+        })}
         confirmLabel={m.agent_skill_pair_revoke_confirm()}
         isDanger
         isLoading={isDeleting}

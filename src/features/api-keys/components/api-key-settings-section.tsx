@@ -11,10 +11,8 @@ import { FormField } from "@/components/ui/form-field";
 import { FuwariModal } from "@/components/ui/fuwari-modal";
 import { Input } from "@/components/ui/input";
 import { SectionHeading } from "@/components/ui/page-heading";
-import {
-  isPairedKey,
-  useApiKeys,
-} from "@/features/api-keys/hooks/use-api-keys";
+import { isPairedApiKey } from "@/features/agent-pairing/agent-pairing.schema";
+import { useApiKeys } from "@/features/api-keys/hooks/use-api-keys";
 import { formatDate } from "@/lib/utils";
 import { m } from "@/paraglide/messages";
 import "./api-key-settings.css";
@@ -136,7 +134,7 @@ export function ApiKeySettingsSection() {
                 <tr key={key.id}>
                   <td>
                     <strong>{key.name || m.settings_api_keys_unnamed()}</strong>
-                    {isPairedKey(key) && (
+                    {isPairedApiKey(key.metadata) && (
                       <Badge tone="primary" size="sm" className="ml-2">
                         {m.settings_api_keys_paired_badge()}
                       </Badge>

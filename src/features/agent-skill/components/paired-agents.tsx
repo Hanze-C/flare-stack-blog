@@ -4,10 +4,8 @@ import { Button } from "@/components/ui/button";
 import ConfirmationModal from "@/components/ui/confirmation-modal";
 import { EmptyState } from "@/components/ui/empty-state";
 import { SectionHeading } from "@/components/ui/page-heading";
-import {
-  isPairedKey,
-  useApiKeys,
-} from "@/features/api-keys/hooks/use-api-keys";
+import { isPairedApiKey } from "@/features/agent-pairing/agent-pairing.schema";
+import { useApiKeys } from "@/features/api-keys/hooks/use-api-keys";
 import { formatDate } from "@/lib/utils";
 import { m } from "@/paraglide/messages";
 
@@ -18,7 +16,7 @@ export function PairedAgents() {
     id: string;
     name: string;
   } | null>(null);
-  const agents = keys.filter(isPairedKey);
+  const agents = keys.filter((key) => isPairedApiKey(key.metadata));
   return (
     <section className="agent-skill-agents" aria-busy={isLoading}>
       <SectionHeading
