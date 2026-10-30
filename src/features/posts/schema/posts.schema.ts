@@ -176,6 +176,22 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
   slugKey: true,
   publicSlugKey: true,
 });
+
+const SET_TAGS_HINT =
+  "A Post's Tags are not set with its fields: set them with PUT /admin/posts/{postId}/tags, body { tagIds, saveToken }.";
+
+/**
+ * The refusal of an unknown field, pointing a `tagIds` sent with a Post's
+ * fields to the operation that sets its Tags.
+ */
+function pointTagIdsToSetTags(issue: z.core.$ZodRawIssue) {
+  if (issue.code !== "unrecognized_keys" || !issue.keys.includes("tagIds")) {
+    return undefined;
+  }
+  const keys = issue.keys.map((key) => `"${key}"`).join(", ");
+  return `Unrecognized key${issue.keys.length > 1 ? "s" : ""}: ${keys}. ${SET_TAGS_HINT}`;
+}
+
 /**
  * Strict on purpose, and narrower than the table.
  *
@@ -189,31 +205,34 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  * post that was still a draft. Rejecting the key says so instead.
  *
  * Pinning is not a field either: it takes effect at once, so it has its own
- * endpoints and a PATCH carrying `pinnedAt` is refused.
+ * endpoints and a PATCH carrying `pinnedAt` is refused. Nor are Tags, which
+ * have theirs too: a PATCH carrying `tagIds` is refused naming it.
  */
-const PostUpdateSchema = createUpdateSchema(PostsTable, {
-  contentJson: ContentJsonInputSchema,
-  title: PostTitleInputSchema.optional(),
-  slug: PostSlugInputSchema.optional(),
-  publishedAt: PublishedAtInputSchema,
-})
-  .omit({
-    publicSnapshotJson: true,
-    publicCategoryId: true,
-    publicSlug: true,
-    pinnedAt: true,
-    status: true,
-    id: true,
-    createdAt: true,
-    updatedAt: true,
-    saveToken: true,
-    draftFingerprint: true,
-    publishedFingerprint: true,
-    slugKey: true,
-    publicSlugKey: true,
+const PostUpdateSchema = z.strictObject(
+  createUpdateSchema(PostsTable, {
+    contentJson: ContentJsonInputSchema,
+    title: PostTitleInputSchema.optional(),
+    slug: PostSlugInputSchema.optional(),
+    publishedAt: PublishedAtInputSchema,
   })
-  .extend({ contentMarkdown: ContentMarkdownInputSchema })
-  .strict();
+    .omit({
+      publicSnapshotJson: true,
+      publicCategoryId: true,
+      publicSlug: true,
+      pinnedAt: true,
+      status: true,
+      id: true,
+      createdAt: true,
+      updatedAt: true,
+      saveToken: true,
+      draftFingerprint: true,
+      publishedFingerprint: true,
+      slugKey: true,
+      publicSlugKey: true,
+    })
+    .extend({ contentMarkdown: ContentMarkdownInputSchema }).shape,
+  { error: pointTagIdsToSetTags },
+);
 const NonEmptyPostUpdateSchema = atLeastOneField(PostUpdateSchema);
 
 export const PostItemSchema = PostSelectSchema.omit({
@@ -455,14 +474,17 @@ export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
  * always creates a new draft instead of reusing an existing empty one, so
  * several external clients can create posts without colliding.
  */
-const CreatePostDataSchema = z.strictObject({
-  title: PostTitleInputSchema.describe(
-    `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE} A unique slug is generated from it.`,
-  ),
-  summary: z.string().nullable().optional(),
-  contentJson: ContentJsonInputSchema,
-  contentMarkdown: ContentMarkdownInputSchema,
-});
+const CreatePostDataSchema = z.strictObject(
+  {
+    title: PostTitleInputSchema.describe(
+      `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE} A unique slug is generated from it.`,
+    ),
+    summary: z.string().nullable().optional(),
+    contentJson: ContentJsonInputSchema,
+    contentMarkdown: ContentMarkdownInputSchema,
+  },
+  { error: pointTagIdsToSetTags },
+);
 
 export const CreatePostInputSchema = z
   .strictObject({
@@ -472,14 +494,17 @@ export const CreatePostInputSchema = z
   })
   .optional();
 
-export const UpdatePostInputSchema = z.strictObject({
-  id: PathIdSchema,
-  data: NonEmptyPostUpdateSchema.describe(
-    "The fields to change; at least one, or the request answers 400.",
-  ),
-  saveToken: StatedSaveTokenSchema,
-  contentFormat: PostContentFormatSchema,
-});
+export const UpdatePostInputSchema = z.strictObject(
+  {
+    id: PathIdSchema,
+    data: NonEmptyPostUpdateSchema.describe(
+      "The fields to change; at least one, or the request answers 400.",
+    ),
+    saveToken: StatedSaveTokenSchema,
+    contentFormat: PostContentFormatSchema,
+  },
+  { error: pointTagIdsToSetTags },
+);
 
 export const DeletePostInputSchema = z.strictObject({ id: PathIdSchema });
 

@@ -449,4 +449,163 @@ describe("setting a post's tags", () => {
     expect(response.status).toBe(409);
     expect(await codeOf(response)).toBe("EDIT_CONFLICT");
   });
+
+  it.each([
+    ["a tag's id written as a string", (id: number) => String(id)],
+    ["a fraction", () => 1.5],
+    ["zero", () => 0],
+    ["a negative number", () => -1],
+  ])("refuses %s with 400 and writes nothing", async (_label, write) => {
+    const apiKey = await seedAdminApiKey();
+    const { id, saveToken } = await createPost(apiKey, "Strict tags");
+    const tag = (await (
+      await callApi(apiKey, "/admin/tags", {
+        method: "POST",
+        body: { name: "Strict" },
+      })
+    ).json()) as { id: number };
+
+    const response = await callApi(apiKey, `/admin/posts/${id}/tags`, {
+      method: "PUT",
+      body: { tagIds: [write(tag.id)] },
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      data: { issues: Array<{ path: Array<string | number> }> };
+    };
+    expect(body.data.issues.map((issue) => issue.path)).toEqual([
+      ["tagIds", 0],
+    ]);
+    expect((await readPost(apiKey, id)).saveToken).toBe(saveToken);
+  });
+});
+
+describe("tagIds sent with a post's fields", () => {
+  it.each([
+    ["in data", (tagIds: Array<number>) => ({ data: { tagIds } })],
+    [
+      "next to data",
+      (tagIds: Array<number>) => ({ data: { title: "Retitled" }, tagIds }),
+    ],
+  ])(
+    "refuses them %s, naming the operation that sets Tags",
+    async (_label, body) => {
+      const apiKey = await seedAdminApiKey();
+      const { id, saveToken } = await createPost(apiKey, "Untagged");
+
+      const response = await patchPost(apiKey, id, body([1]));
+
+      expect(response.status).toBe(400);
+      const { data } = (await response.json()) as {
+        data: { issues: Array<{ message: string }> };
+      };
+      expect(data.issues).toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("PUT /admin/posts/{postId}/tags"),
+        }),
+      );
+      expect((await readPost(apiKey, id)).saveToken).toBe(saveToken);
+    },
+  );
+
+  it("refuses them when creating a post too", async () => {
+    const apiKey = await seedAdminApiKey();
+
+    const response = await callApi(apiKey, "/admin/posts", {
+      method: "POST",
+      body: { data: { title: "Tagged at birth", tagIds: [1] } },
+    });
+
+    expect(response.status).toBe(400);
+    const { data } = (await response.json()) as {
+      data: { issues: Array<{ message: string }> };
+    };
+    expect(data.issues[0].message).toContain("PUT /admin/posts/{postId}/tags");
+  });
+});
+
+describe("query parameters", () => {
+  it("refuses a query parameter on a save instead of ignoring it", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id, saveToken } = await createPost(apiKey, "Queried");
+
+    const response = await callApi(
+      apiKey,
+      `/admin/posts/${id}?contentFormat=markdown`,
+      { method: "PATCH", body: { data: { title: "Saved" }, saveToken } },
+    );
+
+    expect(response.status).toBe(400);
+    const { data } = (await response.json()) as {
+      data: { issues: Array<{ path: Array<string> }> };
+    };
+    expect(data.issues.map((issue) => issue.path)).toEqual([["contentFormat"]]);
+    const after = await readPost(apiKey, id);
+    expect(after.title).toBe("Queried");
+    expect(after.saveToken).toBe(saveToken);
+  });
+
+  it("takes contentFormat in the body of a save", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id } = await createPost(apiKey, "Formatted");
+
+    const response = await patchPost(apiKey, id, {
+      data: { contentMarkdown: "Hello" },
+      contentFormat: "markdown",
+    });
+
+    expect(response.status).toBe(200);
+    const post = (await response.json()) as Record<string, unknown>;
+    expect(post.contentMarkdown).toContain("Hello");
+    expect(post).not.toHaveProperty("contentJson");
+  });
+
+  it("refuses a query parameter on an operation with no body", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id } = await createPost(apiKey, "Kept");
+
+    const response = await callApi(apiKey, `/admin/posts/${id}?force=1`, {
+      method: "DELETE",
+    });
+
+    expect(response.status).toBe(400);
+    expect((await callApi(apiKey, `/admin/posts/${id}`)).status).toBe(200);
+  });
+
+  it.each([
+    ["an admin read", "/admin/posts?stauts=draft", "stauts"],
+    ["a public read", "/posts?stauts=draft", "stauts"],
+    ["a public read that takes no input", "/posts/pinned?limit=3", "limit"],
+    ["an admin read that takes no input", "/admin/dashboard?x=1", "x"],
+  ])("refuses an unknown query parameter on %s", async (_label, path, name) => {
+    const apiKey = await seedAdminApiKey();
+
+    const response = await callApi(apiKey, path);
+
+    expect(response.status).toBe(400);
+    const { data } = (await response.json()) as {
+      data: { issues: Array<{ path: Array<string> }> };
+    };
+    expect(data.issues.map((issue) => issue.path)).toEqual([[name]]);
+  });
+
+  it("still takes the query parameters a read declares", async () => {
+    const apiKey = await seedAdminApiKey();
+
+    const response = await callApi(apiKey, "/posts?limit=1");
+
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses a body on an operation that takes none", async () => {
+    const apiKey = await seedAdminApiKey();
+
+    const response = await callApi(apiKey, "/admin/search/rebuild", {
+      method: "POST",
+      body: { force: true },
+    });
+
+    expect(response.status).toBe(400);
+  });
 });
