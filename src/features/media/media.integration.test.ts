@@ -649,12 +649,22 @@ describe("MediaService", () => {
       const bytes = await pngFile("download.png", "x").arrayBuffer();
       vi.stubGlobal(
         "fetch",
-        vi.fn().mockResolvedValue(
-          new Response(bytes, {
+        vi.fn(async (input: URL) => {
+          const url = new URL(input);
+          if (url.hostname === "cloudflare-dns.com") {
+            return Response.json({
+              Status: 0,
+              Answer:
+                url.searchParams.get("type") === "A"
+                  ? [{ type: 1, data: "93.184.216.34" }]
+                  : [],
+            });
+          }
+          return new Response(bytes, {
             status: 200,
             headers: { "content-type": "image/png" },
-          }),
-        ),
+          });
+        }),
       );
 
       const result = unwrap(
@@ -668,11 +678,60 @@ describe("MediaService", () => {
       vi.unstubAllGlobals();
     });
 
-    it("rejects a private import URL", async () => {
-      const result = await MediaService.importFromUrl(adminContext, {
-        url: "http://127.0.0.1/secret.png",
-      });
+    it.each([
+      "http://127.0.0.1/secret.png",
+      "http://[::ffff:127.0.0.1]:3000/secret.png",
+      "http://[::1]:3000/secret.png",
+      "http://localhost:3000/secret.png",
+    ])("rejects the private import URL %s", async (url) => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await MediaService.importFromUrl(adminContext, { url });
       expect(result.error?.reason).toBe("MEDIA_INVALID_URL");
+      expect(fetchMock).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    });
+
+    it("rejects a name that resolves to loopback and a redirect to one", async () => {
+      const fetchMock = vi.fn(async (input: URL) => {
+        const url = new URL(input);
+        if (url.hostname === "cloudflare-dns.com") {
+          const name = url.searchParams.get("name");
+          const isA = url.searchParams.get("type") === "A";
+          return Response.json({
+            Status: 0,
+            Answer: isA
+              ? [
+                  {
+                    type: 1,
+                    data:
+                      name === "localtest.me" ? "127.0.0.1" : "93.184.216.34",
+                  },
+                ]
+              : [],
+          });
+        }
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://[::ffff:7f00:1]:3000/secret.png" },
+        });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const resolved = await MediaService.importFromUrl(adminContext, {
+        url: "http://localtest.me:3000/secret.png",
+      });
+      const redirected = await MediaService.importFromUrl(adminContext, {
+        url: "https://images.example/a.png",
+      });
+
+      expect(resolved.error?.reason).toBe("MEDIA_INVALID_URL");
+      expect(redirected.error?.reason).toBe("MEDIA_INVALID_URL");
+      const fetched = fetchMock.mock.calls
+        .map(([input]) => input.href)
+        .filter((url) => !url.startsWith("https://cloudflare-dns.com/"));
+      expect(fetched).toEqual(["https://images.example/a.png"]);
+      vi.unstubAllGlobals();
     });
 
     it("deletes unused media in one pass", async () => {
