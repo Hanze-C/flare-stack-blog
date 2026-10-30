@@ -126,6 +126,10 @@ const PUBLICATION_DATE_MESSAGES = {
   FORMAT:
     "Not an ISO 8601 date: write 2026-10-01 or 2026-10-01T08:30:00Z. A time with no Z or offset is read as UTC.",
   NOT_A_DATE: "The calendar has no such day.",
+  NOT_A_TIME:
+    "No such time of day: hours run from 00 to 23, minutes and seconds from 00 to 59.",
+  NOT_AN_OFFSET:
+    "No such UTC offset: write Z or an offset from -23:59 to +23:59, such as +08:00.",
   OUT_OF_RANGE: `A publication date is from ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} to the end of ${PUBLICATION_DATE_MAX.getUTCFullYear() - 1}.`,
 } as const;
 
