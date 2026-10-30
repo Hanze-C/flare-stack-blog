@@ -118,6 +118,36 @@ describe("Post content as Markdown over the Admin API", () => {
     );
   });
 
+  it("answers a PATCH in the requested content format", async () => {
+    const apiKey = await seedAdminApiKey();
+    const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+
+    const asMarkdown = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: {
+        data: { contentMarkdown: "## Heading\n\nWritten **bold**" },
+        contentFormat: "markdown",
+      },
+    });
+    expect(asMarkdown.status).toBe(200);
+    const written = (await asMarkdown.json()) as ReadPost & {
+      saveToken: string;
+    };
+    expect(written).not.toHaveProperty("contentJson");
+    expect(written.contentMarkdown).toContain("## Heading");
+    expect(written.contentMarkdown).toContain("**bold**");
+    expect(written.saveToken).toEqual(expect.any(String));
+
+    const asJson = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { title: "Renamed" } },
+    });
+    expect(asJson.status).toBe(200);
+    const plain = (await asJson.json()) as ReadPost;
+    expect(plain).not.toHaveProperty("contentMarkdown");
+    expect(plain.contentJson?.content?.[0]?.type).toBe("heading");
+  });
+
   it("reads Markdown in the list with includeContent", async () => {
     const apiKey = await seedAdminApiKey();
     const id = await createPost(apiKey, { contentJson: paragraph("Listed") });

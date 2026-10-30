@@ -285,7 +285,12 @@ export const GetPostsInputSchema = z.object({
   publicOnly: z.boolean().optional(),
   search: z.string().optional(),
   sortDir: z.enum(["ASC", "DESC"]).optional(),
-  sortBy: z.enum(["publishedAt", "updatedAt", "id"]).optional(),
+  sortBy: z
+    .enum(["publishedAt", "updatedAt", "createdAt", "id"])
+    .optional()
+    .describe(
+      "Sort key. Defaults to updatedAt. createdAt is when the post was first created and never changes. Ties are broken by id in the sortDir direction.",
+    ),
   includeContent: z
     .boolean()
     .optional()
@@ -379,6 +384,7 @@ export const UpdatePostInputSchema = z.object({
   id: z.number(),
   data: PostUpdateSchema,
   saveToken: StatedSaveTokenSchema,
+  contentFormat: PostContentFormatSchema,
 });
 
 export const DeletePostInputSchema = z.object({ id: z.number() });
@@ -422,6 +428,10 @@ const WrittenPostSchema = PostSelectSchema.extend({
 export const UpdatedPostSchema = WrittenPostSchema.omit({
   publicSlug: true,
 }).extend({
+  contentJson: NullableJsonContentSchema.optional().describe(
+    "The editable body as TipTap JSON. Not returned when the request asks for contentFormat=markdown.",
+  ),
+  contentMarkdown: ContentMarkdownOutputSchema,
   hasUnpublishedChanges: HasUnpublishedChangesSchema,
 });
 
