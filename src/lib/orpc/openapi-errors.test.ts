@@ -7,6 +7,7 @@ import { openAPIHandler } from "./openapi-handler";
 
 type Schema = { oneOf?: Array<Schema>; properties?: Record<string, Schema> } & {
   const?: unknown;
+  $ref?: string;
 };
 type Operation = {
   responses?: Record<string, { content?: Record<string, { schema?: Schema }> }>;
@@ -19,7 +20,14 @@ const { response } = await openAPIHandler.handle(
 if (!response) throw new Error("No route served /api/spec.json");
 const doc = (await response.json()) as {
   paths: Record<string, Record<string, Operation>>;
+  components?: { schemas?: Record<string, Schema> };
 };
+
+/** The schema a `$ref` points to, or the schema itself. */
+function resolve(schema: Schema): Schema {
+  const name = schema.$ref?.replace("#/components/schemas/", "");
+  return (name && doc.components?.schemas?.[name]) || schema;
+}
 
 /** The `STATUS CODE` of every defined error an operation declares, sorted. */
 function declaredErrors(method: string, path: string): Array<string> {
@@ -28,7 +36,8 @@ function declaredErrors(method: string, path: string): Array<string> {
   return Object.entries(operation.responses ?? {})
     .flatMap(([status, entry]) =>
       (entry.content?.["application/json"]?.schema?.oneOf ?? []).flatMap(
-        (alternative) => {
+        (reference) => {
+          const alternative = resolve(reference);
           const code = alternative.properties?.code?.const;
           return alternative.properties?.defined?.const === true &&
             typeof code === "string"

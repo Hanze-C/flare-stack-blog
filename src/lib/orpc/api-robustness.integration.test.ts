@@ -111,6 +111,35 @@ describe("unknown routes and wrong methods", () => {
   });
 });
 
+describe("the OpenAPI document", () => {
+  it("serves its index and a subset", async () => {
+    const index = await call("/spec/index.json");
+    expect(index.status).toBe(200);
+    const { paths } = (await index.json()) as {
+      paths: Record<string, Record<string, { operationId: string }>>;
+    };
+    expect(paths["/admin/posts/{id}"]?.get?.operationId).toBe(
+      "posts.admin.get",
+    );
+
+    const subset = await call("/spec.json?operationIds=posts.admin.get");
+    expect(subset.status).toBe(200);
+    const document = (await subset.json()) as { paths: object };
+    expect(Object.keys(document.paths)).toEqual(["/admin/posts/{id}"]);
+  });
+
+  it("answers a wrong call JSON, as other routes do", async () => {
+    const posted = await call("/spec/index.json", { method: "POST" });
+    expect(posted.status).toBe(405);
+    expect(posted.headers.get("allow")).toBe("GET");
+
+    const unknown = await call("/spec.json?operationIds=posts.nope");
+    expect(unknown.status).toBe(404);
+    expect(unknown.headers.get("content-type")).toContain("application/json");
+    expect(await unknown.json()).toMatchObject({ code: "OPERATION_NOT_FOUND" });
+  });
+});
+
 describe("path ids", () => {
   it.each([
     ["a decimal point", (id: number) => `${id}.0`],

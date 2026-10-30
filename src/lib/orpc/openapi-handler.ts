@@ -1,9 +1,8 @@
 import { SmartCoercionPlugin } from "@orpc/json-schema";
 import { ORPCError } from "@orpc/client";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
-import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
 import { StandardOpenAPIMatcher } from "@orpc/openapi/standard";
-import { lazy, onError, unlazyRouter } from "@orpc/server";
+import { onError } from "@orpc/server";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { MAX_FILE_SIZE } from "@/features/media/media.schema";
 import {
@@ -12,6 +11,11 @@ import {
   readBodyWithin,
 } from "./body-limit";
 import type { ApiContext } from "./context";
+import { OPENAPI_COMPONENTS } from "./openapi-components";
+import {
+  DOCUMENT_PATHS,
+  OpenAPIDocumentPlugin,
+} from "./openapi-document-plugin";
 import { CanonicalPathIdPlugin } from "./path-ids";
 import { router } from "./router";
 
@@ -19,7 +23,11 @@ const schemaConverter = new ZodToJsonSchemaConverter();
 
 // API-wide rules a client needs before its first call. Per-field details
 // belong to the schemas; the Agent Skill points agents here.
-const API_DESCRIPTION = `Paths are relative to the server URL.
+const API_DESCRIPTION = `## Reading this document
+
+The whole document is large, so read it in parts. First GET \`/api/spec/index.json\` on the site origin: this description and every operation's \`operationId\`, method, path, summary and tags. Then GET \`/api/spec.json?operationIds=<id>,<id>\` for the operations you will call, or \`?tags=<tag>\` (URL-encoded) for all of a tag's: an OpenAPI document with just those operations and every schema they reference. \`/api/spec.json\` with no query is the whole document.
+
+Paths are relative to the server URL.
 
 ## Authentication
 
@@ -56,20 +64,6 @@ Upload a file as multipart form data to the Media upload operation; its answer c
 
 Every error answers JSON with \`code\`, \`status\` and \`message\`; the errors an operation declares carry \`defined: true\` and may carry \`data\`. A request that fails validation answers 400 \`BAD_REQUEST\` with \`data.issues\`, each naming the path of a field and what is wrong with it: correct those fields and resend. 404 with a declared code (such as \`POST_NOT_FOUND\`) means what you named does not exist; 404 \`ROUTE_NOT_FOUND\` and 405 \`METHOD_NOT_ALLOWED\` mean the call itself is wrong, so check the path and method against this document. 413 means the request body is too large. After a timeout or a 5xx, read before retrying: the write may have landed.`;
 
-type PluginInit = OpenAPIReferencePlugin<ApiContext>["init"];
-
-// The spec generator lists loaded procedures before lazy ones; handing it the
-// whole router behind a single lazy keeps the spec in the router's own order.
-// The generator resolves a lazy root, though Router's type has no such case.
-class ReferencePlugin extends OpenAPIReferencePlugin<ApiContext> {
-  override init(...[options, appRouter]: Parameters<PluginInit>) {
-    const wholeRouter = lazy(async () => ({
-      default: await unlazyRouter(appRouter),
-    }));
-    super.init(options, wholeRouter as unknown as typeof appRouter);
-  }
-}
-
 export const openAPIHandler = new OpenAPIHandler(router, {
   adapterInterceptors: [
     async (options) => {
@@ -104,11 +98,11 @@ export const openAPIHandler = new OpenAPIHandler(router, {
       schemaConverters: [schemaConverter],
     }),
     new CanonicalPathIdPlugin({ schemaConverter }),
-    new ReferencePlugin({
+    new OpenAPIDocumentPlugin<ApiContext>({
       schemaConverters: [schemaConverter],
-      docsPath: "/docs",
-      specPath: "/spec.json",
-      specGenerateOptions: {
+      docsTitle: "Flare Stack Blog API",
+      generateOptions: {
+        commonSchemas: OPENAPI_COMPONENTS,
         info: {
           title: "Flare Stack Blog API",
           version: __APP_VERSION__,
@@ -171,7 +165,11 @@ export async function handleApiRequest(
   const url = new URL(request.url);
   const pathname =
     `/${url.pathname.replace(/^\/api/, "").replace(/^\/|\/$/g, "")}` as const;
-  const allowed = await methodsAllowedAt(pathname);
+  const allowed = (Object.values(DOCUMENT_PATHS) as Array<string>).includes(
+    pathname,
+  )
+    ? ["GET"]
+    : await methodsAllowedAt(pathname);
   if (allowed.length > 0) {
     return errorResponse(
       new ORPCError("METHOD_NOT_ALLOWED", {
@@ -185,7 +183,7 @@ export async function handleApiRequest(
   return errorResponse(
     new ORPCError("ROUTE_NOT_FOUND", {
       status: 404,
-      message: `No API route matches ${request.method} ${url.pathname}. The routes are listed in /api/spec.json.`,
+      message: `No API route matches ${request.method} ${url.pathname}. The routes are listed in /api${DOCUMENT_PATHS.index}.`,
     }),
   );
 }

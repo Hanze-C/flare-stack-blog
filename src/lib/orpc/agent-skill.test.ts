@@ -56,6 +56,10 @@ function namesIn(node: unknown, names = new Set<string>()): Set<string> {
 // handling an Edit Conflict hinge on it. url: a key of the Skill's own config
 // file, which the document happens to use as a field name too.
 const ALLOWED = new Set(["x-api-key", "saveToken", "url"]);
+
+// The OpenAPI document, whole or in parts, is the one place the Skill may
+// send an agent to. Its subsets are queries on /api/spec.json.
+const DOCUMENT_URLS = new Set(["/api/spec.json", "/api/spec/index.json"]);
 const names = new Set([...namesIn(doc)].filter((n) => !ALLOWED.has(n)));
 
 describe("the Agent Skill", () => {
@@ -72,7 +76,7 @@ describe("the Agent Skill", () => {
         m[0].replace(/[.]$/, ""),
       );
       expect(
-        apiPaths.filter((p) => p !== "/api/spec.json"),
+        apiPaths.filter((p) => !DOCUMENT_URLS.has(p)),
         file,
       ).toEqual([]);
       for (const path of paths) {
