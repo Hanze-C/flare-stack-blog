@@ -84,22 +84,24 @@ describe("image URLs", () => {
     ).toBeUndefined();
   });
 
-  it("fetches the transform source at the requested version", () => {
+  it("fetches the transform source at the stored file's version", () => {
     expect(
       getTransformSourceUrl(
         new URL(
           "https://blog.example/images/asset/themes/fuwari/home-bg.webp?quality=80&width=1600&v=177",
         ),
         "asset/themes/fuwari/home-bg.webp",
+        "etag-1",
       ),
     ).toBe(
-      "https://blog.example/images/asset/themes/fuwari/home-bg.webp?original=true&v=177",
+      "https://blog.example/images/asset/themes/fuwari/home-bg.webp?original=true&v=etag-1",
     );
     expect(
       getTransformSourceUrl(
         new URL("https://blog.example/images/abc.png?quality=80&width=800"),
         "abc.png",
+        "etag-2",
       ),
-    ).toBe("https://blog.example/images/abc.png?original=true");
+    ).toBe("https://blog.example/images/abc.png?original=true&v=etag-2");
   });
 });

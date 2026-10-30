@@ -141,7 +141,11 @@ describe("errors declared by tag, category and media operations", () => {
     ],
     ["delete", "/admin/categories/{id}", ["404 CATEGORY_NOT_FOUND"]],
     ["get", "/admin/media", []],
-    ["post", "/admin/media", ["500 MEDIA_RECORD_CREATE_FAILED"]],
+    [
+      "post",
+      "/admin/media",
+      ["400 MEDIA_INVALID", "500 MEDIA_RECORD_CREATE_FAILED"],
+    ],
     [
       "post",
       "/admin/media/import",
@@ -152,8 +156,17 @@ describe("errors declared by tag, category and media operations", () => {
         "500 MEDIA_RECORD_CREATE_FAILED",
       ],
     ],
-    ["delete", "/admin/media/{key}", ["409 MEDIA_IN_USE"]],
-    ["post", "/admin/media/{key}/replace", ["404 MEDIA_NOT_FOUND"]],
+    [
+      "delete",
+      "/admin/media/{key}",
+      ["404 MEDIA_NOT_FOUND", "409 MEDIA_IN_USE"],
+    ],
+    ["patch", "/admin/media/{key}", ["404 MEDIA_NOT_FOUND"]],
+    [
+      "post",
+      "/admin/media/{key}/replace",
+      ["400 MEDIA_INVALID", "404 MEDIA_NOT_FOUND"],
+    ],
   ] as Array<[string, string, Array<string>]>)("%s %s", (method, path, own) => {
     const { actual, expected } = adminErrors(method, path, ...own);
     expect(actual).toEqual(expected);

@@ -19,8 +19,12 @@ async function readSession(context: ApiContext) {
       isAPIError(error) &&
       (error.statusCode === 401 || error.statusCode === 403)
     ) {
+      // The API Key plugin answers 403 for a key too short to be one
+      // (`notakey`, a truncated paste) but 401 for a well-formed wrong key;
+      // every invalid key is the caller failing to authenticate.
+      const invalidKey = error.body?.code === "INVALID_API_KEY";
       throw new ORPCError(
-        error.statusCode === 401 ? "UNAUTHORIZED" : "FORBIDDEN",
+        error.statusCode === 401 || invalidKey ? "UNAUTHORIZED" : "FORBIDDEN",
         {
           cause: error,
         },
