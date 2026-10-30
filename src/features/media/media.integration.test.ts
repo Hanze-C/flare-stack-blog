@@ -472,7 +472,7 @@ describe("MediaService", () => {
 
       const listed = await MediaService.getMediaList(adminContext, {});
       expect(listed.items.find((item) => item.key === media.key)).toMatchObject(
-        { postCount: 1, isCover: false },
+        { postCount: 0, revisionOnlyPostCount: 1, isCover: false },
       );
       expect(
         await MediaService.getLinkedMediaKeys(adminContext, [media.key]),
@@ -492,6 +492,28 @@ describe("MediaService", () => {
         false,
       );
       unwrap(await MediaService.deleteImage(adminContext, media.key));
+    });
+
+    it("counts a post that uses the image only in revisions apart from one that uses it in its published version", async () => {
+      const media = unwrap(
+        await MediaService.upload(adminContext, {
+          file: pngFile("mixed.png", "mixed"),
+        }),
+      );
+      const { id: current } = await PostService.createEmptyPost(adminContext);
+      await setPostContent(current, imageDoc(media.key));
+      await publishPost(current);
+      // An empty draft is reused, so this one is made once `current` has content.
+      const { id: historic } = await PostService.createEmptyPost(adminContext);
+      await setPostContent(historic, imageDoc(media.key));
+      await publishPost(historic);
+      await setPostContent(historic, { type: "doc", content: [] });
+      unwrap(await PostService.unpublishPost(adminContext, { id: historic }));
+
+      const listed = await MediaService.getMediaList(adminContext, {});
+      expect(listed.items.find((item) => item.key === media.key)).toMatchObject(
+        { postCount: 1, revisionOnlyPostCount: 1 },
+      );
     });
 
     it("keeps the images of the backup a restore saves", async () => {
@@ -537,7 +559,7 @@ describe("MediaService", () => {
 
       const listed = await MediaService.getMediaList(adminContext, {});
       expect(listed.items.find((item) => item.key === media.key)).toMatchObject(
-        { postCount: 1 },
+        { postCount: 1, revisionOnlyPostCount: 0 },
       );
       expect(
         await MediaService.getLinkedPosts(adminContext, media.key),

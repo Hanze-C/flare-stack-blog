@@ -3,6 +3,19 @@ import { withoutControlCharacters } from "@/lib/unicode-text";
 /** The longest file name a Media can have, the usual limit of a file system. */
 export const MEDIA_NAME_MAX_LENGTH = 255;
 
+/**
+ * How posts use an image: in a draft or published version (`current`), only in
+ * Post Revisions, which restoring would bring back (`revisions-only`), or not
+ * at all.
+ */
+export function mediaUsageOf(counts: {
+  postCount: number;
+  revisionOnlyPostCount: number;
+}): "current" | "revisions-only" | "none" {
+  if (counts.postCount > 0) return "current";
+  return counts.revisionOnlyPostCount > 0 ? "revisions-only" : "none";
+}
+
 const IMAGE_TYPE_EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",

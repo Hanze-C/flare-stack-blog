@@ -671,6 +671,7 @@
   "media_badge_revisions": "Revisions only",
   "media_post_count": "{count} posts",
   "media_used_in": "Used in {count} posts",
+  "media_revisions_also": "{count} more posts use it only in earlier versions",
   "media_copy_link": "Copy link",
   "media_replace": "Replace",
   "media_delete": "Delete",

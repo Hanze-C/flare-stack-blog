@@ -664,6 +664,7 @@
   "media_badge_revisions": "仅历史版本引用",
   "media_post_count": "{count} 篇",
   "media_used_in": "用于 {count} 篇文章",
+  "media_revisions_also": "另有 {count} 篇文章仅历史版本引用",
   "media_copy_link": "复制链接",
   "media_replace": "替换",
   "media_delete": "删除",

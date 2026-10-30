@@ -9,6 +9,7 @@ import {
   importedMediaName,
   isSameImageType,
   MEDIA_NAME_MAX_LENGTH,
+  mediaUsageOf,
   parseImageTransform,
   PUBLIC_IMAGE_WIDTH,
 } from "./media.utils";
@@ -166,5 +167,19 @@ describe("isSameImageType", () => {
     expect(isSameImageType("IMAGE/PNG; charset=x", "image/png")).toBe(true);
     expect(isSameImageType("image/png", "image/svg+xml")).toBe(false);
     expect(isSameImageType("image/gif", "image/webp")).toBe(false);
+  });
+});
+
+describe("mediaUsageOf", () => {
+  it("tells current use from use only in Post Revisions", () => {
+    expect(mediaUsageOf({ postCount: 2, revisionOnlyPostCount: 1 })).toBe(
+      "current",
+    );
+    expect(mediaUsageOf({ postCount: 0, revisionOnlyPostCount: 1 })).toBe(
+      "revisions-only",
+    );
+    expect(mediaUsageOf({ postCount: 0, revisionOnlyPostCount: 0 })).toBe(
+      "none",
+    );
   });
 });
