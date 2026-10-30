@@ -4,6 +4,7 @@ import { FriendLinksTable } from "@/lib/db/schema";
 import type { Messages } from "@/lib/i18n";
 import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
 import { coercedDate } from "@/lib/orpc/dates";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 
 const FriendLinkUserSchema = z.object({
   id: z.string(),
@@ -92,11 +93,11 @@ export const GetAllFriendLinksInputSchema = z.strictObject({
 });
 
 export const ApproveFriendLinkInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const RejectFriendLinkInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   rejectionReason: z.string().max(500).optional(),
 });
 
@@ -108,7 +109,7 @@ export const RejectFriendLinkInputSchema = z.strictObject({
  */
 export const UpdateFriendLinkInputSchema = z
   .object({
-    id: z.number(),
+    id: PathIdSchema,
     siteName: friendLinkFields.siteName.optional(),
     siteUrl: friendLinkFields.siteUrl.optional(),
     description: friendLinkFields.description,
@@ -117,7 +118,7 @@ export const UpdateFriendLinkInputSchema = z
   .strict();
 
 export const DeleteFriendLinkInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 // === Cache ===

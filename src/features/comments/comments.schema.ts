@@ -3,6 +3,7 @@ import { z } from "zod";
 import { COMMENT_STATUSES, CommentsTable } from "@/lib/db/schema";
 import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
 import { coercedDate } from "@/lib/orpc/dates";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 
 /** A Comment as public APIs return it; when an Admin handled it stays private. */
 export const CommentSelectSchema = createSelectSchema(CommentsTable, {
@@ -39,14 +40,14 @@ const CommentWithUserSchema = CommentSelectSchema.extend({
 
 // Public API Schemas
 export const GetCommentsByPostIdInputSchema = z.object({
-  postId: z.number(),
+  postId: PathIdSchema,
   offset: PageOffsetSchema.optional(),
   limit: pageLimitSchema(100).optional(),
 });
 
 export const GetRepliesByRootIdInputSchema = z.object({
-  postId: z.number(),
-  rootId: z.number(),
+  postId: PathIdSchema,
+  rootId: PathIdSchema,
   offset: PageOffsetSchema.optional(),
   limit: pageLimitSchema(100).optional(),
 });
@@ -84,19 +85,19 @@ export const GetRootCommentsResponseSchema = z.object({
 const CommentBodySchema = z.string().trim().min(1);
 
 export const CreateCommentInputSchema = z.object({
-  postId: z.number(),
+  postId: PathIdSchema,
   content: CommentBodySchema,
   rootId: z.number().optional(),
   replyToCommentId: z.number().optional(),
 });
 
 export const DeleteCommentInputSchema = z.object({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const GetThreadByCommentIdInputSchema = z.object({
-  postId: z.number(),
-  id: z.number(),
+  postId: PathIdSchema,
+  id: PathIdSchema,
 });
 
 export const GetMyCommentsInputSchema = z.object({
@@ -107,7 +108,7 @@ export const GetMyCommentsInputSchema = z.object({
 
 // Admin API Schemas
 export const CommentHandledInputSchema = z.strictObject({
-  id: z.number().int().positive(),
+  id: PathIdSchema,
 });
 
 export const CommentsHandledCountSchema = z.object({

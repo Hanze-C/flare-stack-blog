@@ -75,9 +75,11 @@ describe("Friend Link input schemas", () => {
       CreateFriendLinkInputSchema.safeParse({ id: 1, ...listing }).success,
     ).toBe(false);
     expect(UpdateFriendLinkInputSchema.safeParse({}).success).toBe(false);
+    // The update's id is its path id: a positive whole number.
     for (const id of [0, -1, 1.5]) {
-      expect(UpdateFriendLinkInputSchema.parse({ id })).toEqual({ id });
+      expect(UpdateFriendLinkInputSchema.safeParse({ id }).success).toBe(false);
     }
+    expect(UpdateFriendLinkInputSchema.parse({ id: 1 })).toEqual({ id: 1 });
     expect(UpdateFriendLinkInputSchema.parse({ id: 1, logoUrl: "" })).toEqual({
       id: 1,
       logoUrl: "",

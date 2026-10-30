@@ -186,6 +186,28 @@ describe("publication dates", () => {
     expect((await readPost(apiKey, id)).saveToken).toBe(saveToken);
   });
 
+  it.each([
+    ["2026-02-30", "The calendar has no such day."],
+    ["2026-03-01T24:00:00Z", "No such time of day"],
+    ["2026-03-01T08:00:00+25:00", "No such UTC offset"],
+  ])("says what in %s does not exist", async (publishedAt, message) => {
+    const apiKey = await seedAdminApiKey();
+    const { id } = await createPost(apiKey, { title: "Dated" });
+
+    const response = await patchPost(apiKey, id, { publishedAt });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as {
+      data: { issues: Array<{ path: Array<string>; message: string }> };
+    };
+    expect(body.data.issues).toEqual([
+      expect.objectContaining({
+        path: ["data", "publishedAt"],
+        message: expect.stringContaining(message),
+      }),
+    ]);
+  });
+
   it("reads a time with no offset as UTC and a stated offset as stated", async () => {
     const apiKey = await seedAdminApiKey();
     const { id } = await createPost(apiKey, { title: "Dated" });

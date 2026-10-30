@@ -12,6 +12,7 @@ import {
   PageOffsetSchema,
   pageLimitSchema,
 } from "@/lib/orpc/pagination";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 import {
   isPostSlugFormat,
   isPostSummaryFormat,
@@ -159,6 +160,10 @@ const PUBLICATION_DATE_MESSAGES = {
   FORMAT:
     "Not an ISO 8601 date: write 2026-10-01 or 2026-10-01T08:30:00Z. A time with no Z or offset is read as UTC.",
   NOT_A_DATE: "The calendar has no such day.",
+  NOT_A_TIME:
+    "No such time of day: hours run from 00 to 23, minutes and seconds from 00 to 59.",
+  NOT_AN_OFFSET:
+    "No such UTC offset: write Z or an offset from -23:59 to +23:59, such as +08:00.",
   OUT_OF_RANGE: `A publication date is from ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} to the end of ${PUBLICATION_DATE_MAX.getUTCFullYear() - 1}.`,
 } as const;
 
@@ -194,6 +199,22 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
   slugKey: true,
   publicSlugKey: true,
 });
+
+const SET_TAGS_HINT =
+  "A Post's Tags are not set with its fields: set them with PUT /admin/posts/{postId}/tags, body { tagIds, saveToken }.";
+
+/**
+ * The refusal of an unknown field, pointing a `tagIds` sent with a Post's
+ * fields to the operation that sets its Tags.
+ */
+function pointTagIdsToSetTags(issue: z.core.$ZodRawIssue) {
+  if (issue.code !== "unrecognized_keys" || !issue.keys.includes("tagIds")) {
+    return undefined;
+  }
+  const keys = issue.keys.map((key) => `"${key}"`).join(", ");
+  return `Unrecognized key${issue.keys.length > 1 ? "s" : ""}: ${keys}. ${SET_TAGS_HINT}`;
+}
+
 /**
  * Strict on purpose, and narrower than the table.
  *
@@ -207,32 +228,35 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  * post that was still a draft. Rejecting the key says so instead.
  *
  * Pinning is not a field either: it takes effect at once, so it has its own
- * endpoints and a PATCH carrying `pinnedAt` is refused.
+ * endpoints and a PATCH carrying `pinnedAt` is refused. Nor are Tags, which
+ * have theirs too: a PATCH carrying `tagIds` is refused naming it.
  */
-const PostUpdateSchema = createUpdateSchema(PostsTable, {
-  contentJson: ContentJsonInputSchema,
-  title: PostTitleInputSchema.optional(),
-  slug: PostSlugInputSchema.optional(),
-  summary: PostSummaryInputSchema.optional(),
-  publishedAt: PublishedAtInputSchema,
-})
-  .omit({
-    publicSnapshotJson: true,
-    publicCategoryId: true,
-    publicSlug: true,
-    pinnedAt: true,
-    status: true,
-    id: true,
-    createdAt: true,
-    updatedAt: true,
-    saveToken: true,
-    draftFingerprint: true,
-    publishedFingerprint: true,
-    slugKey: true,
-    publicSlugKey: true,
+const PostUpdateSchema = z.strictObject(
+  createUpdateSchema(PostsTable, {
+    contentJson: ContentJsonInputSchema,
+    title: PostTitleInputSchema.optional(),
+    slug: PostSlugInputSchema.optional(),
+    summary: PostSummaryInputSchema.optional(),
+    publishedAt: PublishedAtInputSchema,
   })
-  .extend({ contentMarkdown: ContentMarkdownInputSchema })
-  .strict();
+    .omit({
+      publicSnapshotJson: true,
+      publicCategoryId: true,
+      publicSlug: true,
+      pinnedAt: true,
+      status: true,
+      id: true,
+      createdAt: true,
+      updatedAt: true,
+      saveToken: true,
+      draftFingerprint: true,
+      publishedFingerprint: true,
+      slugKey: true,
+      publicSlugKey: true,
+    })
+    .extend({ contentMarkdown: ContentMarkdownInputSchema }).shape,
+  { error: pointTagIdsToSetTags },
+);
 const NonEmptyPostUpdateSchema = atLeastOneField(PostUpdateSchema);
 
 const PublicUpdatedAtSchema = coercedDate.describe(
@@ -478,7 +502,7 @@ export const AdminPostListPageSchema = z.object({
   ),
 });
 
-export const FindPostByIdInputSchema = z.strictObject({ id: z.number() });
+export const FindPostByIdInputSchema = z.strictObject({ id: PathIdSchema });
 
 export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
   contentFormat: PostContentFormatSchema,
@@ -489,14 +513,17 @@ export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
  * always creates a new draft instead of reusing an existing empty one, so
  * several external clients can create posts without colliding.
  */
-const CreatePostDataSchema = z.strictObject({
-  title: PostTitleInputSchema.describe(
-    `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE} A unique slug is generated from it.`,
-  ),
-  summary: PostSummaryInputSchema.optional(),
-  contentJson: ContentJsonInputSchema,
-  contentMarkdown: ContentMarkdownInputSchema,
-});
+const CreatePostDataSchema = z.strictObject(
+  {
+    title: PostTitleInputSchema.describe(
+      `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE} A unique slug is generated from it.`,
+    ),
+    summary: PostSummaryInputSchema.optional(),
+    contentJson: ContentJsonInputSchema,
+    contentMarkdown: ContentMarkdownInputSchema,
+  },
+  { error: pointTagIdsToSetTags },
+);
 
 export const CreatePostInputSchema = z
   .strictObject({
@@ -506,19 +533,22 @@ export const CreatePostInputSchema = z
   })
   .optional();
 
-export const UpdatePostInputSchema = z.strictObject({
-  id: z.number(),
-  data: NonEmptyPostUpdateSchema.describe(
-    "The fields to change; at least one, or the request answers 400.",
-  ),
-  saveToken: StatedSaveTokenSchema,
-  contentFormat: PostContentFormatSchema,
-});
+export const UpdatePostInputSchema = z.strictObject(
+  {
+    id: PathIdSchema,
+    data: NonEmptyPostUpdateSchema.describe(
+      "The fields to change; at least one, or the request answers 400.",
+    ),
+    saveToken: StatedSaveTokenSchema,
+    contentFormat: PostContentFormatSchema,
+  },
+  { error: pointTagIdsToSetTags },
+);
 
-export const DeletePostInputSchema = z.strictObject({ id: z.number() });
+export const DeletePostInputSchema = z.strictObject({ id: PathIdSchema });
 
 export const PublishPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
   ),
@@ -598,22 +628,22 @@ export const EditConflictDataSchema = z.object({
 });
 
 export const UnpublishPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const DiscardPostChangesInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and mean to discard. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to discard whatever the draft is now.",
   ),
 });
 
 export const PinPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const UnpinPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export type GenerateSlugInput = z.infer<typeof GenerateSlugInputSchema>;

@@ -39,14 +39,20 @@ export const PUBLICATION_DATE_MAX = new Date("2100-01-01T00:00:00.000Z");
 const PUBLICATION_DATE_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}:\d{2})?)?$/i;
 
-export type PublicationDateIssue = "FORMAT" | "NOT_A_DATE" | "OUT_OF_RANGE";
+export type PublicationDateIssue =
+  | "FORMAT"
+  | "NOT_A_DATE"
+  | "NOT_A_TIME"
+  | "NOT_AN_OFFSET"
+  | "OUT_OF_RANGE";
 
 /**
  * Reads an ISO 8601 date or date-time: `2026-10-01`, `2026-10-01T08:30`,
  * `2026-10-01T08:30:15.250Z`, `2026-10-01T08:30:15+08:00`. A date alone is
- * its start, and a time with no `Z` or offset is UTC. A calendar date that
- * does not exist, such as 2026-02-30, is refused rather than rolled over, and
- * so is one outside `PUBLICATION_DATE_MIN` to `PUBLICATION_DATE_MAX`.
+ * its start, and a time with no `Z` or offset is UTC. A calendar date, time
+ * of day or UTC offset that does not exist, such as 2026-02-30, 24:00 or
+ * +25:00, is refused rather than rolled over, and so is a date outside
+ * `PUBLICATION_DATE_MIN` to `PUBLICATION_DATE_MAX`.
  */
 export function parsePublicationDate(
   value: string,
@@ -62,22 +68,23 @@ export function parsePublicationDate(
   if (y < PUBLICATION_DATE_MIN.getUTCFullYear() - 1 || y > 2100) {
     return { issue: "OUT_OF_RANGE" };
   }
-  const wall = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
   // Date.UTC rolls an impossible field over; reading it back tells.
-  const exists =
-    wall.getUTCFullYear() === y &&
-    wall.getUTCMonth() === mo - 1 &&
-    wall.getUTCDate() === d &&
-    h <= 23 &&
-    mi <= 59 &&
-    s <= 59;
-  if (!exists) return { issue: "NOT_A_DATE" };
+  const midnight = new Date(Date.UTC(y, mo - 1, d));
+  const dayExists =
+    midnight.getUTCFullYear() === y &&
+    midnight.getUTCMonth() === mo - 1 &&
+    midnight.getUTCDate() === d;
+  if (!dayExists) return { issue: "NOT_A_DATE" };
+  if (h > 23 || mi > 59 || s > 59) return { issue: "NOT_A_TIME" };
+  const wall = new Date(Date.UTC(y, mo - 1, d, h, mi, s));
 
   let offsetMinutes = 0;
   const zone = match[8];
   if (zone && zone.toUpperCase() !== "Z") {
     const [offsetHour, offsetMinute] = zone.slice(1).split(":").map(Number);
-    if (offsetHour > 23 || offsetMinute > 59) return { issue: "NOT_A_DATE" };
+    if (offsetHour > 23 || offsetMinute > 59) {
+      return { issue: "NOT_AN_OFFSET" };
+    }
     offsetMinutes =
       (zone.startsWith("-") ? -1 : 1) * (offsetHour * 60 + offsetMinute);
   }

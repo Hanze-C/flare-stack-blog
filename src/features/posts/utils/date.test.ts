@@ -72,9 +72,18 @@ describe("parsePublicationDate", () => {
     expect(read("2026-02-29")).toBe("NOT_A_DATE");
     expect(read("2026-13-01")).toBe("NOT_A_DATE");
     expect(read("2026-04-31")).toBe("NOT_A_DATE");
-    expect(read("2026-10-01T24:00:00Z")).toBe("NOT_A_DATE");
-    expect(read("2026-10-01T10:60:00Z")).toBe("NOT_A_DATE");
-    expect(read("2026-10-01T10:00:00+24:00")).toBe("NOT_A_DATE");
+  });
+
+  it("refuses a time of day the clock does not have", () => {
+    expect(read("2026-10-01T24:00:00Z")).toBe("NOT_A_TIME");
+    expect(read("2026-10-01T10:60:00Z")).toBe("NOT_A_TIME");
+    expect(read("2026-10-01T10:00:60Z")).toBe("NOT_A_TIME");
+  });
+
+  it("refuses a UTC offset no zone has", () => {
+    expect(read("2026-10-01T10:00:00+24:00")).toBe("NOT_AN_OFFSET");
+    expect(read("2026-10-01T10:00:00+25:00")).toBe("NOT_AN_OFFSET");
+    expect(read("2026-10-01T10:00:00-08:60")).toBe("NOT_AN_OFFSET");
   });
 
   it("takes February 29 of a leap year", () => {

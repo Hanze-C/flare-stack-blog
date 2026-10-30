@@ -1,6 +1,4 @@
-import { SmartCoercionPlugin } from "@orpc/json-schema";
 import { ORPCError } from "@orpc/client";
-import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { StandardOpenAPIMatcher } from "@orpc/openapi/standard";
 import { onError } from "@orpc/server";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
@@ -16,8 +14,8 @@ import {
   DOCUMENT_PATHS,
   OpenAPIDocumentPlugin,
 } from "./openapi-document-plugin";
-import { CanonicalPathIdPlugin } from "./path-ids";
 import { router } from "./router";
+import { StrictOpenAPIHandler } from "./strict-openapi-handler";
 
 const schemaConverter = new ZodToJsonSchemaConverter();
 
@@ -37,6 +35,10 @@ Admin routes require a browser session cookie or an Admin API Key in the \`x-api
 
 Send a browser \`User-Agent\` on every request, including the one for this document. A 403 whose body is Cloudflare error 1010 / \`browser_signature_banned\` is the site's WAF blocking a non-browser client, not a permission error: resend with a browser \`User-Agent\` and the same key.
 
+## Parameters and bodies
+
+A path parameter is given in the path only: a request body field or query parameter of the same name answers 400 naming it, and nothing is written. An id in a path is a positive whole number written in decimal digits, such as \`74\`. Only GET reads query parameters: a query parameter on any other method answers 400, so send what the operation takes in its request body. A query parameter a GET does not declare answers 400, on public and admin operations alike, and so does a request body field an operation does not declare. Path and query parameters and multipart form fields are text, read as the type the schema declares; a JSON body is read as written, so a number sent as a string, such as \`"95"\` for an id, answers 400.
+
 ## Drafts and publishing
 
 Creating or saving a Post changes its draft only, its Category and Tags included. Creating with \`data\` makes a new draft; without \`data\`, creating returns an existing empty draft when there is one, so send the content when you create. Publishing replaces the Post's Public Content Snapshot (what the public site lists, renders and searches, together with the Category and Tags it shows the Post under) with the current draft and records a Post Revision; publishing again is safe. Unpublishing discards the snapshot: the Post becomes a Draft Post and leaves the public site. Categories and Tags themselves have no draft: creating, renaming and deleting one take effect on the public site at once, and deleting one removes it from every Published Post that shows it. A Published Post's public page is \`/post/{publicSlug}\` on the site origin; public pages are cached, so a change can take some seconds to show. Changing a Published Post's slug and publishing again leaves the old URL unreachable (there is no redirect), and Category and Tag pages are addressed by name, so renaming one changes its public URL. Pinning a Post takes effect at once and is not part of publishing.
@@ -47,7 +49,7 @@ Every Post carries an opaque \`saveToken\`, returned by each read of the Post an
 
 ## Markdown content
 
-Post and Post Revision reads, and saves, take \`contentFormat=markdown\` (default \`json\`, TipTap JSON) and then answer \`contentMarkdown\` (null when the Post has no body) in place of \`contentJson\`; reading a Post by id also answers its published body as \`publicSnapshotContentMarkdown\` in place of \`publicSnapshotContentJson\`, so the draft and what is published compare in one read. Creating and saving take either \`contentJson\` or \`contentMarkdown\` in \`data\`; sending both answers 400. Markdown is CommonMark with GFM tables, strikethrough and autolinks, parsed as the editor parses pasted Markdown; reads serialize back to the same form:
+Post and Post Revision reads take the query parameter \`contentFormat=markdown\`, and saves the body field \`"contentFormat": "markdown"\` (default \`json\`, TipTap JSON); they then answer \`contentMarkdown\` (null when the Post has no body) in place of \`contentJson\`. Reading a Post by id with it also answers its published body as \`publicSnapshotContentMarkdown\` in place of \`publicSnapshotContentJson\`, so the draft and what is published compare in one read. Creating and saving take either \`contentJson\` or \`contentMarkdown\` in \`data\`; sending both answers 400. Markdown is CommonMark with GFM tables, strikethrough and autolinks, parsed as the editor parses pasted Markdown; reads serialize back to the same form:
 
 - It carries headings, bold, italic, underline as \`++text++\`, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, tables, images and videos. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.
 - Headings are levels 2 to 4: when the Markdown has an H1, every heading moves one level down, and anything deeper than level 4 becomes level 4.
@@ -66,7 +68,8 @@ Upload a file as multipart form data to the Media upload operation; its answer c
 
 Every error answers JSON with \`code\`, \`status\` and \`message\`; the errors an operation declares carry \`defined: true\` and may carry \`data\`. A request that fails validation answers 400 \`BAD_REQUEST\` with \`data.issues\`, each naming the path of a field and what is wrong with it: correct those fields and resend. 404 with a declared code (such as \`POST_NOT_FOUND\`) means what you named does not exist; 404 \`ROUTE_NOT_FOUND\` and 405 \`METHOD_NOT_ALLOWED\` mean the call itself is wrong, so check the path and method against this document. 413 \`PAYLOAD_TOO_LARGE\` means the request body is too large; 413 \`POST_CONTENT_TOO_LARGE\` means a Post's body, or the snapshot publishing would store, is too large to keep, and nothing was written. After a timeout or a 5xx, read before retrying: the write may have landed.`;
 
-export const openAPIHandler = new OpenAPIHandler(router, {
+export const openAPIHandler = new StrictOpenAPIHandler(router, {
+  schemaConverter,
   adapterInterceptors: [
     async (options) => {
       const limit = bodyLimitOf(options.request, MAX_FILE_SIZE);
@@ -96,10 +99,6 @@ export const openAPIHandler = new OpenAPIHandler(router, {
     }),
   ],
   plugins: [
-    new SmartCoercionPlugin({
-      schemaConverters: [schemaConverter],
-    }),
-    new CanonicalPathIdPlugin({ schemaConverter }),
     new OpenAPIDocumentPlugin<ApiContext>({
       schemaConverters: [schemaConverter],
       docsTitle: "Flare Stack Blog API",
