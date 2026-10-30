@@ -104,6 +104,10 @@ _Avoid_: Token, bearer, service account, machine user, OAuth client
 The instructions an AI agent installs so it can operate a Flare Stack Blog as an **Admin** over the HTTP API with an **API Key**. It is not part of the deployed CMS.
 _Avoid_: MCP, plugin, integration, 插件, 技能包
 
+**Pairing Code**:
+A one-time, short-lived code an **Admin** generates in the admin UI so an AI agent can obtain an **API Key** for that **Admin** without the key passing through the conversation. Exchanging it is **Pairing**.
+_Avoid_: Device code, invite code, access code, 授权码, 邀请码
+
 **Edit Conflict**:
 A save refused because what it would change was saved by someone else after the saver read it. Nothing is written; the saver reads again and decides.
 _Avoid_: Version conflict, stale write, merge conflict, 版本冲突
@@ -198,7 +202,9 @@ _Avoid_: New commit, fork update
 - An **Admin** can have zero or more **API Keys**.
 - An **API Key** authenticates as its owning **Admin** and has that Admin's content-management permissions.
 - An **API Key** cannot create or revoke **API Keys**. Only a signed-in **Admin** in the admin UI can.
-- An **Agent Skill** authenticates with an **API Key**.
+- An **Agent Skill** authenticates with an **API Key**, obtained by **Pairing** or given to it by the **Admin**.
+- A **Pairing Code** belongs to exactly one **Admin**, can be used once, and expires shortly after it is generated. Only a signed-in **Admin** in the admin UI can generate one; an **API Key** cannot.
+- **Pairing** issues an ordinary **API Key** owned by the **Admin** who generated the **Pairing Code**, named after the agent and marked as created by **Pairing**.
 - A save of a **Post** that states the read it is based on ends in an **Edit Conflict** if the **Post** was saved since that read, by anyone and for any part of its draft. Pinning is not a save. A save that states no read overwrites.
 - Publishing a **Post** can state the read it is based on in the same way, so the **Public Content Snapshot** is the draft that was read.
 - The admin editor and the **Agent Skill** always state their read.
