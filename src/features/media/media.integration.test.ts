@@ -8,6 +8,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/react";
 import { eq } from "drizzle-orm";
 import { user } from "@/lib/db/schema";
+import { purgeWorkersCache } from "@/features/cache/workers-cache";
+import { mediaPurgeTarget } from "@/features/cache/workers-cache-policy";
 import * as PostRevisionService from "@/features/posts/services/post-revisions.service";
 import * as PostService from "@/features/posts/services/posts.service";
 import { unwrap } from "@/lib/errors";
@@ -585,7 +587,7 @@ describe("MediaService", () => {
       );
     });
 
-    it("gives a replaced file a new versioned URL and points drafts at it", async () => {
+    it("serves a replaced file at the same addresses without writing posts", async () => {
       const media = unwrap(
         await MediaService.upload(adminContext, {
           file: pngFile("banner.png", "old"),
@@ -594,6 +596,10 @@ describe("MediaService", () => {
       const { id: postId } = await PostService.createEmptyPost(adminContext);
       await setPostContent(postId, imageDoc(media.key));
       await publishPost(postId);
+      const before = await PostService.findPostById(adminContext, {
+        id: postId,
+      });
+      vi.mocked(purgeWorkersCache).mockClear();
 
       const replaced = unwrap(
         await MediaService.replaceImage(adminContext, {
@@ -602,16 +608,24 @@ describe("MediaService", () => {
         }),
       );
 
+      // The record's own address changes so an open media library reloads it.
       expect(replaced.url).toMatch(
         new RegExp(`^/images/${media.key}\\?v=\\d+$`),
       );
-      const post = await PostService.findPostById(adminContext, { id: postId });
-      // The draft's new URL is a change the snapshot does not have yet.
-      expect(post?.hasUnpublishedChanges).toBe(true);
-      expect(post?.contentJson?.content?.[0]?.attrs?.src).toBe(replaced.url);
-      expect(post?.publicSnapshotContentJson?.content?.[0]?.attrs?.src).toBe(
-        `/images/${media.key}`,
+      const after = await PostService.findPostById(adminContext, {
+        id: postId,
+      });
+      expect(after?.hasUnpublishedChanges).toBe(false);
+      expect(after?.saveToken).toBe(before?.saveToken);
+      expect(after?.contentJson).toEqual(before?.contentJson);
+      expect(after?.publicSnapshotContentJson).toEqual(
+        before?.publicSnapshotContentJson,
       );
+      // Every cached copy of the key goes, so the post's addresses answer
+      // with the new file.
+      expect(
+        vi.mocked(purgeWorkersCache).mock.calls.map((call) => call.slice(1)),
+      ).toEqual([[mediaPurgeTarget(media.key)]]);
     });
 
     it("refuses a replacement whose bytes are not the declared type", async () => {

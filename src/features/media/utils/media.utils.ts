@@ -70,15 +70,19 @@ export function getOriginalImageUrl(key: string) {
 }
 
 /**
- * The original an image transform reads. It carries the request's `v` so a
- * replaced file at the same key is fetched fresh instead of from the edge
- * cache of the unversioned original.
+ * The original an image transform reads. Cloudflare keeps transformed images
+ * by their source URL, and only a zone purge clears that, so the source names
+ * the stored file's version (its R2 ETag): once a file is replaced at the same
+ * key, transforms read and cache the new one.
  */
-export function getTransformSourceUrl(requestUrl: URL, key: string) {
+export function getTransformSourceUrl(
+  requestUrl: URL,
+  key: string,
+  fileVersion: string,
+) {
   const source = new URL(getOriginalImageUrl(key), requestUrl.origin);
   source.searchParams.set("original", "true");
-  const version = requestUrl.searchParams.get("v");
-  if (version) source.searchParams.set("v", version);
+  source.searchParams.set("v", fileVersion);
   return source.toString();
 }
 

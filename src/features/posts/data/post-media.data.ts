@@ -1,10 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
 import { eq, inArray, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
-import {
-  extractAllImageKeys,
-  replaceImageSrc,
-} from "@/features/posts/utils/content";
+import { extractAllImageKeys } from "@/features/posts/utils/content";
 import {
   MediaTable,
   PostMediaTable,
@@ -81,41 +78,6 @@ export async function syncPostMedia(db: DB, post: PostMediaSource) {
           mediaId,
         })),
       ),
-    );
-  }
-  const [head, ...rest] = statements;
-  if (!head) return;
-  await db.batch([head, ...rest]);
-}
-
-/**
- * Points the editable body of every Post that uses a Media item at `src`.
- * The Public Content Snapshot keeps its URL until the Post is published again.
- */
-export async function pointDraftImagesAt(
-  db: DB,
-  media: { id: number; key: string },
-  src: string,
-) {
-  const rows = await db
-    .select({ id: PostsTable.id, contentJson: PostsTable.contentJson })
-    .from(PostsTable)
-    .innerJoin(PostMediaTable, eq(PostsTable.id, PostMediaTable.postId))
-    .where(eq(PostMediaTable.mediaId, media.id));
-
-  const statements: Array<BatchItem<"sqlite">> = [];
-  for (const row of rows) {
-    const contentJson = replaceImageSrc(row.contentJson, media.key, src);
-    if (!contentJson) continue;
-    statements.push(
-      db
-        .update(PostsTable)
-        .set({
-          contentJson,
-          draftFingerprint: null,
-          updatedAt: sql`${PostsTable.updatedAt}`,
-        })
-        .where(eq(PostsTable.id, row.id)),
     );
   }
   const [head, ...rest] = statements;

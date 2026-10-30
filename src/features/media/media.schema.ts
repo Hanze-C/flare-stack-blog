@@ -24,7 +24,7 @@ export const MediaSelectSchema = createSelectSchema(MediaTable, {
   url: z
     .string()
     .describe(
-      "Address of the file. Use it as the src of an image in a post body. Replacing the file changes it.",
+      "Address of the file. Use it as the src of an image in a post body. Replacing the file adds a new v query to it so pages that show it load the new file; addresses already in posts keep working and show the new file too.",
     ),
   width: z.number().int().nullable().describe("Pixels. Null when unknown."),
   height: z.number().int().nullable().describe("Pixels. Null when unknown."),

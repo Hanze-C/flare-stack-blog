@@ -17,6 +17,8 @@ import {
   parseImageTransform,
   isGifKey,
 } from "@/features/media/utils/media.utils";
+import { purgeWorkersCache } from "@/features/cache/workers-cache";
+import { mediaPurgeTarget } from "@/features/cache/workers-cache-policy";
 import * as PostMediaRepo from "@/features/posts/data/post-media.data";
 import { CACHE_CONTROL } from "@/lib/constants";
 import { err, ok } from "@/lib/errors";
@@ -154,8 +156,14 @@ export async function updateMediaName(
   return ok(undefined);
 }
 
+/**
+ * Puts a new file at an existing key. Posts keep naming the key, so their
+ * drafts, Public Content Snapshots and Post Revisions are not written: the
+ * cached copies of the key are purged instead, and every address of it,
+ * public pages and editor alike, serves the new file from then on.
+ */
 export async function replaceImage(
-  context: DbContext,
+  context: DbContext & { executionCtx: ExecutionContext },
   input: { key: string; file: File },
 ) {
   const existing = await MediaRepo.findMediaByKey(context.db, input.key);
@@ -169,8 +177,8 @@ export async function replaceImage(
   }
   const dimensions = getImageDimensions(buffer);
   await Storage.putToR2(context.env, input.file, input.key);
-  // The key stays, so a new version keeps cached copies of the old file from
-  // answering for the new one.
+  // Only the Media record's own address changes, so a page that already
+  // shows it (the media library) loads the new file instead of its copy.
   const url = `${getOriginalImageUrl(input.key)}?v=${Date.now()}`;
   const updated = await MediaRepo.updateMediaFile(context.db, input.key, {
     url,
@@ -183,7 +191,7 @@ export async function replaceImage(
   if (!updated) {
     return err({ reason: "MEDIA_NOT_FOUND" });
   }
-  await PostMediaRepo.pointDraftImagesAt(context.db, existing, url);
+  await purgeWorkersCache(context.executionCtx, mediaPurgeTarget(input.key));
   return ok(updated);
 }
 
@@ -384,7 +392,13 @@ export async function handleImageRequest(
 
   // 3. 尝试进行图片处理
   try {
-    const sourceImageUrl = getTransformSourceUrl(url, key);
+    // The transform names the stored file's version, so a replaced file is
+    // transformed afresh; this read runs only when the edge has no copy.
+    const stored = await env.R2.head(key);
+    if (!stored) {
+      return await serveOriginal();
+    }
+    const sourceImageUrl = getTransformSourceUrl(url, key, stored.etag);
 
     const subRequestHeaders = new Headers();
 
@@ -422,7 +436,13 @@ export async function handleImageRequest(
     const newResponse = new Response(response.body, response);
 
     newResponse.headers.set("Vary", "Accept");
-    return withImageHeaders(newResponse, CACHE_CONTROL.immutable);
+    // Browsers revalidate (the address outlives a replaced file); the tag
+    // lets a revalidation of an unchanged variant answer without a body.
+    newResponse.headers.set(
+      "ETag",
+      `"${stored.etag}-${transformOptions.width}-${transformOptions.format ?? "auto"}"`,
+    );
+    return withImageHeaders(newResponse, CACHE_CONTROL.media);
   } catch (e) {
     console.error(
       JSON.stringify({
