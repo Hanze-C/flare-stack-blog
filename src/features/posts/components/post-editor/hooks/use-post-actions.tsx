@@ -32,6 +32,8 @@ interface UsePostActionsOptions {
   flush: () => Promise<void>;
   /** Whether a save was refused; publishing waits until it is resolved. */
   conflicted: boolean;
+  /** Another post uses the slug, so autosave left it out. */
+  slugTaken: boolean;
   getSaveToken: () => string;
   acceptSaveToken: (saveToken: string) => void;
   reportConflict: (conflict: EditConflict) => void;
@@ -48,6 +50,7 @@ export function usePostActions({
   setError,
   flush,
   conflicted,
+  slugTaken,
   getSaveToken,
   acceptSaveToken,
   reportConflict,
@@ -66,10 +69,10 @@ export function usePostActions({
     if (conflicted) return false;
     // Autosave leaves a slug the API would refuse unsaved, so publishing
     // would put the previous one live.
-    if (!isValidPostSlug(post.slug)) return false;
+    if (!isValidPostSlug(post.slug) || slugTaken) return false;
     if (!post.publishedAt) return true;
     return post.publishedAt.toISOString().slice(0, 10) <= post.serverToday;
-  }, [conflicted, post.publishedAt, post.serverToday, post.slug]);
+  }, [conflicted, post.publishedAt, post.serverToday, post.slug, slugTaken]);
 
   const lastAutoSlugRef = useRef<string | null>(null);
   const queuedTitleRef = useRef<string | null>(null);

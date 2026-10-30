@@ -28,6 +28,12 @@ export interface EditConflict {
   saveToken: string;
 }
 
+/** What a save that went through reports. */
+export interface PostEditorSaveResult {
+  /** Another post uses the slug, so it was left out and the rest was saved. */
+  slugTaken: boolean;
+}
+
 /**
  * Saves the post stating `saveToken`. Every write replaces the token, so each
  * response's token goes to `acceptSaveToken` as soon as it is known.
@@ -36,7 +42,7 @@ export type PostEditorSave = (
   data: PostEditorData,
   saveToken: string,
   acceptSaveToken: (saveToken: string) => void,
-) => Promise<void>;
+) => Promise<PostEditorSaveResult | void>;
 
 export interface PostEditorProps {
   initialData: PostEditorData & {

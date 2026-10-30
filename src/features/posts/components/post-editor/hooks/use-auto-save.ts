@@ -59,6 +59,11 @@ type MetaSnapshot = {
 
 type SaveResult = "synced" | "dirty" | "failed" | "discarded" | "blocked";
 
+/** Clears the save error, except that another post still uses the slug. */
+function keepSlugTaken(error: string | null) {
+  return error === SLUG_TAKEN_ERROR ? error : null;
+}
+
 function toMeta(post: PostEditorData): MetaSnapshot {
   return {
     title: post.title,
@@ -218,12 +223,12 @@ export function useAutoSave({
       epochAtStart === lastSavedEpochRef.current
     ) {
       assignStatus("SYNCED");
-      setError(null);
+      setError(keepSlugTaken);
       return "synced";
     }
 
     isSaving.current = true;
-    setError(null);
+    setError(keepSlugTaken);
     assignStatus("SAVING");
 
     let settle!: () => void;
@@ -233,13 +238,19 @@ export function useAutoSave({
     inFlightRef.current = gate;
 
     try {
-      await onSaveRef.current(payload, saveTokenRef.current, acceptSaveToken);
+      const outcome = await onSaveRef.current(
+        payload,
+        saveTokenRef.current,
+        acceptSaveToken,
+      );
       if (generationRef.current !== gen) return "discarded";
       lastSavedSnapshot.current = toMeta(payload);
       lastSavedEpochRef.current = epochAtStart;
       if (!isMounted.current) return "discarded";
       setLastSaved(new Date());
-      setError(null);
+      // The rest of the post was saved without a slug another post uses; the
+      // slug field keeps saying so until a save takes a slug again.
+      setError(outcome?.slugTaken ? SLUG_TAKEN_ERROR : null);
       if (isDirtyNow()) {
         assignStatus("PENDING");
         if (enabledRef.current) {

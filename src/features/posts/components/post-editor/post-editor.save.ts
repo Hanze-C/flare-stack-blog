@@ -4,7 +4,7 @@ import {
   isValidPostTitle,
 } from "@/features/posts/utils/post-fields";
 import { orpcClient } from "@/lib/orpc";
-import { persistableTagIds } from "./post-editor.model";
+import { isSlugTaken, persistableTagIds } from "./post-editor.model";
 import type { PostEditorSave } from "./types";
 
 /**
@@ -13,24 +13,37 @@ import type { PostEditorSave } from "./types";
  * token as well, so it cannot run beside the update. A failure between the two
  * keeps the update's token; a newer save by someone else between them refuses
  * the tags with an Edit Conflict like any other save.
+ *
+ * A slug another post uses refuses the whole update, so the update is sent
+ * again without it and the result says the slug was left out.
  */
 export function savePostEdits(postId: number): PostEditorSave {
   return async (data, saveToken, acceptSaveToken) => {
-    const updated = await orpcClient.posts.admin.update({
-      id: postId,
-      saveToken,
-      data: {
-        // A title or slug the API would refuse, such as an empty one while it
-        // is being retyped, stays out so the rest of the post still saves.
-        ...(isValidPostTitle(data.title) && { title: data.title }),
-        summary: data.summary,
-        ...(isValidPostSlug(data.slug) && { slug: data.slug }),
-        contentJson: data.contentJson,
-        publishedAt: data.publishedAt,
-        coverMediaId: data.coverMediaId,
-        categoryId: data.categoryId,
-      },
-    });
+    const update = (withSlug: boolean) =>
+      orpcClient.posts.admin.update({
+        id: postId,
+        saveToken,
+        data: {
+          // A title or slug the API would refuse, such as an empty one while
+          // it is being retyped, stays out so the rest of the post still saves.
+          ...(isValidPostTitle(data.title) && { title: data.title }),
+          summary: data.summary,
+          ...(withSlug && isValidPostSlug(data.slug) && { slug: data.slug }),
+          contentJson: data.contentJson,
+          publishedAt: data.publishedAt,
+          coverMediaId: data.coverMediaId,
+          categoryId: data.categoryId,
+        },
+      });
+    let slugTaken = false;
+    let updated: { saveToken: string };
+    try {
+      updated = await update(true);
+    } catch (error) {
+      if (!isSlugTaken(error)) throw error;
+      slugTaken = true;
+      updated = await update(false);
+    }
     acceptSaveToken(updated.saveToken);
     const tagIds = persistableTagIds(data.tagIds);
     const setTags = (ids: Array<number>) =>
@@ -54,5 +67,6 @@ export function savePostEdits(postId: number): PostEditorSave {
       tagged = await setTags(tagIds.filter((id) => existing.has(id)));
     }
     acceptSaveToken(tagged.saveToken);
+    return { slugTaken };
   };
 }
