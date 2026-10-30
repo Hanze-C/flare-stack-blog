@@ -31,6 +31,12 @@ export type PublicFetchError =
   /** The address could not be checked or fetched. */
   | { reason: "UNREACHABLE" };
 
+/**
+ * What `checkPublicUrl` answers: also a name public DNS has no address for,
+ * which only a private resolver, such as an intranet's, can know.
+ */
+export type PublicUrlCheck = PublicFetchError | { reason: "NO_ADDRESS" };
+
 type Resolution =
   | { kind: "addresses"; addresses: Array<string> }
   | { kind: "unresolved" };
@@ -70,7 +76,7 @@ async function resolveType(
 export async function checkPublicUrl(
   url: URL,
   signal: AbortSignal,
-): Promise<PublicFetchError | null> {
+): Promise<PublicUrlCheck | null> {
   const notPublic = { reason: "NOT_PUBLIC", url: url.href } as const;
   if (url.protocol !== "http:" && url.protocol !== "https:") return notPublic;
   if (url.username || url.password) return notPublic;
@@ -93,7 +99,7 @@ export async function checkPublicUrl(
     if (answer.kind === "unresolved") return { reason: "UNREACHABLE" };
     addresses.push(...answer.addresses);
   }
-  if (addresses.length === 0) return { reason: "UNREACHABLE" };
+  if (addresses.length === 0) return { reason: "NO_ADDRESS" };
   return addresses.every(isPublicAddress) ? null : notPublic;
 }
 
@@ -102,7 +108,9 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 /**
  * GETs `url`, following up to five redirects, when it and every address it
  * redirects to pass `checkPublicUrl`. The final response is returned
- * whatever its status.
+ * whatever its status. A start address public DNS has no address for cannot
+ * be reached; a redirect to one points into a private network, so it is
+ * refused as not public.
  */
 export async function fetchPublicUrl(
   url: URL,
@@ -111,6 +119,11 @@ export async function fetchPublicUrl(
   let current = url;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     const refused = await checkPublicUrl(current, options.signal);
+    if (refused?.reason === "NO_ADDRESS") {
+      return hop === 0
+        ? err({ reason: "UNREACHABLE" } as const)
+        : err({ reason: "NOT_PUBLIC", url: current.href } as const);
+    }
     if (refused) return err(refused);
 
     let response: Response;
