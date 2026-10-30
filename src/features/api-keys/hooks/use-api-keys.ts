@@ -3,14 +3,33 @@ import { toast } from "sonner";
 import { getAuthClient } from "@/lib/auth/auth-client";
 import { m } from "@/paraglide/messages";
 
-const API_KEYS_QUERY_KEY = ["auth", "api-keys"] as const;
+export const API_KEYS_QUERY_KEY = ["auth", "api-keys"] as const;
 
-type ApiKeyListItem = {
+export type ApiKeyListItem = {
   id: string;
   name?: string | null;
   start?: string | null;
   createdAt: Date | string;
+  lastRequest?: Date | string | null;
+  metadata?: unknown;
 };
+
+/** Whether pairing created the key, as the exchange marks it in `metadata`. */
+export function isPairedKey(key: Pick<ApiKeyListItem, "metadata">) {
+  let metadata = key.metadata;
+  if (typeof metadata === "string") {
+    try {
+      metadata = JSON.parse(metadata);
+    } catch {
+      return false;
+    }
+  }
+  return (
+    typeof metadata === "object" &&
+    metadata !== null &&
+    (metadata as { createdBy?: unknown }).createdBy === "pairing"
+  );
+}
 
 function readListedKeys(data: unknown): ApiKeyListItem[] {
   if (!data) return [];
