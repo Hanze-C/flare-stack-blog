@@ -95,7 +95,7 @@ const postErrors = {
   CONTENT_JSON_INVALID: {
     status: 400,
     message:
-      "contentJson holds node or mark types the editor does not know, or images that are not http(s) addresses or Media paths (/images/<key>).",
+      "contentJson holds node or mark types the editor does not know, attributes it does not give them, or images that are not http(s) addresses or Media paths (/images/<key>).",
     data: z.object({
       nodeTypes: z
         .array(z.string())
@@ -103,6 +103,11 @@ const postErrors = {
       markTypes: z
         .array(z.string())
         .describe("The mark types the editor does not know."),
+      attributes: z
+        .array(z.string())
+        .describe(
+          "The attributes the editor does not give their node or mark type, as type.attribute, such as link.onclick.",
+        ),
       images: z.array(z.string()).describe("The refused image addresses."),
     }),
   },
@@ -201,6 +206,7 @@ type MarkdownContentError =
       reason: "CONTENT_JSON_INVALID";
       nodeTypes: Array<string>;
       markTypes: Array<string>;
+      attributes: Array<string>;
       images: Array<string>;
     }
   | { reason: "CONTENT_LINK_INVALID"; links: Array<string> };
@@ -218,6 +224,7 @@ function throwMarkdownContentError(
       data: {
         nodeTypes: Array<string>;
         markTypes: Array<string>;
+        attributes: Array<string>;
         images: Array<string>;
       };
     }) => Error;
@@ -238,18 +245,20 @@ function throwMarkdownContentError(
       });
     }
     case "CONTENT_JSON_INVALID": {
-      const { nodeTypes, markTypes, images } = error;
+      const { nodeTypes, markTypes, attributes, images } = error;
       const quoted = (list: Array<string>) =>
         list.map((item) => `"${item}"`).join(", ");
       const problems = [
         nodeTypes.length > 0 && `unknown node types ${quoted(nodeTypes)}`,
         markTypes.length > 0 && `unknown mark types ${quoted(markTypes)}`,
+        attributes.length > 0 &&
+          `unknown attributes ${quoted(attributes)} (type.attribute)`,
         images.length > 0 &&
           `images ${quoted(images)}, which must be http(s) addresses or Media paths (/images/<key>)`,
       ].filter(Boolean);
       throw errors.CONTENT_JSON_INVALID({
         message: `contentJson is refused: ${problems.join("; ")}.`,
-        data: { nodeTypes, markTypes, images },
+        data: { nodeTypes, markTypes, attributes, images },
       });
     }
     case "CONTENT_LINK_INVALID": {

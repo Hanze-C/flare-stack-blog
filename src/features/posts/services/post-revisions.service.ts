@@ -17,6 +17,7 @@ import type {
 } from "@/features/posts/schema/post-revisions.schema";
 import { parseRevisionSnapshot } from "@/features/posts/schema/post-revisions.schema";
 import { removeCodeBlockHighlighting } from "@/features/posts/utils/apply-code-block-highlighting";
+import { withEditorAttributes } from "@/features/posts/utils/post-content-rules";
 import { calculatePostHash } from "@/features/posts/utils/sync";
 import { isUniqueViolation, POST_SLUG } from "@/lib/db/unique-keys";
 import { ms } from "@/lib/duration";
@@ -200,6 +201,11 @@ export async function restorePostRevision(
   }
   const targetSnapshot = {
     ...parsedSnapshot,
+    // A revision an older editor saved can carry attributes a write would
+    // now refuse; the restored draft keeps only the editor's.
+    contentJson:
+      parsedSnapshot.contentJson &&
+      withEditorAttributes(parsedSnapshot.contentJson),
     coverMediaId: parsedSnapshot.coverMediaId ?? null,
   };
   if (targetSnapshot.coverMediaId != null) {
