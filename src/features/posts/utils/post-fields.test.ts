@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isPostSummaryFormat,
   isValidPostSlug,
   isValidPostTitle,
   POST_SLUG_MAX_LENGTH,
@@ -17,6 +18,21 @@ describe("isValidPostTitle", () => {
     expect(isValidPostTitle("   ")).toBe(false);
     expect(isValidPostTitle("x".repeat(201))).toBe(false);
   });
+});
+
+describe("isPostSummaryFormat", () => {
+  it("takes tabs, line breaks and an emoji joiner", () => {
+    expect(isPostSummaryFormat("one\ttwo\r\nthree\nfour")).toBe(true);
+    expect(isPostSummaryFormat("👩\u200D💻")).toBe(true);
+    expect(isPostSummaryFormat("")).toBe(true);
+  });
+
+  it.each(["a\u0000b", "a\u000Bb", "\u001B[31m", "a\u200Bb", "a\u202Eb"])(
+    "refuses %j",
+    (summary) => {
+      expect(isPostSummaryFormat(summary)).toBe(false);
+    },
+  );
 });
 
 describe("isValidPostSlug", () => {

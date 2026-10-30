@@ -14,6 +14,7 @@ import {
 } from "@/lib/orpc/pagination";
 import {
   isPostSlugFormat,
+  isPostSummaryFormat,
   isPostTitleFormat,
   POST_SLUG_MAX_LENGTH,
   POST_TITLE_MAX_LENGTH,
@@ -106,6 +107,17 @@ const PostTitleInputSchema = z
     `Title, trimmed. It must not be empty and holds at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE}`,
   );
 
+const SUMMARY_FORMAT_RULE =
+  "It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, an escape, a zero width space or a bidirectional control) other than tab, line feed and carriage return; a zero width joiner inside an emoji is fine.";
+
+const PostSummaryInputSchema = z
+  .string()
+  .refine(isPostSummaryFormat, { message: SUMMARY_FORMAT_RULE })
+  .nullable()
+  .describe(
+    `Summary: plain text shown on the post page and in feeds, or null for none. ${SUMMARY_FORMAT_RULE}`,
+  );
+
 const SLUG_FORMAT_RULE =
   "cannot contain / ? # % \\, whitespace (no-break spaces included), or control or format characters (Unicode Cc or Cf, such as a zero width space), or be . or ..";
 
@@ -190,6 +202,7 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
   contentJson: ContentJsonInputSchema,
   title: PostTitleInputSchema.optional(),
   slug: PostSlugInputSchema.optional(),
+  summary: PostSummaryInputSchema.optional(),
   publishedAt: PublishedAtInputSchema,
 })
   .omit({
@@ -454,7 +467,7 @@ const CreatePostDataSchema = z.strictObject({
   title: PostTitleInputSchema.describe(
     `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. ${TITLE_FORMAT_RULE} A unique slug is generated from it.`,
   ),
-  summary: z.string().nullable().optional(),
+  summary: PostSummaryInputSchema.optional(),
   contentJson: ContentJsonInputSchema,
   contentMarkdown: ContentMarkdownInputSchema,
 });

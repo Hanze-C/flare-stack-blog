@@ -247,6 +247,39 @@ describe("post slugs", () => {
     });
     expect(created.status).toBe(400);
   });
+
+  it("refuses control characters in summaries but takes tabs, line breaks and emoji", async () => {
+    const apiKey = await seedAdminApiKey();
+    const id = await newPost();
+    const patch = (summary: string | null) =>
+      callAdminApi(apiKey, `/admin/posts/${id}`, {
+        method: "PATCH",
+        body: { data: { summary } },
+      });
+
+    for (const summary of [
+      "a\u0000b",
+      "a\u000Bb",
+      "\u001B[31mred\u001B[0m",
+      "a\u200Bb",
+      "a\u202Eb",
+    ]) {
+      expect((await patch(summary)).status).toBe(400);
+    }
+    const allowed = "line one\r\n\tline two 👩\u200D💻";
+    const accepted = await patch(allowed);
+    expect(accepted.status).toBe(200);
+    expect(((await accepted.json()) as { summary: string }).summary).toBe(
+      allowed,
+    );
+    expect((await patch(null)).status).toBe(200);
+
+    const created = await callAdminApi(apiKey, "/admin/posts", {
+      method: "POST",
+      body: { data: { title: "Summarised", summary: "a\u000Bb" } },
+    });
+    expect(created.status).toBe(400);
+  });
 });
 
 describe("keys not computed yet", () => {
