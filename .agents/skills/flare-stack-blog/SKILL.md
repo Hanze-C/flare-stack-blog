@@ -32,7 +32,7 @@ When an entity has both public and admin operations, use the admin ones. Stay wi
 
 ## 3. Change the draft
 
-Every save changes the draft, a Post's Category and Tags included, and readers see it only once it is published. Categories and Tags themselves have no draft: creating, renaming and deleting one take effect at once on every Published Post that shows it (the document's description says so), so tell the human before renaming or deleting one that Published Posts use.
+Every save changes the draft, a Post's Category and Tags included, and readers see it only once it is published. Categories, Tags and Media themselves have no draft: creating, renaming or deleting a Category or Tag, and replacing a Media file, take effect at once on every Published Post that shows it (the document's description says so). Tell the human before renaming or deleting a Category or Tag, or replacing Media, that Published Posts use.
 
 - **Resolve the target** by id, or by a search on the title or slug; several matches means ask which. Given a public URL, read the post by its public slug to learn its id.
 - **Read right before each write.** The Admin edits the same Posts in the browser, which autosaves as they type. Read the Post immediately before each save, build the save on what you just read, and send that read's `saveToken`. A Post saved in between is then kept and the save answers 409 instead of overwriting it. See [Conflicts](#conflicts).
@@ -46,7 +46,7 @@ Make one human-intended change at a time, carried through to its end state, unle
 
 ## 4. Publish and verify
 
-Follow the human's intent: publish when they ask to publish, keep the draft when they ask for a draft, and ask when it is unclear. Publishing takes the whole draft, so a change someone else left unpublished goes live with yours: when the draft holds changes you did not make, name them to the human first. To see them, compare the draft with the latest publish Post Revision, both read as Markdown. Publish with the `saveToken` of the read the human approved, so what goes live is that draft.
+Follow the human's intent: publish when they ask to publish, keep the draft when they ask for a draft, and ask when it is unclear. Publishing takes the whole draft, so a change someone else left unpublished goes live with yours: when the draft holds changes you did not make, name them to the human first. To see them, read the Post as Markdown: the read carries the draft and the published body side by side, whatever Post Revisions are left, so compare the two. Publish with the `saveToken` of the read the human approved, so what goes live is that draft.
 
 After publishing, fetch the Post's public page and confirm the change shows. Public pages are cached: retry a few times over about 20 seconds before calling it failed.
 
