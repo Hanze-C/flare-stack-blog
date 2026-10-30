@@ -32,6 +32,17 @@ export function isPostTitleFormat(title: string) {
   return !hasControlCharacter(title, { emoji: true });
 }
 
+/**
+ * Whether `summary` has no control or format character (Unicode Cc or Cf)
+ * besides tab, line feed and carriage return, which a multi-line summary
+ * needs. A zero width joiner inside an emoji is part of it.
+ */
+export function isPostSummaryFormat(summary: string) {
+  return !hasControlCharacter(summary.replace(/[\t\n\r]/g, ""), {
+    emoji: true,
+  });
+}
+
 /** Whether the API would take `title` as a Post's title. */
 export function isValidPostTitle(title: string) {
   const trimmed = title.trim();

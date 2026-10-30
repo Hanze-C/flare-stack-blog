@@ -215,6 +215,19 @@ it("leaves out a title or slug the API would refuse, saving the rest", async () 
   expect(server.updated).toMatchObject({ title: "Back", slug: "back" });
 });
 
+it("leaves out a summary the API would refuse, saving the rest", async () => {
+  const session = editorSession();
+
+  await session.save({ ...POST, title: "Kept", summary: "colour \u001B[31m" });
+
+  expect(server.updated).not.toHaveProperty("summary");
+  expect(server.updated).toMatchObject({ title: "Kept" });
+
+  await session.save({ ...POST, summary: "two\nlines" });
+
+  expect(server.updated).toMatchObject({ summary: "two\nlines" });
+});
+
 it("keeps the tags that still exist when one was deleted since it was read", async () => {
   const session = editorSession();
   server.knownTags = [3];
