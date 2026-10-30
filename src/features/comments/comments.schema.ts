@@ -2,9 +2,7 @@ import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { COMMENT_STATUSES, CommentsTable } from "@/lib/db/schema";
 import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
-
-// Date fields need to accept both Date objects and ISO strings (for JSON serialization)
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
+import { coercedDate } from "@/lib/orpc/dates";
 
 /** A Comment as public APIs return it; when an Admin handled it stays private. */
 export const CommentSelectSchema = createSelectSchema(CommentsTable, {

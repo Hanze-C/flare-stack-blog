@@ -160,7 +160,7 @@ const importFromUrl = adminProcedure
     path: "/admin/media/import",
     summary: "Import an image from a URL",
     description:
-      "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public: a loopback, private, link-local or reserved IP in any notation, a local name, a name any of whose DNS answers is such an address, or a redirect to any of these. Redirects are followed up to five times. Answers MEDIA_IMPORT_FAILED when the download fails or the name does not resolve, and MEDIA_INVALID when the response is not an accepted image type, is empty or over the size limit, or its bytes are not that type; data.detail says which.",
+      "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public: a loopback, private, link-local or reserved IP in any notation, a local name, a name any of whose DNS answers is such an address, or a redirect to any of these or to a name public DNS has no address for, such as an intranet host. Redirects are followed up to five times. Answers MEDIA_IMPORT_FAILED when the download fails or the name does not resolve, and MEDIA_INVALID when the response is not an accepted image type, is empty or over the size limit, or its bytes are not that type; data.detail says which.",
     tags: ["Admin Media"],
   })
   .input(ImportMediaUrlInputSchema)
@@ -293,7 +293,7 @@ const replace = adminProcedure
     path: "/admin/media/{key}/replace",
     summary: "Replace media file",
     description:
-      "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares (data.detail says why).",
+      "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. The Media's fileName becomes the uploaded file's name, or stays as it was when the part has none. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares (data.detail says why).",
     tags: ["Admin Media"],
   })
   .input(

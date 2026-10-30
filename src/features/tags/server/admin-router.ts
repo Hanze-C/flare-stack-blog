@@ -125,7 +125,9 @@ const setPostTags = adminProcedure
     summary: "Set tags on a post",
     description:
       "Replaces the post's draft tags; the public site shows them once the post is published. Like every write to a post, it replaces the post's saveToken and the response carries the new one, except that setting the tags the post already has writes nothing and answers its current saveToken. A post that does not exist answers 404 POST_NOT_FOUND, and a tag id no tag has answers 404 TAG_NOT_FOUND; either way nothing is written. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without it, the write is unconditional.",
-    tags: ["Admin Tags"],
+    // Listed with the Post operations too: it writes a Post's draft, and
+    // updating a Post takes no tags.
+    tags: ["Admin Tags", "Admin Posts"],
   })
   .input(SetPostTagsInputSchema)
   .output(SetPostTagsResultSchema)

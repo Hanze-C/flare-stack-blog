@@ -11,8 +11,7 @@ import {
   PostContentFormatSchema,
   StatedSaveTokenSchema,
 } from "./posts.schema";
-
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
+import { coercedDate } from "@/lib/orpc/dates";
 
 export const PostRevisionSnapshotSchema = z.object({
   title: z.string(),
@@ -26,7 +25,7 @@ export const PostRevisionSnapshotSchema = z.object({
   coverMediaId: z.number().int().nullable().default(null),
 });
 
-const PostRevisionReasonSchema = z
+export const PostRevisionReasonSchema = z
   .enum(POST_REVISION_REASONS)
   .describe(
     "Why the revision was taken. publish: taken when the post is published. restore_backup: the draft saved automatically before restoring a revision or discarding Unpublished Changes, so it can be restored. auto: legacy autosave revisions from older versions; new ones are no longer taken.",

@@ -200,6 +200,54 @@ describe("Post content as Markdown over the Admin API", () => {
     expect(item).not.toHaveProperty("contentMarkdown");
   });
 
+  it("reads the published body as Markdown next to the draft, with no revisions left", async () => {
+    const apiKey = await seedAdminApiKey();
+    const id = await createPost(apiKey, {
+      contentMarkdown: "## Live\n\n```ts\nconst a = 1;\n```",
+    });
+    const unpublished = await readPost(apiKey, id, "?contentFormat=markdown");
+    expect(unpublished).toMatchObject({ publicSnapshotContentMarkdown: null });
+    expect(unpublished).not.toHaveProperty("publicSnapshotContentJson");
+
+    const published = await callAdminApi(apiKey, `/admin/posts/${id}/publish`, {
+      method: "POST",
+      body: {},
+    });
+    expect(published.status).toBe(200);
+    await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { contentMarkdown: "## Draft\n\nChanged." } },
+    });
+    const revisions = (await (
+      await callAdminApi(apiKey, `/admin/posts/${id}/revisions`)
+    ).json()) as Array<{ id: number }>;
+    expect(revisions.length).toBeGreaterThan(0);
+    await callAdminApi(apiKey, `/admin/posts/${id}/revisions`, {
+      method: "DELETE",
+      body: { revisionIds: revisions.map((revision) => revision.id) },
+    });
+
+    const read = (await readPost(
+      apiKey,
+      id,
+      "?contentFormat=markdown",
+    )) as ReadPost & { publicSnapshotContentMarkdown?: string | null };
+    expect(read.contentMarkdown).toBe("## Draft\n\nChanged.\n");
+    // The highlighted code HTML the snapshot keeps does not show.
+    expect(read.publicSnapshotContentMarkdown).toBe(
+      "## Live\n\n```ts\nconst a = 1;\n```\n",
+    );
+    expect(read).not.toHaveProperty("publicSnapshotContentJson");
+
+    const asJson = (await readPost(apiKey, id)) as ReadPost & {
+      publicSnapshotContentJson?: { content?: Array<{ type: string }> };
+    };
+    expect(asJson).not.toHaveProperty("publicSnapshotContentMarkdown");
+    expect(
+      asJson.publicSnapshotContentJson?.content?.map((node) => node.type),
+    ).toEqual(["heading", "codeBlock"]);
+  });
+
   it("refuses a local image and names it", async () => {
     const apiKey = await seedAdminApiKey();
     const id = await createPost(apiKey, { contentJson: paragraph("Before") });

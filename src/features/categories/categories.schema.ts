@@ -3,8 +3,7 @@ import { z } from "zod";
 import { CategoriesTable } from "@/lib/db/schema";
 import { atLeastOneField } from "@/lib/orpc/changes";
 import { hasControlCharacter } from "@/lib/unicode-text";
-
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
+import { coercedDate } from "@/lib/orpc/dates";
 
 export const CategorySelectSchema = createSelectSchema(CategoriesTable, {
   createdAt: coercedDate,

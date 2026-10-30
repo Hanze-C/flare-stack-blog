@@ -205,3 +205,27 @@ export async function inContentFormat<
   const { contentJson, ...rest } = post;
   return { ...rest, contentMarkdown: postContentToMarkdown(contentJson) };
 }
+
+/**
+ * An admin read of a Post in `format`. Markdown also answers the published
+ * body, from the Public Content Snapshot, as `publicSnapshotContentMarkdown`
+ * in place of `publicSnapshotContentJson`, so a client compares the draft
+ * with what is published in one format, whatever Post Revisions were deleted.
+ */
+export async function adminPostInContentFormat<
+  T extends {
+    contentJson?: JSONContent | null;
+    publicSnapshotContentJson: JSONContent | null;
+  },
+>(post: T, format: PostContentFormat) {
+  if (format !== "markdown") return post;
+  const { postContentToMarkdown } = await loadPostMarkdown();
+  const { contentJson, publicSnapshotContentJson, ...rest } = post;
+  return {
+    ...rest,
+    contentMarkdown: postContentToMarkdown(contentJson ?? null),
+    publicSnapshotContentMarkdown: postContentToMarkdown(
+      publicSnapshotContentJson,
+    ),
+  };
+}

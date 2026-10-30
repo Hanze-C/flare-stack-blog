@@ -784,17 +784,25 @@ export async function publishPost(
   }
   const publishedPost = { ...post, ...draft };
 
-  const { highlightSnapshotContent } =
+  const { highlightSnapshotContent, snapshotContentFloor } =
     await import("@/features/posts/utils/highlight-code-blocks");
+  // Highlighting is the costliest step, so a snapshot that is too large even
+  // before it is refused without spending the CPU on it.
+  const floor = await buildPublicSnapshot(
+    context.db,
+    publishedPost,
+    snapshotContentFloor(
+      publishedPost.contentJson,
+      publishedPost.publicSnapshotJson?.contentJson,
+    ),
+  );
+  const floorTooLarge = contentTooLarge("publicSnapshot", floor);
+  if (floorTooLarge) return err(floorTooLarge);
   const snapshotContent = await highlightSnapshotContent(
     publishedPost.contentJson,
     publishedPost.publicSnapshotJson?.contentJson,
   );
-  const snapshot = await buildPublicSnapshot(
-    context.db,
-    publishedPost,
-    snapshotContent,
-  );
+  const snapshot = { ...floor, contentJson: snapshotContent };
   const snapshotTooLarge = contentTooLarge("publicSnapshot", snapshot);
   if (snapshotTooLarge) return err(snapshotTooLarge);
   const previousPublicSlug = publishedPost.publicSlug;

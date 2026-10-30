@@ -7,6 +7,7 @@ import {
 } from "tests/test-utils";
 import { describe, expect, it } from "vitest";
 import * as CategoryService from "@/features/categories/categories.service";
+import * as TagService from "@/features/tags/tags.service";
 import {
   CategoriesTable,
   PostRevisionsTable,
@@ -14,6 +15,7 @@ import {
   PostTagsTable,
   TagsTable,
 } from "@/lib/db/schema";
+import { unwrap } from "@/lib/errors";
 import { createApiContext } from "@/lib/orpc/create-context";
 import { openAPIHandler } from "@/lib/orpc/openapi-handler";
 
@@ -366,6 +368,35 @@ describe("saveToken on every write", () => {
       assigned.saveToken,
     );
     await expectEditConflict(stale, after.saveToken);
+  });
+
+  it("keeps the saveToken when the post's tag is renamed and replaces it when the tag is deleted", async () => {
+    const apiKey = await seedAdminApiKey();
+    const context = createAdminTestContext();
+    const { id } = await createPost(apiKey, "Tag goes away");
+    const [tagId] = await createTags("edit-conflict-renamed-tag");
+    const tagged = await callAdminApi(apiKey, `/admin/posts/${id}/tags`, {
+      method: "PUT",
+      body: { tagIds: [tagId] },
+    });
+    expect(tagged.status).toBe(200);
+    const { saveToken } = (await tagged.json()) as { saveToken: string };
+
+    unwrap(
+      await TagService.updateTag(context, {
+        id: tagId!,
+        data: { name: "edit-conflict-tag-new-name" },
+      }),
+    );
+    expect((await readPost(apiKey, id)).saveToken).toBe(saveToken);
+
+    unwrap(await TagService.deleteTag(context, { id: tagId! }));
+    const after = await readPost(apiKey, id);
+    expect(after.saveToken).not.toBe(saveToken);
+    await expectEditConflict(
+      await patchPost(apiKey, id, { title: "Still tagged" }, saveToken),
+      after.saveToken,
+    );
   });
 
   it("returns the saveToken with full list items", async () => {

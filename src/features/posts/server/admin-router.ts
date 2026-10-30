@@ -38,6 +38,7 @@ import * as PostService from "@/features/posts/services/posts.service";
 import * as VideoMetaService from "@/features/posts/services/video-meta.service";
 import {
   CONTENT_SIZE_RULES,
+  HIGHLIGHT_BUDGET_CHARS,
   POST_CONTENT_JSON_LIMIT_BYTES,
   PUBLIC_SNAPSHOT_LIMIT_BYTES,
 } from "@/features/posts/utils/post-content-size";
@@ -312,7 +313,7 @@ const adminGet = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Get a post by id",
     description:
-      "Returns the editable Post, or answers 404 POST_NOT_FOUND when there is none. hasUnpublishedChanges tells whether the draft differs from the published version. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
+      "Returns the editable Post, or answers 404 POST_NOT_FOUND when there is none. hasUnpublishedChanges tells whether the draft differs from the published version. The published body, from the Public Content Snapshot, comes next to the draft: publicSnapshotContentJson, or publicSnapshotContentMarkdown with contentFormat=markdown, so one read compares the draft with what is published, whatever Post Revisions were deleted. saveToken identifies this read: state it when saving or publishing.",
     tags: ["Admin Posts"],
   })
   .input(AdminFindPostByIdInputSchema)
@@ -320,7 +321,10 @@ const adminGet = adminProcedure
   .handler(async ({ context, input, errors }) => {
     const post = await PostService.findPostById(context, input);
     if (!post) throw errors.POST_NOT_FOUND();
-    return PostMarkdownService.inContentFormat(post, input.contentFormat);
+    return PostMarkdownService.adminPostInContentFormat(
+      post,
+      input.contentFormat,
+    );
   });
 
 const generateSlug = adminProcedure
@@ -394,7 +398,7 @@ const update = adminProcedure
     method: "PATCH",
     path: "/admin/posts/{id}",
     summary: "Update a post",
-    description: `Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. A save that leaves every stated field as it is writes nothing and answers the current saveToken. ${CONTENT_SIZE_RULES} The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. An image the body shows by a Media path (/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.`,
+    description: `Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. The Post's Tags are not among them: set them with tags.admin.setPostTags (PUT /admin/posts/{postId}/tags), which takes saveToken the same way. A save that leaves every stated field as it is writes nothing and answers the current saveToken. ${CONTENT_SIZE_RULES} The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. An image the body shows by a Media path (/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.`,
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
@@ -463,7 +467,7 @@ const publishPost = adminProcedure
     method: "POST",
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
-    description: `Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. Answers 413 POST_CONTENT_TOO_LARGE, writing nothing, when the serialized Public Content Snapshot (the body with its code highlighted, which is larger than the draft) takes more than ${PUBLIC_SNAPSHOT_LIMIT_BYTES} bytes; shorten the post. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.`,
+    description: `Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot, in order, up to ${HIGHLIGHT_BUDGET_CHARS} characters of new code per publish; a block past that is stored unhighlighted, as plain text. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. Answers 413 POST_CONTENT_TOO_LARGE, writing nothing, when the serialized Public Content Snapshot (the body with its code highlighted, which is larger than the draft) takes more than ${PUBLIC_SNAPSHOT_LIMIT_BYTES} bytes; shorten the post. When the snapshot is over the limit even before its code is highlighted, it answers at once and data.size counts it unhighlighted. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.`,
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)

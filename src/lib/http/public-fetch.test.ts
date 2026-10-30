@@ -79,8 +79,16 @@ describe("checkPublicUrl", () => {
     ).toBeNull();
   });
 
-  it("cannot check a name that does not resolve", async () => {
+  it("tells a name public DNS does not know from a failed lookup", async () => {
     stubNetwork({});
+    expect(
+      await checkPublicUrl(new URL("https://nowhere.example/"), signal()),
+    ).toEqual({ reason: "NO_ADDRESS" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 503 })),
+    );
     expect(
       await checkPublicUrl(new URL("https://nowhere.example/"), signal()),
     ).toEqual({ reason: "UNREACHABLE" });
@@ -162,6 +170,36 @@ describe("fetchPublicUrl", () => {
 
     expect(result.error).toMatchObject({ reason: "NOT_PUBLIC" });
     expect(fetchedPages(fetchMock)).toEqual(["https://images.example/a.png"]);
+  });
+
+  it("refuses a redirect to a name public DNS does not know, like an intranet host", async () => {
+    const fetchMock = stubNetwork(publicDns, {
+      "https://images.example/a.png": () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://nas.corp.example/x.png" },
+        }),
+    });
+
+    const result = await fetchPublicUrl(
+      new URL("https://images.example/a.png"),
+      { signal: signal() },
+    );
+
+    expect(result.error).toEqual({
+      reason: "NOT_PUBLIC",
+      url: "http://nas.corp.example/x.png",
+    });
+    expect(fetchedPages(fetchMock)).toEqual(["https://images.example/a.png"]);
+  });
+
+  it("cannot fetch a start address whose name does not resolve", async () => {
+    const fetchMock = stubNetwork(publicDns);
+    const result = await fetchPublicUrl(new URL("https://nowhere.example/"), {
+      signal: signal(),
+    });
+    expect(result.error).toEqual({ reason: "UNREACHABLE" });
+    expect(fetchedPages(fetchMock)).toEqual([]);
   });
 
   it("gives up after five redirects", async () => {

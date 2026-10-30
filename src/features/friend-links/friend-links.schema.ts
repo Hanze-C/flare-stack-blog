@@ -3,8 +3,7 @@ import { z } from "zod";
 import { FriendLinksTable } from "@/lib/db/schema";
 import type { Messages } from "@/lib/i18n";
 import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
-
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
+import { coercedDate } from "@/lib/orpc/dates";
 
 const FriendLinkUserSchema = z.object({
   id: z.string(),
