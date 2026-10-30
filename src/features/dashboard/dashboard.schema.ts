@@ -1,6 +1,5 @@
 import { z } from "zod";
-
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
+import { coercedDate } from "@/lib/orpc/dates";
 
 const DashboardRecentPostSchema = z.object({
   id: z.number().int().positive(),

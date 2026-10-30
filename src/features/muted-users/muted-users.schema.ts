@@ -1,6 +1,5 @@
 import { z } from "zod";
-
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
+import { coercedDate } from "@/lib/orpc/dates";
 
 export const MutedUserSchema = z.object({
   id: z.string(),

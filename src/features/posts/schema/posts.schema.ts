@@ -23,11 +23,10 @@ import {
   PUBLICATION_DATE_MIN,
   parsePublicationDate,
 } from "@/features/posts/utils/date";
-import { CONTENT_SIZE_RULES } from "@/features/posts/utils/post-content-size";
 import { NullableJsonContentSchema } from "./json-content.schema";
+import { SaveTokenSchema, StatedSaveTokenSchema } from "./save-token.schema";
+import { coercedDate } from "@/lib/orpc/dates";
 
-// Date fields need to accept both Date objects and ISO strings (for JSON serialization)
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 const coercedDateNullable = coercedDate.nullable();
 
 const PublicPostCoverSchema = z.object({
@@ -42,21 +41,24 @@ const AdminPostCoverSchema = PublicPostCoverSchema.extend({
   fileName: z.string(),
 });
 
-const PublicSlugSchema = z
+export const PublicSlugSchema = z
   .string()
   .nullable()
   .describe(
     "Slug of the live page at /post/{publicSlug}. It can differ from slug, the draft's, until the next publish. Null while the post is not published.",
   );
 
-const HasUnpublishedChangesSchema = z
+export const HasUnpublishedChangesSchema = z
   .boolean()
   .describe(
     "True when the post is published and its draft differs from what was published: title, summary, slug, body, publication date, cover, category or tags. Changing a field back to its published value clears it, and publishing clears it. Pinning does not count. Always false for a draft post. publish makes the changes public; discard-changes makes the draft match the published version again.",
   );
 
+// The Markdown and link rules are API-wide, stated once under "Markdown
+// content" in the API description (openapi-handler.ts); the fields that read
+// or write a body point there instead of repeating them in every operation.
 const MARKDOWN_RULES =
-  "CommonMark with GFM tables, strikethrough and autolinks. It carries headings, bold, italic, underline as ++text++, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, fenced code blocks with their language (a mermaid block renders as a diagram), tables with column alignment, inline math as $…$, block math with $$ alone on the lines before and after it, images and videos. A Bilibili or YouTube link alone in a paragraph is a video block. Headings stay within levels 2 to 4: when there is an H1 every heading moves one level down, and anything below level 4 becomes level 4. Images must be http(s) addresses or Media paths (/images/<key>). Table column widths are not carried, and a table cell holds a single line. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.";
+  'Markdown follows the rules under "Markdown content" in the API description (info.description of /api/spec/index.json).';
 
 export const PostContentFormatSchema = z
   .enum(["json", "markdown"])
@@ -74,24 +76,17 @@ export const ContentMarkdownOutputSchema = z
     "The body as Markdown, returned in place of contentJson when the request asks for contentFormat=markdown. Null when the post has no body, which includes a body with no content, such as one empty paragraph. Videos are written as their page link alone on a line, keeping the Bilibili part and start time; their title, cover and length are not carried.",
   );
 
-const SIZE_RULES = CONTENT_SIZE_RULES;
-
-const LINK_RULES =
-  "A link whose address has a scheme other than http, https, ftp, ftps, mailto, tel, callto, sms, cid or xmpp, such as javascript: or data:, is refused with CONTENT_LINK_INVALID naming it. Site paths, #fragments and relative addresses are kept.";
-
-const ContentMarkdownInputSchema = z
+export const ContentMarkdownInputSchema = z
   .string()
   .optional()
   .describe(
-    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. ${LINK_RULES} ${SIZE_RULES} The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal. An empty string writes an empty body.`,
+    `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} An image that is not an http(s) address or a Media path, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first; a link the rules refuse answers CONTENT_LINK_INVALID naming it. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal. An empty string writes an empty body.`,
   );
 
-const CONTENT_JSON_RULES =
-  "The body as TipTap JSON, held to the same rules as Markdown: only the editor's node types (doc, text, paragraph, heading, blockquote, bulletList, orderedList, listItem, codeBlock, horizontalRule, hardBreak, table, tableRow, tableHeader, tableCell, image, video, inlineMath, blockMath) and mark types (bold, italic, underline, strike, code, link), and images whose src is an http(s) address or a Media path (/images/<key>). Anything else is refused with 400 CONTENT_JSON_INVALID naming it. Send either contentJson or contentMarkdown, not both.";
-
-const ContentJsonInputSchema = NullableJsonContentSchema.optional().describe(
-  `${CONTENT_JSON_RULES} ${LINK_RULES} ${SIZE_RULES}`,
-);
+export const ContentJsonInputSchema =
+  NullableJsonContentSchema.optional().describe(
+    "The body as TipTap JSON, held to the same rules as Markdown: only the editor's node types (doc, text, paragraph, heading, blockquote, bulletList, orderedList, listItem, codeBlock, horizontalRule, hardBreak, table, tableRow, tableHeader, tableCell, image, video, inlineMath, blockMath) and mark types (bold, italic, underline, strike, code, link), and images whose src is an http(s) address or a Media path (/images/<key>). Anything else is refused with 400 CONTENT_JSON_INVALID naming it, and a link the Markdown rules of the API description refuse with CONTENT_LINK_INVALID. Send either contentJson or contentMarkdown, not both.",
+  );
 
 const TITLE_FORMAT_RULE =
   "It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, a tab, a zero width space or a bidirectional control); a zero width joiner inside an emoji is fine.";
@@ -144,18 +139,7 @@ const PublishedAtInputSchema = z
   .optional()
   .describe(PUBLISHED_AT_RULES);
 
-const SaveTokenSchema = z
-  .string()
-  .describe(
-    "Opaque token that every save of the post's draft and every publish or unpublish replaces, including tags, category, cover and Post Revision restores; pinning keeps it. State it as saveToken when saving or publishing so the write is refused with 409 EDIT_CONFLICT if the post was saved since you read it.",
-  );
-
-export const StatedSaveTokenSchema = z
-  .string()
-  .optional()
-  .describe(
-    "The saveToken from your latest read or write of this post. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken: read the post again before deciding what to write. Omit it to write unconditionally.",
-  );
+export { SaveTokenSchema, StatedSaveTokenSchema };
 
 const PostSelectSchema = createSelectSchema(PostsTable, {
   saveToken: SaveTokenSchema,

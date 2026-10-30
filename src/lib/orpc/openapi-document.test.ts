@@ -231,6 +231,24 @@ describe("a subset", () => {
     expect(update?.operation.description).toContain("tags.admin.setPostTags");
   });
 
+  it("of Admin Posts states each long description once", async () => {
+    const subset = await documentAt("/spec.json?tags=Admin%20Posts");
+    const seen = new Map<string, number>();
+    const count = (node: unknown) => {
+      if (Array.isArray(node)) node.forEach(count);
+      else if (typeof node === "object" && node !== null) {
+        const { description } = node as { description?: unknown };
+        if (typeof description === "string" && description.length > 200) {
+          seen.set(description, (seen.get(description) ?? 0) + 1);
+        }
+        Object.values(node).forEach(count);
+      }
+    };
+    count(subset);
+    const repeated = [...seen].filter(([, times]) => times > 1);
+    expect(repeated.map(([text]) => text.slice(0, 80))).toEqual([]);
+  });
+
   it("points to the index for the API-wide rules instead of repeating them", async () => {
     const subset = await documentAt("/spec.json?operationIds=posts.admin.get");
     expect(subset.info.description).toContain("/api/spec/index.json");

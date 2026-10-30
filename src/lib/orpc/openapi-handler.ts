@@ -47,14 +47,16 @@ Every Post carries an opaque \`saveToken\`, returned by each read of the Post an
 
 ## Markdown content
 
-Post and Post Revision reads, and saves, take \`contentFormat=markdown\` (default \`json\`, TipTap JSON) and then answer \`contentMarkdown\` (null when the Post has no body) in place of \`contentJson\`; reading a Post by id also answers its published body as \`publicSnapshotContentMarkdown\` in place of \`publicSnapshotContentJson\`, so the draft and what is published compare in one read. Creating and saving take either \`contentJson\` or \`contentMarkdown\` in \`data\`; sending both answers 400. Markdown is parsed as the editor parses pasted Markdown, and reads serialize back to the same form:
+Post and Post Revision reads, and saves, take \`contentFormat=markdown\` (default \`json\`, TipTap JSON) and then answer \`contentMarkdown\` (null when the Post has no body) in place of \`contentJson\`; reading a Post by id also answers its published body as \`publicSnapshotContentMarkdown\` in place of \`publicSnapshotContentJson\`, so the draft and what is published compare in one read. Creating and saving take either \`contentJson\` or \`contentMarkdown\` in \`data\`; sending both answers 400. Markdown is CommonMark with GFM tables, strikethrough and autolinks, parsed as the editor parses pasted Markdown; reads serialize back to the same form:
 
+- It carries headings, bold, italic, underline as \`++text++\`, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, tables, images and videos. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.
 - Headings are levels 2 to 4: when the Markdown has an H1, every heading moves one level down, and anything deeper than level 4 becomes level 4.
-- A video link alone on a line is a video block. Its title, cover and duration are looked up on write and left empty when the lookup fails.
-- Tables keep column alignment; a Markdown write resets column widths to equal.
+- A Bilibili or YouTube link alone on a line is a video block. Its title, cover and duration are looked up on write and left empty when the lookup fails.
+- Tables keep column alignment, and a table cell holds a single line; column widths are not carried, so a Markdown write resets them to equal.
 - Inline math is \`$…$\`; block math has \`$$\` alone on the lines before and after it.
-- Fenced code blocks carry their language.
+- Fenced code blocks carry their language; a \`mermaid\` block renders as a diagram.
 - An image must be an http(s) address or the \`/images/…\` path of existing Media. Any other source, such as a local file path, answers 400 naming the image, and so does a Media path no Media has, unless the draft already shows it: upload the file as Media first and use its path.
+- A link whose address has a scheme other than http, https, ftp, ftps, mailto, tel, callto, sms, cid or xmpp, such as \`javascript:\` or \`data:\`, answers 400 \`CONTENT_LINK_INVALID\` naming it, in Markdown and in \`contentJson\` alike. Site paths, #fragments and relative addresses are kept.
 
 ## Media
 

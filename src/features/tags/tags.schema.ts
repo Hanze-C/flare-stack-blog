@@ -3,9 +3,8 @@ import { z } from "zod";
 import { TagsTable } from "@/lib/db/schema";
 import { atLeastOneField } from "@/lib/orpc/changes";
 import { hasControlCharacter } from "@/lib/unicode-text";
-
-// Date fields need to accept both Date objects and ISO strings (for JSON serialization)
-const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
+import { coercedDate } from "@/lib/orpc/dates";
+import { StatedSaveTokenSchema } from "@/features/posts/schema/save-token.schema";
 
 export const TagSelectSchema = createSelectSchema(TagsTable, {
   createdAt: coercedDate,
@@ -91,12 +90,7 @@ export const SetPostTagsInputSchema = z.strictObject({
     .describe(
       "The ids of every tag the post should carry; an empty list removes them all. An id no tag has answers 404 TAG_NOT_FOUND and nothing is written.",
     ),
-  saveToken: z
-    .string()
-    .optional()
-    .describe(
-      "The saveToken from your latest read or write of this post. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken: read the post again before deciding what to write. Omit it to write unconditionally.",
-    ),
+  saveToken: StatedSaveTokenSchema,
 });
 
 export const GetTagsByPostIdInputSchema = z.strictObject({

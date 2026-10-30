@@ -14,12 +14,22 @@ import { MediaSelectSchema } from "@/features/media/media.schema";
 import { MutedUserSchema } from "@/features/muted-users/muted-users.schema";
 import { PostPopularitySyncStatusSchema } from "@/features/post-popularity/post-popularity.schema";
 import { NullableJsonContentSchema } from "@/features/posts/schema/json-content.schema";
+import { PostRevisionReasonSchema } from "@/features/posts/schema/post-revisions.schema";
 import {
+  ContentJsonInputSchema,
+  ContentMarkdownInputSchema,
+  ContentMarkdownOutputSchema,
+  HasUnpublishedChangesSchema,
+  PostContentFormatSchema,
   PostItemSchema,
   PostWriteResultSchema,
+  PublicSlugSchema,
+  SaveTokenSchema,
+  StatedSaveTokenSchema,
 } from "@/features/posts/schema/posts.schema";
 import { TagSelectSchema } from "@/features/tags/tags.schema";
 import { UpdateCheckResultSchema } from "@/features/version/version.schema";
+import { coercedDate } from "./dates";
 
 const TipTapNodeSchema = NullableJsonContentSchema.unwrap();
 
@@ -41,6 +51,23 @@ export const OPENAPI_COMPONENTS: NonNullable<
   // and responses differ only in reading unknown array items as maybe null.
   TipTapNode: { schema: TipTapNodeSchema, strategy: "output" },
   TipTapNodeInput: { schema: TipTapNodeSchema, strategy: "input" },
+  DateTime: { schema: coercedDate, strategy: "output" },
+  // Post fields whose long descriptions several Post operations repeat.
+  ContentFormat: { schema: PostContentFormatSchema, strategy: "input" },
+  ContentMarkdown: { schema: ContentMarkdownOutputSchema, strategy: "output" },
+  ContentMarkdownInput: {
+    schema: ContentMarkdownInputSchema,
+    strategy: "input",
+  },
+  ContentJsonInput: { schema: ContentJsonInputSchema, strategy: "input" },
+  SaveToken: { schema: SaveTokenSchema, strategy: "output" },
+  StatedSaveToken: { schema: StatedSaveTokenSchema, strategy: "input" },
+  PublicSlug: { schema: PublicSlugSchema, strategy: "output" },
+  HasUnpublishedChanges: {
+    schema: HasUnpublishedChangesSchema,
+    strategy: "output",
+  },
+  PostRevisionReason: { schema: PostRevisionReasonSchema, strategy: "output" },
   PostItem: { schema: PostItemSchema, strategy: "output" },
   PostWriteResult: { schema: PostWriteResultSchema, strategy: "output" },
   Tag: { schema: TagSelectSchema, strategy: "output" },
