@@ -18,11 +18,11 @@ url = "https://blog.example.com"
 api_key = "fsb_..."
 ```
 
-`url` is the site origin, `https://<host>` with no path or trailing slash; `api_key` is an Admin API Key. When the file is missing, either value is empty, a stored key answers 401, or the human gives a new blog or key: ask the human for the origin and an API Key (an Admin issues one in the blog's admin settings; it is shown once), check it with one read-only admin call from the document, then write the file with mode `0600`, creating its directory. Done when one origin and a key that answers 200 are in hand.
+`url` is the site origin, `https://<host>` with no path or trailing slash; `api_key` is an Admin API Key. When the file is missing, either value is empty, a stored key answers 401, or the human gives a new blog or key: ask the human for the origin and an API Key (an Admin issues one in the blog's admin settings; it is shown once), fetch the document (see [Discover](#2-discover)) and check the key with one read-only admin operation from it, then write the file with mode `0600`, creating its directory with mode `0700`. Done when one origin and a key that answers 200 are in hand.
 
 Keep every file a task makes (headers, request and response bodies, Markdown drafts) in one working directory: the one the human names, or else one of its own, created private at the task's start: `mktemp -d` on macOS and Linux; on Windows, a new folder under `$env:TEMP` with inherited permissions removed and only the current user allowed. When the task ends, succeeded or not, delete the files you made there (and the directory, if you created it). The config file stays where it is.
 
-The key goes only in the `x-api-key` header, and only to the configured origin. Keep it out of command arguments, URLs, logs, saved responses and replies: with curl, write the headers (the key and a browser User-Agent) to a file in the working directory and pass `-H @<file>`; send bodies with `--data-binary @<file>`. Stop on a redirect to another origin rather than follow it with the key. In Windows PowerShell, `curl` may be an alias of `Invoke-WebRequest`: call `curl.exe`.
+The key goes only in the `x-api-key` header, and only to the configured origin. Keep it out of command arguments, URLs, logs, saved responses and replies: with curl, write the headers (the key and a browser User-Agent) to a file in the working directory and pass `-H @<file>`; send bodies with `--data-binary @<file>`. Stop on a redirect to another origin rather than follow it with the key. Fetch public pages without the key. In Windows PowerShell, `curl` may be an alias of `Invoke-WebRequest`: call `curl.exe`.
 
 ## 2. Discover
 
@@ -36,8 +36,10 @@ Every save changes the draft, a Post's Category and Tags included, and readers s
 
 - **Resolve the target** by id, or by a search on the title or slug; several matches means ask which.
 - **Read right before each write.** The Admin edits the same Posts in the browser, which autosaves as they type. Read the Post immediately before each save, build the save on what you just read, and send that read's `saveToken`. A Post saved in between is then kept and the save answers 409 instead of overwriting it. See [Conflicts](#conflicts).
-- **Send only what changes.** Leave out every field you are not changing.
-- **Content** is Markdown, read and written as the document's description states. Keep the images, videos and links you were not asked to change, and read the Post back after writing.
+- **Send only what changes.** Leave out every field you are not changing, and spell every field exactly as the document does: a misspelt `saveToken` would leave the save unguarded.
+- **Content** is Markdown, read and written as the document's description states. Keep the images, videos and links you were not asked to change, and read the Post back after writing. A local image goes in as Media first; use the path the upload answers.
+- **Creating** has nothing to read before it. If a create times out or its answer is lost, search for the title before creating again, or you may make a duplicate.
+- **Slugs and names are addresses.** Changing a Published Post's slug and publishing again leaves the old URL unreachable, and renaming a Category or Tag changes its public URL: tell the human before doing either.
 - A 400 names each problem: correct those values and resend; make no other change to get past it.
 
 Make one human-intended change at a time, carried through to its end state, unless the human asked for several together.
@@ -52,9 +54,11 @@ To throw away a Published Post's unpublished changes, discard them with the docu
 
 To take a Post off the public site for now, unpublish it; the draft stays. Delete only when the human explicitly asks to delete.
 
+Pinning a Post takes effect at once, without publishing. Never run site-wide operations (deleting unused Media, rebuilding the search index, purging caches) unless the human asks for exactly that.
+
 ## Conflicts
 
-Every write to a Post's draft (saving it, setting its Tags, discarding its changes) and every publish states the `saveToken` of your latest read or write of it; unpublishing changes no draft and takes none. A 409 Edit Conflict means the Post was saved after you read it, and nothing was written. Never retry without the `saveToken`, and never resend the same one.
+Every write to a Post's draft (saving it, setting its Tags, restoring a Post Revision, discarding its changes) and every publish states the `saveToken` of your latest read or write of it; unpublishing changes no draft and takes none, but it does replace the token, so read again before your next write. A 409 Edit Conflict means the Post was saved after you read it, and nothing was written. Never retry without the `saveToken`, and never resend the same one.
 
 1. Read the Post again.
 2. Compare it with the read your write was built on. When only your own earlier writes differ, re-apply your change to the new read and send its `saveToken`.
