@@ -30,6 +30,6 @@ export function savePostEdits(postId: number): PostEditorSave {
       tagIds: persistableTagIds(data.tagIds),
       saveToken: updated.saveToken,
     });
-    if (tagged.saveToken) acceptSaveToken(tagged.saveToken);
+    acceptSaveToken(tagged.saveToken);
   };
 }

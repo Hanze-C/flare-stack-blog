@@ -41,6 +41,8 @@ import { getPostPublisher } from "@/lib/do/post-publisher-binding";
 import { adminProcedure } from "@/lib/orpc/procedure";
 import { unwrapResult } from "@/lib/orpc/unwrap-result";
 
+// Every error a post operation can answer. Each operation declares only the
+// ones its service or handler really returns, picked from here.
 const postErrors = {
   POST_NOT_FOUND: { status: 404, message: "Post not found." },
   POST_REVISION_NOT_FOUND: { status: 404, message: "Post revision not found." },
@@ -70,6 +72,15 @@ const postErrors = {
       images: z.array(z.string()).describe("The refused image addresses."),
     }),
   },
+} as const;
+
+const markdownContentErrors = {
+  CONTENT_FORMAT_AMBIGUOUS: postErrors.CONTENT_FORMAT_AMBIGUOUS,
+  MARKDOWN_IMAGE_INVALID: postErrors.MARKDOWN_IMAGE_INVALID,
+} as const;
+
+const postNotFoundErrors = {
+  POST_NOT_FOUND: postErrors.POST_NOT_FOUND,
 } as const;
 
 type MarkdownContentError =
@@ -143,7 +154,7 @@ const adminList = adminProcedure
   });
 
 const adminGet = adminProcedure
-  .errors(postErrors)
+  .errors(postNotFoundErrors)
   .route({
     method: "GET",
     path: "/admin/posts/{id}",
@@ -188,7 +199,7 @@ const videoMeta = adminProcedure
   });
 
 const create = adminProcedure
-  .errors(postErrors)
+  .errors(markdownContentErrors)
   .route({
     method: "POST",
     path: "/admin/posts",
@@ -210,7 +221,13 @@ const create = adminProcedure
   });
 
 const update = adminProcedure
-  .errors({ ...postErrors, ...editConflictErrors })
+  .errors({
+    ...postNotFoundErrors,
+    ...markdownContentErrors,
+    MEDIA_NOT_FOUND: postErrors.MEDIA_NOT_FOUND,
+    CATEGORY_NOT_FOUND: postErrors.CATEGORY_NOT_FOUND,
+    ...editConflictErrors,
+  })
   .route({
     method: "PATCH",
     path: "/admin/posts/{id}",
@@ -250,7 +267,7 @@ const update = adminProcedure
   });
 
 const remove = adminProcedure
-  .errors(postErrors)
+  .errors(postNotFoundErrors)
   .route({
     method: "DELETE",
     path: "/admin/posts/{id}",
@@ -268,7 +285,12 @@ const remove = adminProcedure
   );
 
 const publishPost = adminProcedure
-  .errors({ ...postErrors, ...editConflictErrors })
+  .errors({
+    ...postNotFoundErrors,
+    PUBLISHED_AT_IN_FUTURE: postErrors.PUBLISHED_AT_IN_FUTURE,
+    PUBLIC_SLUG_TAKEN: postErrors.PUBLIC_SLUG_TAKEN,
+    ...editConflictErrors,
+  })
   .route({
     method: "POST",
     path: "/admin/posts/{id}/publish",
@@ -300,7 +322,7 @@ const publishPost = adminProcedure
   });
 
 const unpublishPost = adminProcedure
-  .errors(postErrors)
+  .errors(postNotFoundErrors)
   .route({
     method: "POST",
     path: "/admin/posts/{id}/unpublish",
@@ -319,7 +341,12 @@ const unpublishPost = adminProcedure
   });
 
 const discardChanges = adminProcedure
-  .errors({ ...postErrors, ...discardChangesErrors, ...editConflictErrors })
+  .errors({
+    ...postNotFoundErrors,
+    POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND,
+    ...discardChangesErrors,
+    ...editConflictErrors,
+  })
   .route({
     method: "POST",
     path: "/admin/posts/{id}/discard-changes",
@@ -354,7 +381,7 @@ const discardChanges = adminProcedure
   );
 
 const pinPost = adminProcedure
-  .errors(postErrors)
+  .errors(postNotFoundErrors)
   .route({
     method: "POST",
     path: "/admin/posts/{id}/pin",
@@ -374,7 +401,7 @@ const pinPost = adminProcedure
   );
 
 const unpinPost = adminProcedure
-  .errors(postErrors)
+  .errors(postNotFoundErrors)
   .route({
     method: "POST",
     path: "/admin/posts/{id}/unpin",
@@ -407,7 +434,7 @@ const listRevisions = adminProcedure
   );
 
 const getRevision = adminProcedure
-  .errors(postErrors)
+  .errors({ POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND })
   .route({
     method: "GET",
     path: "/admin/posts/{postId}/revisions/{revisionId}",
@@ -428,7 +455,11 @@ const getRevision = adminProcedure
   });
 
 const restoreRevision = adminProcedure
-  .errors(postErrors)
+  .errors({
+    ...postNotFoundErrors,
+    POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND,
+    POST_REVISION_INVALID_SNAPSHOT: postErrors.POST_REVISION_INVALID_SNAPSHOT,
+  })
   .route({
     method: "POST",
     path: "/admin/posts/{postId}/revisions/{revisionId}/restore",
@@ -454,7 +485,6 @@ const restoreRevision = adminProcedure
   );
 
 const deleteRevisions = adminProcedure
-  .errors(postErrors)
   .route({
     method: "DELETE",
     path: "/admin/posts/{postId}/revisions",
@@ -463,12 +493,8 @@ const deleteRevisions = adminProcedure
   })
   .input(DeletePostRevisionsInputSchema)
   .output(DeletePostRevisionsResultSchema)
-  .handler(({ context, input, errors }) =>
-    unwrapResult(PostRevisionService.deletePostRevisions(context, input), {
-      POST_NOT_FOUND: () => {
-        throw errors.POST_NOT_FOUND();
-      },
-    }),
+  .handler(({ context, input }) =>
+    unwrapResult(PostRevisionService.deletePostRevisions(context, input), {}),
   );
 
 export default {

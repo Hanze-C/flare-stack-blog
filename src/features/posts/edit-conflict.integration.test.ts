@@ -526,15 +526,15 @@ describe("Edit Conflicts on tag saves", () => {
     expect(await draftTagIds(id)).toEqual([winner === 0 ? a : b]);
   });
 
-  it("answers a missing post with a null saveToken, as before", async () => {
+  it("answers 404 POST_NOT_FOUND for a missing post", async () => {
     const apiKey = await seedAdminApiKey();
 
     const response = await putTags(apiKey, 999_999, []);
 
-    expect(response.status).toBe(200);
-    expect(
-      ((await response.json()) as { saveToken: null }).saveToken,
-    ).toBeNull();
+    expect(response.status).toBe(404);
+    expect(((await response.json()) as { code: string }).code).toBe(
+      "POST_NOT_FOUND",
+    );
   });
 });
 
