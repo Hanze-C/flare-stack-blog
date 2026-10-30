@@ -32,6 +32,7 @@
           "method": "GET",
           "path": "/posts/{slug}",
           "summary": "Get a published post by slug",
+          "description": "Returns the published post, or answers 404 POST_NOT_FOUND when no published post has that slug. A draft, or a post that was unpublished, has none.",
           "tags": ["Posts"]
         }
       }
@@ -288,6 +289,7 @@
           "method": "GET",
           "path": "/tags",
           "summary": "List public tags",
+          "description": "The tags of published posts, most used first. postCount counts published posts only.",
           "tags": ["Tags"]
         }
       }
@@ -389,6 +391,7 @@
           "method": "GET",
           "path": "/categories",
           "summary": "List public categories",
+          "description": "The categories of published posts, ordered by name. postCount counts published posts only.",
           "tags": ["Categories"]
         }
       }
@@ -1021,6 +1024,7 @@
           "method": "GET",
           "path": "/search",
           "summary": "Search published posts",
+          "description": "Searches the title, summary, body, category and tags of published posts. Call GET /search/version first and pass what it returns as v; v is required.",
           "tags": ["Search"]
         }
       }
@@ -1033,6 +1037,7 @@
           "method": "GET",
           "path": "/search/version",
           "summary": "Get search index version",
+          "description": "The version of the search index, which changes whenever the index does. Pass it as v to GET /search.",
           "tags": ["Search"]
         }
       }
