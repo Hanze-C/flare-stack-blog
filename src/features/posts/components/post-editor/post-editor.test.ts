@@ -654,3 +654,74 @@ it("says the draft is saved, not that it is live, when nothing is waiting", asyn
 
   expect(headerStatus()).toBe(m.editor_status_draft_saved());
 });
+
+/** The status the header shows once the rest was saved without the link. */
+function savedExceptLink() {
+  const time = /\d{2}:\d{2}/.exec(headerStatus() ?? "")?.[0] ?? "";
+  return m.editor_status_saved_except_link({ time });
+}
+
+/** Opens the info panel and types `slug` into the link field. */
+function typeSlug(slug: string) {
+  fireEvent.click(
+    screen.getAllByRole("button", { name: m.editor_info_title() })[0]!,
+  );
+  fireEvent.change(screen.getByPlaceholderText("your-post-slug"), {
+    target: { value: slug },
+  });
+}
+
+it.each([
+  ["has a forbidden character", "a/b", m.editor_meta_slug_invalid()],
+  ["is reserved", "pinned", m.editor_meta_slug_reserved()],
+])(
+  "shows saving only while a request is out when the slug %s, then saved",
+  async (_case, slug, hint) => {
+    const server = createServer();
+    let finish!: () => void;
+    const save = vi.fn<PostEditorSave>(async (...args) => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      await server.save(...args);
+    });
+    await renderPostEditorPage(save);
+
+    typeSlug(slug);
+    expect(screen.getByText(hint)).toBeTruthy();
+    // Nothing is out yet, so the header does not claim to be saving.
+    expect(headerStatus()).toBe(m.editor_status_unsaved());
+
+    await waitFor(
+      () => expect(headerStatus()).toBe(m.editor_status_saving()),
+      AUTOSAVE_WAIT,
+    );
+    expect(save).toHaveBeenCalledTimes(1);
+
+    await act(async () => finish());
+    // The header says the link is the part that was not saved.
+    await waitFor(() => expect(headerStatus()).toBe(savedExceptLink()));
+    // The rest of the post was saved; the field keeps saying the link was not.
+    expect(screen.getByText(hint)).toBeTruthy();
+    // Nothing else waits, so no further request is sent.
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(headerStatus()).not.toBe(m.editor_status_saving());
+  },
+);
+
+it("shows saved, not saving, once the rest of the post was saved without a taken slug", async () => {
+  const server = createServer();
+  const save = vi.fn<PostEditorSave>(async (...args) => {
+    await server.save(...args);
+    return { slugTaken: true };
+  });
+  await renderPostEditorPage(save);
+
+  typeSlug("taken-slug");
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1), AUTOSAVE_WAIT);
+  await waitFor(() => expect(headerStatus()).toBe(savedExceptLink()));
+  expect(screen.getByText(m.editor_meta_slug_taken())).toBeTruthy();
+  await new Promise((resolve) => setTimeout(resolve, 1800));
+  expect(save).toHaveBeenCalledTimes(1);
+});
