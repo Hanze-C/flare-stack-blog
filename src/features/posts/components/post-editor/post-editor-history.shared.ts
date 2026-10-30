@@ -29,6 +29,8 @@ export function getRestoreErrorMessage(reason: string) {
       return m.editor_history_error_revision_not_found();
     case "POST_REVISION_INVALID_SNAPSHOT":
       return m.editor_history_error_invalid_snapshot();
+    case "SLUG_TAKEN":
+      return m.editor_history_error_slug_taken();
     default:
       return m.editor_action_unknown_error();
   }

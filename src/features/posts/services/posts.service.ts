@@ -52,6 +52,11 @@ import {
 import { generateTableOfContents } from "@/features/posts/utils/toc";
 import * as SearchService from "@/features/search/service/search.service";
 import type { PublicPostSnapshot } from "@/lib/db/schema";
+import {
+  isUniqueViolation,
+  POST_PUBLIC_SLUG,
+  POST_SLUG,
+} from "@/lib/db/unique-keys";
 import { err, ok } from "@/lib/errors";
 
 function stripPublicSnapshot<
@@ -277,21 +282,17 @@ export async function generateSlug(
   return { slug: `${baseSlug}-${maxSuffix + 1}` };
 }
 
-const SLUG_CONFLICT_PATTERN = /UNIQUE constraint failed:\s*posts\.slug/i;
 const SLUG_INSERT_ATTEMPTS = 5;
 const SLUG_DERIVED_ATTEMPTS = 2;
 
 function isSlugConflict(error: unknown) {
-  for (let current = error; current instanceof Error; current = current.cause) {
-    if (SLUG_CONFLICT_PATTERN.test(current.message)) return true;
-  }
-  return false;
+  return isUniqueViolation(error, POST_SLUG);
 }
 
 /**
  * Whether saving `slug` would collide with another Post's slug or live page,
- * ignoring case. A Post already carrying exactly that slug keeps it, so a
- * collision older than this check does not stop its saves.
+ * ignoring case and NFKC forms. A Post already carrying exactly that slug
+ * keeps it, so a collision older than this check does not stop its saves.
  */
 async function slugTakenByAnotherPost(db: DB, id: number, slug: string) {
   if (!(await PostRepo.slugExists(db, slug, { excludeId: id }))) return false;
@@ -631,24 +632,31 @@ export async function publishPost(
     snapshotContent,
   );
   const previousPublicSlug = publishedPost.publicSlug;
-  // A save landing while the snapshot was built changes the token, so a stated
-  // token refuses it here rather than publishing a draft nobody read.
-  const published = await PostRepo.writePublicSnapshot(
-    context.db,
-    publishedPost.id,
-    snapshot,
-    {
-      draft,
-      saveToken: data.saveToken,
-      fingerprint: {
-        value: await calculateDraftFingerprint({
-          ...publishedPost,
-          tagIds: publishedPost.tags.map((tag) => tag.id),
-        }),
-        readSaveToken: post.saveToken,
+  const fingerprint = await calculateDraftFingerprint({
+    ...publishedPost,
+    tagIds: publishedPost.tags.map((tag) => tag.id),
+  });
+  let published;
+  try {
+    // A save landing while the snapshot was built changes the token, so a
+    // stated token refuses it here rather than publishing a draft nobody read.
+    published = await PostRepo.writePublicSnapshot(
+      context.db,
+      publishedPost.id,
+      snapshot,
+      {
+        draft,
+        saveToken: data.saveToken,
+        fingerprint: { value: fingerprint, readSaveToken: post.saveToken },
       },
-    },
-  );
+    );
+  } catch (error) {
+    // Another Post went live under the slug after the check.
+    if (isUniqueViolation(error, POST_PUBLIC_SLUG)) {
+      return err({ reason: "PUBLIC_SLUG_TAKEN" });
+    }
+    throw error;
+  }
   if (!published) {
     return editConflictOrNotFound(context.db, publishedPost.id);
   }

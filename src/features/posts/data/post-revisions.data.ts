@@ -8,6 +8,7 @@ import {
   PostsTable,
   PostTagsTable,
 } from "@/lib/db/schema";
+import { keyForWrite } from "@/lib/db/unique-keys";
 import { findPostById } from "./posts.data";
 
 function normalizeTagIds(tagIds: Array<number>) {
@@ -167,6 +168,11 @@ export async function restorePostSnapshot(
         title: data.snapshot.title,
         summary: data.snapshot.summary,
         slug: data.snapshot.slug,
+        slugKey: keyForWrite(
+          PostsTable.slug,
+          PostsTable.slugKey,
+          data.snapshot.slug,
+        ),
         publishedAt: data.snapshot.publishedAt
           ? new Date(data.snapshot.publishedAt)
           : null,

@@ -18,6 +18,7 @@ import type {
 import { parseRevisionSnapshot } from "@/features/posts/schema/post-revisions.schema";
 import { removeCodeBlockHighlighting } from "@/features/posts/utils/apply-code-block-highlighting";
 import { calculatePostHash } from "@/features/posts/utils/sync";
+import { isUniqueViolation, POST_SLUG } from "@/lib/db/unique-keys";
 import { ms } from "@/lib/duration";
 import { err, ok } from "@/lib/errors";
 
@@ -55,6 +56,21 @@ async function hashSnapshot(snapshot: PostRevisionSnapshot) {
     coverMediaId: snapshot.coverMediaId ?? null,
     categoryId: snapshot.categoryId ?? null,
   });
+}
+
+/**
+ * Whether writing `slug` into the draft of `post` would take another Post's
+ * slug or live page. The slug the draft already has stays its own.
+ */
+async function slugTakenByAnotherPost(
+  db: DB,
+  post: { id: number; slug: string },
+  slug: string,
+) {
+  return (
+    slug !== post.slug &&
+    (await PostRepo.slugExists(db, slug, { excludeId: post.id }))
+  );
 }
 
 /** A conditional restore wrote nothing: tell a missing Post from a newer save. */
@@ -210,18 +226,30 @@ export async function restorePostRevision(
     });
   }
 
-  const restoredPost = await PostRevisionRepo.restorePostSnapshot(context.db, {
-    postId: data.postId,
-    snapshot: targetSnapshot,
-    backupRevision: {
-      reason: "restore_backup",
-      snapshotJson: currentSnapshot,
-      snapshotHash: currentHash,
-      restoredFromRevisionId: revision.id,
-    },
-    // Without a stated token, still write only the draft that was backed up.
-    saveToken: data.saveToken ?? post.saveToken,
-  });
+  if (await slugTakenByAnotherPost(context.db, post, targetSnapshot.slug)) {
+    return err({ reason: "SLUG_TAKEN" });
+  }
+
+  let restoredPost;
+  try {
+    restoredPost = await PostRevisionRepo.restorePostSnapshot(context.db, {
+      postId: data.postId,
+      snapshot: targetSnapshot,
+      backupRevision: {
+        reason: "restore_backup",
+        snapshotJson: currentSnapshot,
+        snapshotHash: currentHash,
+        restoredFromRevisionId: revision.id,
+      },
+      // Without a stated token, still write only the draft that was backed up.
+      saveToken: data.saveToken ?? post.saveToken,
+    });
+  } catch (error) {
+    // Another Post took the slug after the check.
+    if (isUniqueViolation(error, POST_SLUG))
+      return err({ reason: "SLUG_TAKEN" });
+    throw error;
+  }
 
   if (!restoredPost) {
     return editConflictOrNotFound(context.db, post.id);
@@ -297,6 +325,10 @@ export async function discardUnpublishedChanges(
         : null,
   };
 
+  if (await slugTakenByAnotherPost(context.db, post, targetSnapshot.slug)) {
+    return err({ reason: "SLUG_TAKEN" });
+  }
+
   const currentSnapshot = toRevisionSnapshot(post);
   const discarded = await PostRevisionRepo.restorePostSnapshot(context.db, {
     postId: post.id,
@@ -317,7 +349,12 @@ export async function discardUnpublishedChanges(
       ),
     // Without a stated token, still write only the draft that was backed up.
     saveToken: data.saveToken ?? post.saveToken,
+  }).catch((error: unknown) => {
+    // Another Post took the slug after the check.
+    if (isUniqueViolation(error, POST_SLUG)) return "SLUG_TAKEN" as const;
+    throw error;
   });
+  if (discarded === "SLUG_TAKEN") return err({ reason: "SLUG_TAKEN" });
   if (!discarded) {
     return editConflictOrNotFound(context.db, post.id);
   }

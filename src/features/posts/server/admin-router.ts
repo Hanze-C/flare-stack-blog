@@ -61,7 +61,7 @@ const postErrors = {
   SLUG_TAKEN: {
     status: 409,
     message:
-      "Another post already uses this slug, or a case variant of it, as its slug or live page.",
+      "Another post already uses this slug, or a variant of it differing only in case or Unicode compatibility form (NFKC), as its slug or live page.",
   },
   MEDIA_NOT_FOUND: { status: 404, message: "Media not found." },
   CATEGORY_NOT_FOUND: { status: 404, message: "Category not found." },
@@ -305,7 +305,7 @@ const publishPost = adminProcedure
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
     description:
-      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case, and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
+      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case and Unicode compatibility forms (NFKC), and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)
@@ -353,6 +353,7 @@ const discardChanges = adminProcedure
   .errors({
     ...postNotFoundErrors,
     ...discardChangesErrors,
+    SLUG_TAKEN: postErrors.SLUG_TAKEN,
     ...editConflictErrors,
   })
   .route({
@@ -360,7 +361,7 @@ const discardChanges = adminProcedure
     path: "/admin/posts/{id}/discard-changes",
     summary: "Discard a post's unpublished changes",
     description:
-      "Makes the draft of a published post that has unpublished changes (hasUnpublishedChanges) match the published version again: title, summary, slug, body, publication date, cover, category and tags, read from the published version itself, so it works whatever Post Revisions were deleted. The draft as it is now is first saved as a Post Revision (reason restore_backup), so the discarded changes can be restored from the revision list. The published page is not touched. Answers 409 POST_NOT_PUBLISHED for a draft post and 409 NO_UNPUBLISHED_CHANGES when the draft already matches. With saveToken, only the draft that token was read from is discarded; if the post was saved since, it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Returns the post's new saveToken.",
+      "Makes the draft of a published post that has unpublished changes (hasUnpublishedChanges) match the published version again: title, summary, slug, body, publication date, cover, category and tags, read from the published version itself, so it works whatever Post Revisions were deleted. The draft as it is now is first saved as a Post Revision (reason restore_backup), so the discarded changes can be restored from the revision list. The published page is not touched. Answers 409 POST_NOT_PUBLISHED for a draft post, 409 NO_UNPUBLISHED_CHANGES when the draft already matches, and 409 SLUG_TAKEN when another post's draft has taken the published slug meanwhile. With saveToken, only the draft that token was read from is discarded; if the post was saved since, it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Returns the post's new saveToken.",
     tags: ["Admin Posts"],
   })
   .input(DiscardPostChangesInputSchema)
@@ -377,6 +378,9 @@ const discardChanges = adminProcedure
         },
         NO_UNPUBLISHED_CHANGES: () => {
           throw errors.NO_UNPUBLISHED_CHANGES();
+        },
+        SLUG_TAKEN: () => {
+          throw errors.SLUG_TAKEN();
         },
         EDIT_CONFLICT: ({ saveToken }) => {
           throw errors.EDIT_CONFLICT({ data: { saveToken } });
@@ -471,6 +475,7 @@ const restoreRevision = adminProcedure
     ...postNotFoundErrors,
     POST_REVISION_NOT_FOUND: postErrors.POST_REVISION_NOT_FOUND,
     POST_REVISION_INVALID_SNAPSHOT: postErrors.POST_REVISION_INVALID_SNAPSHOT,
+    SLUG_TAKEN: postErrors.SLUG_TAKEN,
     ...editConflictErrors,
   })
   .route({
@@ -478,7 +483,7 @@ const restoreRevision = adminProcedure
     path: "/admin/posts/{postId}/revisions/{revisionId}/restore",
     summary: "Restore a post revision",
     description:
-      "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without saveToken it restores over whatever the draft is when the restore starts, and answers 409 EDIT_CONFLICT in the same way if a save lands while it runs, so no save is overwritten without being kept in the revision of the draft.",
+      "Writes the revision back into the draft, after saving the draft as it is now as a Post Revision. post.saveToken is the post's token after the restore. Answers 409 SLUG_TAKEN, writing nothing, when another post now uses the revision's slug. With saveToken, the restore happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token. Without saveToken it restores over whatever the draft is when the restore starts, and answers 409 EDIT_CONFLICT in the same way if a save lands while it runs, so no save is overwritten without being kept in the revision of the draft.",
     tags: ["Admin Posts"],
   })
   .input(RestorePostRevisionInputSchema)
@@ -493,6 +498,9 @@ const restoreRevision = adminProcedure
       },
       POST_REVISION_INVALID_SNAPSHOT: () => {
         throw errors.POST_REVISION_INVALID_SNAPSHOT();
+      },
+      SLUG_TAKEN: () => {
+        throw errors.SLUG_TAKEN();
       },
       EDIT_CONFLICT: ({ saveToken }) => {
         throw errors.EDIT_CONFLICT({ data: { saveToken } });

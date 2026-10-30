@@ -1,12 +1,13 @@
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { CategoriesTable } from "@/lib/db/schema";
+import { hasControlCharacter } from "@/lib/unicode-text";
 
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 
 export const CategorySelectSchema = createSelectSchema(CategoriesTable, {
   createdAt: coercedDate,
-});
+}).omit({ nameKey: true });
 
 export const CategoryOptionSchema = z.object({
   id: z.number().int(),
@@ -49,8 +50,12 @@ const CategoryNameInputSchema = z
   .trim()
   .min(1)
   .max(50)
+  .refine((name) => !hasControlCharacter(name, { emoji: true }), {
+    message:
+      "A name cannot contain control or format characters (Unicode Cc or Cf).",
+  })
   .describe(
-    "Name, trimmed: not empty, at most 50 characters. No other category may have it, ignoring case: that answers 409 CATEGORY_NAME_ALREADY_EXISTS.",
+    "Name, trimmed: not empty, at most 50 characters. It cannot contain control or format characters (Unicode Cc or Cf, such as a tab, a zero width space or a bidirectional control); a zero width joiner inside an emoji is fine. No other category may have it, compared ignoring case and Unicode compatibility forms (NFKC, so fullwidth ＡＢＣ equals abc): that answers 409 CATEGORY_NAME_ALREADY_EXISTS. It is stored as written.",
   );
 
 export const CreateCategoryInputSchema = z.strictObject({
