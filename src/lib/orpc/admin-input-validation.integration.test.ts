@@ -247,7 +247,9 @@ describe("post title and slug", () => {
     await patchPost(apiKey, first.id, { data: { slug: "moved-on" } });
     const second = await createPost(apiKey, "Second live");
     // Written past the API's checks, as an older row may have been.
-    await env.DB.prepare("UPDATE posts SET slug = 'SHARED' WHERE id = ?")
+    await env.DB.prepare(
+      "UPDATE posts SET slug = 'SHARED', slug_key = NULL WHERE id = ?",
+    )
       .bind(second.id)
       .run();
 
@@ -265,7 +267,7 @@ describe("post title and slug", () => {
     const second = await createPost(apiKey, "Old two");
     // Two pages that differ only in case, from before the check existed.
     await env.DB.prepare(
-      "UPDATE posts SET slug = 'OLD-CLASH', public_slug = 'OLD-CLASH' WHERE id = ?",
+      "UPDATE posts SET slug = 'OLD-CLASH', slug_key = NULL, public_slug = 'OLD-CLASH', public_slug_key = NULL WHERE id = ?",
     )
       .bind(second.id)
       .run();
@@ -280,7 +282,9 @@ describe("post title and slug", () => {
   it("generates a slug no other post uses in any case", async () => {
     const apiKey = await seedAdminApiKey();
     const { id } = await createPost(apiKey, "Mixed");
-    await env.DB.prepare("UPDATE posts SET slug = 'Hello-World' WHERE id = ?")
+    await env.DB.prepare(
+      "UPDATE posts SET slug = 'Hello-World', slug_key = NULL WHERE id = ?",
+    )
       .bind(id)
       .run();
 
