@@ -17,21 +17,6 @@
 .settings-key-skill .fuwari-callout-icon {
   translate: 0 -3px;
 }
-.settings-key-skill-command {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-}
-.settings-key-skill-command code {
-  min-width: 0;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--fuwari-card-bg);
-  font-size: 0.85em;
-  overflow-wrap: anywhere;
-}
 .settings-key-list {
   overflow: auto;
   flex: 1;
