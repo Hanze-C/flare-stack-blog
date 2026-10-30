@@ -312,7 +312,7 @@ const adminGet = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Get a post by id",
     description:
-      "Returns the editable Post, or answers 404 POST_NOT_FOUND when there is none. hasUnpublishedChanges tells whether the draft differs from the published version. publicSnapshotContentJson is the Public Content Snapshot body, used to preview published code highlighting in the editor. It is not the draft. saveToken identifies this read: state it when saving or publishing.",
+      "Returns the editable Post, or answers 404 POST_NOT_FOUND when there is none. hasUnpublishedChanges tells whether the draft differs from the published version. The published body, from the Public Content Snapshot, comes next to the draft: publicSnapshotContentJson, or publicSnapshotContentMarkdown with contentFormat=markdown, so one read compares the draft with what is published, whatever Post Revisions were deleted. saveToken identifies this read: state it when saving or publishing.",
     tags: ["Admin Posts"],
   })
   .input(AdminFindPostByIdInputSchema)
@@ -320,7 +320,10 @@ const adminGet = adminProcedure
   .handler(async ({ context, input, errors }) => {
     const post = await PostService.findPostById(context, input);
     if (!post) throw errors.POST_NOT_FOUND();
-    return PostMarkdownService.inContentFormat(post, input.contentFormat);
+    return PostMarkdownService.adminPostInContentFormat(
+      post,
+      input.contentFormat,
+    );
   });
 
 const generateSlug = adminProcedure

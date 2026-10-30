@@ -267,7 +267,16 @@ export const AdminPostSchema = PostSelectSchema.extend({
   tags: z.array(TagSelectSchema).optional(),
   hasPublicSnapshot: z.boolean(),
   hasUnpublishedChanges: HasUnpublishedChangesSchema,
-  publicSnapshotContentJson: NullableJsonContentSchema,
+  publicSnapshotContentJson: NullableJsonContentSchema.optional().describe(
+    "The published body, from the Public Content Snapshot, as TipTap JSON with each code block's highlighted HTML. Null while the post is not published. Not returned when the request asks for contentFormat=markdown.",
+  ),
+  publicSnapshotContentMarkdown: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "The published body as Markdown, returned in place of publicSnapshotContentJson when the request asks for contentFormat=markdown, written by the same rules as contentMarkdown so the two compare line by line. Null while the post is not published, or when the published body is empty. It is read from the Public Content Snapshot, so it is there whatever Post Revisions were deleted.",
+    ),
   serverToday: z.string(),
   cover: AdminPostCoverSchema.nullable(),
 });

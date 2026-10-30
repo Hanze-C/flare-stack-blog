@@ -47,7 +47,7 @@ Every Post carries an opaque \`saveToken\`, returned by each read of the Post an
 
 ## Markdown content
 
-Post and Post Revision reads, and saves, take \`contentFormat=markdown\` (default \`json\`, TipTap JSON) and then answer \`contentMarkdown\` (null when the Post has no body) in place of \`contentJson\`. Creating and saving take either \`contentJson\` or \`contentMarkdown\` in \`data\`; sending both answers 400. Markdown is parsed as the editor parses pasted Markdown, and reads serialize back to the same form:
+Post and Post Revision reads, and saves, take \`contentFormat=markdown\` (default \`json\`, TipTap JSON) and then answer \`contentMarkdown\` (null when the Post has no body) in place of \`contentJson\`; reading a Post by id also answers its published body as \`publicSnapshotContentMarkdown\` in place of \`publicSnapshotContentJson\`, so the draft and what is published compare in one read. Creating and saving take either \`contentJson\` or \`contentMarkdown\` in \`data\`; sending both answers 400. Markdown is parsed as the editor parses pasted Markdown, and reads serialize back to the same form:
 
 - Headings are levels 2 to 4: when the Markdown has an H1, every heading moves one level down, and anything deeper than level 4 becomes level 4.
 - A video link alone on a line is a video block. Its title, cover and duration are looked up on write and left empty when the lookup fails.
