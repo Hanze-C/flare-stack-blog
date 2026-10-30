@@ -213,6 +213,24 @@ describe("a subset", () => {
     );
   });
 
+  it("of Admin Posts holds every write to a Post's draft, setting its Tags included", async () => {
+    const subset = await documentAt("/spec.json?tags=Admin%20Posts");
+    const ids = operationsOf(subset).map(
+      ({ operation }) => operation.operationId,
+    );
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "posts.admin.update",
+        "tags.admin.setPostTags",
+        "posts.admin.publish",
+      ]),
+    );
+    const update = operationsOf(subset).find(
+      ({ operation }) => operation.operationId === "posts.admin.update",
+    );
+    expect(update?.operation.description).toContain("tags.admin.setPostTags");
+  });
+
   it("points to the index for the API-wide rules instead of repeating them", async () => {
     const subset = await documentAt("/spec.json?operationIds=posts.admin.get");
     expect(subset.info.description).toContain("/api/spec/index.json");
