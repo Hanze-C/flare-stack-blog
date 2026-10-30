@@ -5,7 +5,7 @@ import type { AdminTaxonomyFilter } from "@/features/posts/schema/posts.schema";
 import { PostTagsTable, PostsTable } from "@/lib/db/schema";
 import { hasPublicTag } from "@/features/posts/data/public-assignments.data";
 
-export type SortField = "publishedAt" | "updatedAt" | "id";
+export type SortField = "publishedAt" | "updatedAt" | "createdAt" | "id";
 export type SortDirection = "ASC" | "DESC";
 
 function escapeLikeString(str: string) {

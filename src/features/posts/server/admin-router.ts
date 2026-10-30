@@ -194,7 +194,7 @@ const create = adminProcedure
     path: "/admin/posts",
     summary: "Create a draft post",
     description:
-      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken.",
+      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
@@ -216,7 +216,7 @@ const update = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Update a post",
     description:
-      "Writes only the fields in data and returns the updated Post with its new saveToken. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+      "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data), whichever format it was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
@@ -228,8 +228,9 @@ const update = adminProcedure
       input.id,
     );
     if (data.error) throwMarkdownContentError(data.error, errors);
-    return unwrapResult(
-      PostService.updatePost(context, { ...input, data: data.data }),
+    const { contentFormat, ...write } = input;
+    const post = await unwrapResult(
+      PostService.updatePost(context, { ...write, data: data.data }),
       {
         POST_NOT_FOUND: () => {
           throw errors.POST_NOT_FOUND();
@@ -245,6 +246,7 @@ const update = adminProcedure
         },
       },
     );
+    return PostMarkdownService.inContentFormat(post, contentFormat);
   });
 
 const remove = adminProcedure

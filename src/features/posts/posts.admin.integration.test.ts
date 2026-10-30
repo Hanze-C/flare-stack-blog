@@ -384,6 +384,47 @@ describe("Admin posts list for external editors", () => {
     expect(new Set(paged).size).toBe(expectedOrder.length);
   });
 
+  it("sorts by createdAt with the id as tiebreaker", async () => {
+    const apiKey = await seedAdminApiKey();
+    const context = createAdminTestContext();
+    // The oldest post gets the highest id, so a createdAt order differs from id.
+    const created = [
+      new Date("2026-03-01T00:00:00.000Z"),
+      new Date("2026-01-01T00:00:00.000Z"),
+      new Date("2026-02-01T00:00:00.000Z"),
+      new Date("2026-02-01T00:00:00.000Z"),
+    ];
+    const inserted = await context.db
+      .insert(PostsTable)
+      .values(
+        created.map((createdAt, index) => ({
+          title: `Created ${index}`,
+          slug: `created-${index}`,
+          createdAt,
+        })),
+      )
+      .returning({ id: PostsTable.id });
+    const [march, january, februaryA, februaryB] = inserted.map(
+      (row) => row.id,
+    );
+
+    const ascending = await listPosts(apiKey, "sortBy=createdAt&sortDir=ASC");
+    expect(ascending.items.map((item) => item.id)).toEqual([
+      january,
+      februaryA,
+      februaryB,
+      march,
+    ]);
+
+    const descending = await listPosts(apiKey, "sortBy=createdAt&sortDir=DESC");
+    expect(descending.items.map((item) => item.id)).toEqual([
+      march,
+      februaryB,
+      februaryA,
+      january,
+    ]);
+  });
+
   it("omits the body unless includeContent is requested", async () => {
     const apiKey = await seedAdminApiKey();
     const context = createAdminTestContext();

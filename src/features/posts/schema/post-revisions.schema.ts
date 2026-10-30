@@ -21,9 +21,16 @@ export const PostRevisionSnapshotSchema = z.object({
   coverMediaId: z.number().int().nullable().default(null),
 });
 
+const PostRevisionReasonSchema = z
+  .enum(POST_REVISION_REASONS)
+  .describe(
+    "Why the revision was taken. publish: taken when the post is published. restore_backup: the draft saved automatically before restoring a revision or discarding Unpublished Changes, so it can be restored. auto: legacy autosave revisions from older versions; new ones are no longer taken.",
+  );
+
 export const PostRevisionSelectSchema = createSelectSchema(PostRevisionsTable, {
   createdAt: coercedDate,
   snapshotJson: PostRevisionSnapshotSchema,
+  reason: PostRevisionReasonSchema,
 });
 
 export const ListPostRevisionsInputSchema = z.object({
@@ -37,7 +44,7 @@ export const FindPostRevisionByIdInputSchema = z.object({
 
 const CreatePostRevisionInputSchema = z.object({
   postId: z.number(),
-  reason: z.enum(POST_REVISION_REASONS).optional(),
+  reason: PostRevisionReasonSchema.optional(),
 });
 
 export const RestorePostRevisionInputSchema = z.object({
