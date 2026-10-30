@@ -1,4 +1,4 @@
-import { isNotNull } from "drizzle-orm";
+import { inArray, isNotNull } from "drizzle-orm";
 import * as PublicAssignmentRepo from "@/features/posts/data/public-assignments.data";
 import { convertToPlainText } from "@/features/posts/utils/content";
 import * as SearchRepo from "@/features/search/data/search.data";
@@ -104,10 +104,17 @@ export async function deleteIndex(
   return { id: data.id };
 }
 
-export async function rebuildIndex(context: DbContext) {
-  const { db } = context;
-  const start = Date.now();
+// Posts read per query, so the ids bound to one statement stay far below D1's
+// limit of 100 bound values.
+const REINDEX_CHUNK = 50;
 
+/**
+ * The documents of the given Published Posts, or of every one when no ids are
+ * given. Title, summary and content come from the Public Content Snapshot, the
+ * Category and Tags from the public assignments (ADR 0033). A Post with
+ * nothing to index is left out.
+ */
+async function buildDocuments(db: DB, postIds?: Array<number>) {
   const [posts, assignments] = await Promise.all([
     db
       .select({
@@ -115,9 +122,12 @@ export async function rebuildIndex(context: DbContext) {
         publicSnapshotJson: PostsTable.publicSnapshotJson,
       })
       .from(PostsTable)
-      .where(isNotNull(PostsTable.publicSnapshotJson)),
-    // The public Category and Tags, which publish with the Post (ADR 0033).
-    PublicAssignmentRepo.findPublicAssignments(db),
+      .where(
+        postIds
+          ? inArray(PostsTable.id, postIds)
+          : isNotNull(PostsTable.publicSnapshotJson),
+      ),
+    PublicAssignmentRepo.findPublicAssignments(db, postIds),
   ]);
 
   const documents = [];
@@ -140,13 +150,49 @@ export async function rebuildIndex(context: DbContext) {
       }),
     );
   }
+  return documents;
+}
 
+export async function rebuildIndex(context: DbContext) {
+  const { db } = context;
+  const start = Date.now();
+
+  const documents = await buildDocuments(db);
   await SearchRepo.replaceSearchDocuments(db, documents);
 
   const duration = Date.now() - start;
   console.log(`[search] Indexed ${documents.length} posts in ${duration}ms`);
 
   return { indexed: documents.length, duration };
+}
+
+/**
+ * Brings the documents of the given Posts up to date with what the public site
+ * shows now. A Category or Tag that is renamed or deleted changes the public
+ * label of the Published Posts in its Public Usage without republishing them,
+ * so the search index follows here. A Post that is not published, or has
+ * nothing to index, leaves the index. The cost is bounded by the number of
+ * Posts and the indexed content length per Post, and the writes are batched.
+ */
+export async function reindexPosts(
+  context: { env: Env; db: DB },
+  postIds: Array<number>,
+) {
+  const ids = [...new Set(postIds)];
+  const documents = [];
+  const removedPostIds = [];
+  for (let i = 0; i < ids.length; i += REINDEX_CHUNK) {
+    const chunk = ids.slice(i, i + REINDEX_CHUNK);
+    const built = await buildDocuments(context.db, chunk);
+    const indexed = new Set(built.map((document) => document.postId));
+    documents.push(...built);
+    removedPostIds.push(...chunk.filter((id) => !indexed.has(id)));
+  }
+  await SearchRepo.applySearchDocuments(context.db, {
+    documents,
+    removedPostIds,
+  });
+  return { reindexed: documents.length };
 }
 
 export async function getIndexVersion(context: DbContext) {

@@ -35,8 +35,12 @@ export function postsInfiniteQueryOptions(
   });
 }
 
+/** Resolves to null for a slug no published post has (the server answers 404). */
 export function postBySlugQuery(slug: string) {
-  return orpc.posts.bySlug.queryOptions({ input: { slug } });
+  return nullOnNotFound(
+    orpc.posts.bySlug.queryOptions({ input: { slug } }),
+    "POST_NOT_FOUND",
+  );
 }
 
 /** Resolves to null for a post that does not exist (the server answers 404). */

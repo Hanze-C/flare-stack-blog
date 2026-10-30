@@ -540,9 +540,11 @@ export async function deletePost(
 
   await PostRepo.deletePost(context.db, data.id);
 
+  // Whatever the slug is, even an empty one, the Post leaves the Search Index;
+  // the index then only moves if a document was there.
+  await SearchService.deleteIndex(context, { id: data.id });
   const publicSlug = post.publicSlug ?? post.publicSnapshotJson?.slug;
-  if (publicSlug) {
-    await SearchService.deleteIndex(context, { id: data.id });
+  if (publicSlug !== undefined && publicSlug !== null) {
     await invalidate.postDeleted(context, { slug: publicSlug });
   }
 

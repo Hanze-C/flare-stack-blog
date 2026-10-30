@@ -2,6 +2,7 @@ import { getCategoryOptions as readCategoryOptions } from "./data/category-optio
 import { invalidate } from "@/features/cache/public-cache";
 import { publicCategoryList } from "@/features/categories/categories.cache";
 import * as CategoryRepo from "@/features/categories/data/categories.data";
+import * as SearchService from "@/features/search/service/search.service";
 import type {
   CreateCategoryInput,
   DeleteCategoryInput,
@@ -103,6 +104,14 @@ export async function updateCategory(
     data.data,
   );
 
+  // The new name is public at once, so search follows (not left to a rebuild).
+  if (data.data.name && data.data.name !== existing.name) {
+    await SearchService.reindexPosts(
+      context,
+      affectedPosts.map((post) => post.id),
+    );
+  }
+
   context.executionCtx.waitUntil(
     invalidateCategoryRelatedCache(context, affectedPosts),
   );
@@ -124,6 +133,10 @@ export async function deleteCategory(
     data.id,
   );
   await CategoryRepo.deleteCategory(context.db, data.id);
+  await SearchService.reindexPosts(
+    context,
+    affectedPosts.map((post) => post.id),
+  );
 
   context.executionCtx.waitUntil(
     invalidateCategoryRelatedCache(context, affectedPosts),

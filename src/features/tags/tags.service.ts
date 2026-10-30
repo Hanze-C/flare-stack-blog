@@ -1,5 +1,6 @@
 import { invalidate } from "@/features/cache/public-cache";
 import * as PostRepo from "@/features/posts/data/posts.data";
+import * as SearchService from "@/features/search/service/search.service";
 
 import * as TagRepo from "@/features/tags/data/tags.data";
 import { publicTagList } from "@/features/tags/tags.cache";
@@ -141,6 +142,14 @@ export async function updateTag(
 
   const tag = await TagRepo.updateTag(context.db, data.id, data.data);
 
+  // The new name is public at once, so search follows (not left to a rebuild).
+  if (data.data.name && data.data.name !== existingTag.name) {
+    await SearchService.reindexPosts(
+      context,
+      affectedPosts.map((post) => post.id),
+    );
+  }
+
   context.executionCtx.waitUntil(
     invalidateTagRelatedCache(context, affectedPosts),
   );
@@ -167,6 +176,10 @@ export async function deleteTag(
   );
 
   await TagRepo.deleteTag(context.db, data.id);
+  await SearchService.reindexPosts(
+    context,
+    affectedPosts.map((post) => post.id),
+  );
 
   context.executionCtx.waitUntil(
     invalidateTagRelatedCache(context, affectedPosts),
