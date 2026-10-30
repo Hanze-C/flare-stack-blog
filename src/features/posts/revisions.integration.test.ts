@@ -20,7 +20,32 @@ vi.mock("@/features/posts/services/video-meta.service", () => ({
   fetchVideoMeta: vi.fn(),
 }));
 
+// Runs once, after a restore has read the Post and before it writes, to land
+// a save in between.
+const beforeRestoreWrite = vi.hoisted(() => ({
+  run: null as null | (() => Promise<void>),
+}));
+
+vi.mock("@/features/posts/data/post-revisions.data", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("@/features/posts/data/post-revisions.data")
+    >();
+  return {
+    ...actual,
+    restorePostSnapshot: async (
+      ...args: Parameters<typeof actual.restorePostSnapshot>
+    ) => {
+      const run = beforeRestoreWrite.run;
+      beforeRestoreWrite.run = null;
+      await run?.();
+      return actual.restorePostSnapshot(...args);
+    },
+  };
+});
+
 beforeEach(() => {
+  beforeRestoreWrite.run = null;
   vi.mocked(fetchVideoMeta).mockReset();
   vi.mocked(fetchVideoMeta).mockResolvedValue({
     title: "A Bilibili video",
@@ -402,7 +427,7 @@ describe("restoring a Post Revision with a saveToken", () => {
     ).toBe(current);
   });
 
-  it("restores unconditionally without a saveToken", async () => {
+  it("without a saveToken, restores over whatever the draft is when it starts", async () => {
     const apiKey = await seedAdminApiKey();
     const { id, revisionId } = await editedAfterPublish(
       apiKey,
@@ -412,6 +437,35 @@ describe("restoring a Post Revision with a saveToken", () => {
 
     expect((await restore(apiKey, id, revisionId)).status).toBe(200);
     expect((await readPost(apiKey, id)).title).toBe("rv-guard-none");
+  });
+
+  it("without a saveToken, answers 409 EDIT_CONFLICT for a save landing while it runs and writes nothing", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id, revisionId } = await editedAfterPublish(
+      apiKey,
+      "rv-guard-race",
+    );
+    const revisionsBefore = await listRevisions(apiKey, id);
+    let landed: AdminPost | undefined;
+    beforeRestoreWrite.run = async () => {
+      landed = await patchPost(apiKey, id, { summary: "landed mid-restore" });
+    };
+
+    const response = await restore(apiKey, id, revisionId);
+    expect(landed).toBeDefined();
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as {
+      code: string;
+      data: { saveToken: string };
+    };
+    expect(body.code).toBe("EDIT_CONFLICT");
+    expect(body.data.saveToken).toBe(landed!.saveToken);
+
+    const after = await readPost(apiKey, id);
+    expect(after.title).toBe("rv-guard-race edited");
+    expect(after.summary).toBe("landed mid-restore");
+    expect(after.saveToken).toBe(landed!.saveToken);
+    expect(await listRevisions(apiKey, id)).toEqual(revisionsBefore);
   });
 });
 
