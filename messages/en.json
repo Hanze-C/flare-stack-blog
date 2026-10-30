@@ -507,6 +507,7 @@
   "editor_conflict_overwrite": "Overwrite with mine",
   "editor_conflict_reload_failed": "The latest version could not be loaded. Try again.",
   "editor_action_publish_failed": "Publishing did not finish. Try again.",
+  "editor_action_publish_future_date": "The publication date is later than now. Change it to now or earlier, then publish.",
   "editor_action_image_uploading": "Images are still uploading. Wait until they finish, then publish.",
   "editor_action_unpublish_failed": "Unpublishing did not finish. Try again.",
   "editor_action_discard_failed": "Discarding did not finish. Try again.",

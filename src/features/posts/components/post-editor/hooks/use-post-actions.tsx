@@ -19,6 +19,7 @@ import {
   discardErrorMessage,
   EDIT_CONFLICT_ERROR,
   editConflictOf,
+  publishErrorMessage,
   shouldAutogenerateSlug,
 } from "../post-editor.model";
 import type { PostState } from "../../post-state";
@@ -109,7 +110,7 @@ export function usePostActions({
     onError: (error) => {
       const found = editConflictOf(error);
       if (found) reportConflict(found);
-      else toast.error(m.editor_action_publish_failed());
+      else toast.error(publishErrorMessage(error));
       setProcessState("IDLE");
     },
   });
