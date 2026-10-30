@@ -57,11 +57,14 @@ export async function deleteMedia(db: DB, key: string) {
   await db.delete(MediaTable).where(eq(MediaTable.key, key));
 }
 
+/** Returns false when no Media has `key`. */
 export async function updateMediaName(db: DB, key: string, name: string) {
-  await db
+  const renamed = await db
     .update(MediaTable)
     .set({ fileName: name })
-    .where(eq(MediaTable.key, key));
+    .where(eq(MediaTable.key, key))
+    .returning({ id: MediaTable.id });
+  return renamed.length > 0;
 }
 
 export async function updateMediaFile(

@@ -151,7 +151,12 @@ describe("errors declared by tag, category and media operations", () => {
         "500 MEDIA_RECORD_CREATE_FAILED",
       ],
     ],
-    ["delete", "/admin/media/{key}", ["409 MEDIA_IN_USE"]],
+    [
+      "delete",
+      "/admin/media/{key}",
+      ["404 MEDIA_NOT_FOUND", "409 MEDIA_IN_USE"],
+    ],
+    ["patch", "/admin/media/{key}", ["404 MEDIA_NOT_FOUND"]],
     ["post", "/admin/media/{key}/replace", ["404 MEDIA_NOT_FOUND"]],
   ] as Array<[string, string, Array<string>]>)("%s %s", (method, path, own) => {
     const { actual, expected } = adminErrors(method, path, ...own);

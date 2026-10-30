@@ -73,6 +73,10 @@ export async function deleteImage(
   context: DbContext & { executionCtx: ExecutionContext },
   key: string,
 ) {
+  if (!(await MediaRepo.findMediaByKey(context.db, key))) {
+    return err({ reason: "MEDIA_NOT_FOUND" });
+  }
+
   // 后端兜底检查：防止删除正在被引用的媒体
   const inUse =
     (await PostMediaRepo.isMediaInUse(context.db, key)) ||
@@ -134,7 +138,15 @@ export async function updateMediaName(
   context: DbContext,
   data: UpdateMediaNameInput,
 ) {
-  return await MediaRepo.updateMediaName(context.db, data.key, data.name);
+  const renamed = await MediaRepo.updateMediaName(
+    context.db,
+    data.key,
+    data.name,
+  );
+  if (!renamed) {
+    return err({ reason: "MEDIA_NOT_FOUND" });
+  }
+  return ok(undefined);
 }
 
 export async function replaceImage(

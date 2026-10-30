@@ -151,7 +151,10 @@ const removeUnused = adminProcedure
   });
 
 const remove = adminProcedure
-  .errors({ MEDIA_IN_USE: mediaErrors.MEDIA_IN_USE })
+  .errors({
+    MEDIA_IN_USE: mediaErrors.MEDIA_IN_USE,
+    MEDIA_NOT_FOUND: mediaErrors.MEDIA_NOT_FOUND,
+  })
   .route({
     method: "DELETE",
     path: "/admin/media/{key}",
@@ -164,6 +167,9 @@ const remove = adminProcedure
     unwrapResult(MediaService.deleteImage(context, input.key.trim()), {
       MEDIA_IN_USE: () => {
         throw errors.MEDIA_IN_USE();
+      },
+      MEDIA_NOT_FOUND: () => {
+        throw errors.MEDIA_NOT_FOUND();
       },
     }),
   );
@@ -224,6 +230,7 @@ const emptyResponse = oo.spec(
 );
 
 const updateName = adminProcedure
+  .errors({ MEDIA_NOT_FOUND: mediaErrors.MEDIA_NOT_FOUND })
   .use(emptyResponse)
   .route({
     method: "PATCH",
@@ -233,8 +240,12 @@ const updateName = adminProcedure
   })
   .input(UpdateMediaNameInputSchema)
   .output(z.void())
-  .handler(({ context, input }) =>
-    MediaService.updateMediaName(context, input),
+  .handler(({ context, input, errors }) =>
+    unwrapResult(MediaService.updateMediaName(context, input), {
+      MEDIA_NOT_FOUND: () => {
+        throw errors.MEDIA_NOT_FOUND();
+      },
+    }),
   );
 
 export default {

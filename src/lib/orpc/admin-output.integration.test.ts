@@ -398,6 +398,23 @@ describe("Media operations", () => {
     expect(unused.json).toEqual({ data: { count: 1 }, error: null });
   });
 
+  it("answer 404 MEDIA_NOT_FOUND for a key no Media has", async () => {
+    const apiKey = await seedAdminApiKey();
+
+    const removed = await call(apiKey, "/admin/media/missing.png", {
+      method: "DELETE",
+    });
+    expect(removed.status).toBe(404);
+    expect(removed.json).toMatchObject({ code: "MEDIA_NOT_FOUND" });
+
+    const renamed = await call(apiKey, "/admin/media/missing.png", {
+      method: "PATCH",
+      body: { name: "renamed.png" },
+    });
+    expect(renamed.status).toBe(404);
+    expect(renamed.json).toMatchObject({ code: "MEDIA_NOT_FOUND" });
+  });
+
   it("lists the posts that use an image as their cover", async () => {
     const apiKey = await seedAdminApiKey();
     const uploaded = await call<{ id: number; key: string }>(

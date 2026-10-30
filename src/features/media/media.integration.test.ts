@@ -126,6 +126,22 @@ describe("MediaService", () => {
   // 删除流程 (Deletion Flow)
   // ============================================
   describe("Deletion Flow", () => {
+    it("reports an unknown key instead of deleting nothing", async () => {
+      const result = await MediaService.deleteImage(
+        adminContext,
+        "missing.png",
+      );
+      expect(result.error?.reason).toBe("MEDIA_NOT_FOUND");
+    });
+
+    it("reports an unknown key instead of renaming nothing", async () => {
+      const result = await MediaService.updateMediaName(adminContext, {
+        key: "missing.png",
+        name: "new.png",
+      });
+      expect(result.error?.reason).toBe("MEDIA_NOT_FOUND");
+    });
+
     it("should delete from both DB and trigger R2 cleanup", async () => {
       // First upload a file
       const file = new File(["delete me"], "to-delete.png", {
