@@ -1,6 +1,6 @@
 import type { SQL } from "drizzle-orm";
 import { and, count, desc, eq, inArray, lt, or, sql, sum } from "drizzle-orm";
-import { escapeLikeString } from "@/features/media/data/helper";
+import { containsText } from "@/lib/db/text-match";
 import {
   MediaTable,
   PostMediaTable,
@@ -126,8 +126,7 @@ export async function getMediaList(
     conditions.push(lt(MediaTable.id, cursor));
   }
   if (search) {
-    const pattern = `%${escapeLikeString(search)}%`;
-    conditions.push(sql`${MediaTable.fileName} LIKE ${pattern} ESCAPE '\\'`);
+    conditions.push(containsText(MediaTable.fileName, search));
   }
 
   if (unusedOnly) {

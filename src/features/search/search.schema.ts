@@ -1,13 +1,15 @@
 import { z } from "zod";
 import { NullableJsonContentSchema } from "@/features/posts/schema/json-content.schema";
+import { pageLimitSchema } from "@/lib/orpc/pagination";
 
 export const SearchQuerySchema = z.object({
   q: z.string().min(1).describe("The words to search for."),
-  limit: z
-    .number()
+  limit: pageLimitSchema(25)
     .optional()
     .default(10)
-    .describe("How many results to return, at most 25."),
+    .describe(
+      "How many results to return, a whole number from 1 to 25. Defaults to 10.",
+    ),
   v: z
     .string()
     .describe(
