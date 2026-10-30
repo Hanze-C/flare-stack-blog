@@ -3,6 +3,7 @@ import { z } from "zod";
 import { FriendLinksTable } from "@/lib/db/schema";
 import type { Messages } from "@/lib/i18n";
 import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 
@@ -93,11 +94,11 @@ export const GetAllFriendLinksInputSchema = z.strictObject({
 });
 
 export const ApproveFriendLinkInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const RejectFriendLinkInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   rejectionReason: z.string().max(500).optional(),
 });
 
@@ -109,7 +110,7 @@ export const RejectFriendLinkInputSchema = z.strictObject({
  */
 export const UpdateFriendLinkInputSchema = z
   .object({
-    id: z.number(),
+    id: PathIdSchema,
     siteName: friendLinkFields.siteName.optional(),
     siteUrl: friendLinkFields.siteUrl.optional(),
     description: friendLinkFields.description,
@@ -118,7 +119,7 @@ export const UpdateFriendLinkInputSchema = z
   .strict();
 
 export const DeleteFriendLinkInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 // === Cache ===

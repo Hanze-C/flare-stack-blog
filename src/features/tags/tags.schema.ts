@@ -2,6 +2,7 @@ import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { TagsTable } from "@/lib/db/schema";
 import { atLeastOneField } from "@/lib/orpc/changes";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 import { hasControlCharacter } from "@/lib/unicode-text";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
@@ -65,7 +66,7 @@ export const CreateTagInputSchema = z.strictObject({
 });
 
 export const UpdateTagInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   data: atLeastOneField(
     z.strictObject({
       name: TagNameInputSchema.optional(),
@@ -74,7 +75,7 @@ export const UpdateTagInputSchema = z.strictObject({
 });
 
 export const DeleteTagInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const GetTagsInputSchema = z.strictObject({
@@ -85,11 +86,11 @@ export const GetTagsInputSchema = z.strictObject({
 });
 
 export const SetPostTagsInputSchema = z.strictObject({
-  postId: z.number(),
+  postId: PathIdSchema,
   tagIds: z
-    .array(z.number())
+    .array(z.number().int().min(1))
     .describe(
-      "The ids of every tag the post should carry; an empty list removes them all. An id no tag has answers 404 TAG_NOT_FOUND and nothing is written.",
+      'The ids of every tag the post should carry; an empty list removes them all. Each id is a positive whole number written as a JSON number, so "95" or 1.5 answers 400. An id no tag has answers 404 TAG_NOT_FOUND. Either way nothing is written.',
     ),
   saveToken: z
     .string()
@@ -100,7 +101,7 @@ export const SetPostTagsInputSchema = z.strictObject({
 });
 
 export const GetTagsByPostIdInputSchema = z.strictObject({
-  postId: z.number(),
+  postId: PathIdSchema,
 });
 
 // Type exports

@@ -12,6 +12,7 @@ import {
   PageOffsetSchema,
   pageLimitSchema,
 } from "@/lib/orpc/pagination";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 import {
   isPostSlugFormat,
   isPostTitleFormat,
@@ -439,7 +440,7 @@ export const AdminPostListPageSchema = z.object({
   ),
 });
 
-export const FindPostByIdInputSchema = z.strictObject({ id: z.number() });
+export const FindPostByIdInputSchema = z.strictObject({ id: PathIdSchema });
 
 export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
   contentFormat: PostContentFormatSchema,
@@ -468,7 +469,7 @@ export const CreatePostInputSchema = z
   .optional();
 
 export const UpdatePostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   data: NonEmptyPostUpdateSchema.describe(
     "The fields to change; at least one, or the request answers 400.",
   ),
@@ -476,10 +477,10 @@ export const UpdatePostInputSchema = z.strictObject({
   contentFormat: PostContentFormatSchema,
 });
 
-export const DeletePostInputSchema = z.strictObject({ id: z.number() });
+export const DeletePostInputSchema = z.strictObject({ id: PathIdSchema });
 
 export const PublishPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
   ),
@@ -559,22 +560,22 @@ export const EditConflictDataSchema = z.object({
 });
 
 export const UnpublishPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const DiscardPostChangesInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and mean to discard. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to discard whatever the draft is now.",
   ),
 });
 
 export const PinPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const UnpinPostInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export type GenerateSlugInput = z.infer<typeof GenerateSlugInputSchema>;

@@ -2,6 +2,7 @@ import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { COMMENT_STATUSES, CommentsTable } from "@/lib/db/schema";
 import { PageOffsetSchema, pageLimitSchema } from "@/lib/orpc/pagination";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
@@ -41,14 +42,14 @@ const CommentWithUserSchema = CommentSelectSchema.extend({
 
 // Public API Schemas
 export const GetCommentsByPostIdInputSchema = z.object({
-  postId: z.number(),
+  postId: PathIdSchema,
   offset: PageOffsetSchema.optional(),
   limit: pageLimitSchema(100).optional(),
 });
 
 export const GetRepliesByRootIdInputSchema = z.object({
-  postId: z.number(),
-  rootId: z.number(),
+  postId: PathIdSchema,
+  rootId: PathIdSchema,
   offset: PageOffsetSchema.optional(),
   limit: pageLimitSchema(100).optional(),
 });
@@ -86,19 +87,19 @@ export const GetRootCommentsResponseSchema = z.object({
 const CommentBodySchema = z.string().trim().min(1);
 
 export const CreateCommentInputSchema = z.object({
-  postId: z.number(),
+  postId: PathIdSchema,
   content: CommentBodySchema,
   rootId: z.number().optional(),
   replyToCommentId: z.number().optional(),
 });
 
 export const DeleteCommentInputSchema = z.object({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const GetThreadByCommentIdInputSchema = z.object({
-  postId: z.number(),
-  id: z.number(),
+  postId: PathIdSchema,
+  id: PathIdSchema,
 });
 
 export const GetMyCommentsInputSchema = z.object({
@@ -109,7 +110,7 @@ export const GetMyCommentsInputSchema = z.object({
 
 // Admin API Schemas
 export const CommentHandledInputSchema = z.strictObject({
-  id: z.number().int().positive(),
+  id: PathIdSchema,
 });
 
 export const CommentsHandledCountSchema = z.object({

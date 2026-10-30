@@ -5,6 +5,7 @@ import {
   POST_STATUSES,
   PostRevisionsTable,
 } from "@/lib/db/schema";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 import { NullableJsonContentSchema } from "./json-content.schema";
 import {
   ContentMarkdownOutputSchema,
@@ -48,12 +49,12 @@ export const PostRevisionSchema = PostRevisionSelectSchema.extend({
 });
 
 export const ListPostRevisionsInputSchema = z.strictObject({
-  postId: z.number(),
+  postId: PathIdSchema,
 });
 
 export const FindPostRevisionByIdInputSchema = z.strictObject({
-  postId: z.number(),
-  revisionId: z.number(),
+  postId: PathIdSchema,
+  revisionId: PathIdSchema,
 });
 
 export const GetPostRevisionInputSchema =
@@ -67,15 +68,15 @@ const CreatePostRevisionInputSchema = z.object({
 });
 
 export const RestorePostRevisionInputSchema = z.strictObject({
-  postId: z.number(),
-  revisionId: z.number(),
+  postId: PathIdSchema,
+  revisionId: PathIdSchema,
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and mean to replace. If the post was saved since, nothing is written, not even the revision of the current draft, and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to restore over whatever the draft is now; the restore still answers 409 EDIT_CONFLICT if a save lands while it runs, since that save would not be in the revision it keeps of the draft.",
   ),
 });
 
 export const DeletePostRevisionsInputSchema = z.strictObject({
-  postId: z.number(),
+  postId: PathIdSchema,
   revisionIds: z.array(z.number().int()).min(1),
 });
 

@@ -10,6 +10,7 @@ import { router } from "./router";
 
 type Schema = Record<string, unknown>;
 type Operation = {
+  parameters?: Array<{ name: string; in: string; schema?: Schema }>;
   requestBody?: { content?: Record<string, { schema?: Schema }> };
 };
 
@@ -99,5 +100,32 @@ describe("admin request bodies", () => {
 
   it.each(adminBodies)("%s refuses unknown fields", (_name, schema) => {
     expect(isClosed(schema)).toBe(true);
+  });
+});
+
+// A path id names one object, so the document says what the server takes: a
+// whole number from 1, not any number.
+const pathIds = Object.entries(doc.paths).flatMap(([path, methods]) =>
+  Object.entries(methods).flatMap(([method, operation]) =>
+    (operation.parameters ?? [])
+      .filter((parameter) => parameter.in === "path")
+      .filter((parameter) => parameter.schema?.type !== "string")
+      .map(
+        (parameter) =>
+          [
+            `${method.toUpperCase()} ${path} {${parameter.name}}`,
+            parameter.schema,
+          ] as const,
+      ),
+  ),
+);
+
+describe("path ids", () => {
+  it("finds the operations addressed by id", () => {
+    expect(pathIds.length).toBeGreaterThan(30);
+  });
+
+  it.each(pathIds)("%s is a positive integer", (_name, schema) => {
+    expect(schema).toMatchObject({ type: "integer", minimum: 1 });
   });
 });

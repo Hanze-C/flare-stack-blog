@@ -2,6 +2,7 @@ import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { CategoriesTable } from "@/lib/db/schema";
 import { atLeastOneField } from "@/lib/orpc/changes";
+import { PathIdSchema } from "@/lib/orpc/path-ids";
 import { hasControlCharacter } from "@/lib/unicode-text";
 
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
@@ -64,7 +65,7 @@ export const CreateCategoryInputSchema = z.strictObject({
 });
 
 export const UpdateCategoryInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
   data: atLeastOneField(
     z.strictObject({
       name: CategoryNameInputSchema.optional(),
@@ -73,7 +74,7 @@ export const UpdateCategoryInputSchema = z.strictObject({
 });
 
 export const DeleteCategoryInputSchema = z.strictObject({
-  id: z.number(),
+  id: PathIdSchema,
 });
 
 export const GetCategoriesInputSchema = z.strictObject({
