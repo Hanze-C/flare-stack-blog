@@ -6,6 +6,16 @@ import { mediaUsageOf } from "@/features/media/utils/media.utils";
 import { m } from "@/paraglide/messages";
 import type { MediaAsset } from "../types";
 
+/** "1 篇", with the Post Revisions that alone still use the image appended. */
+export function usageCount(asset: MediaAsset) {
+  return asset.revisionOnlyPostCount > 0
+    ? m.media_post_count_with_revisions({
+        count: asset.postCount,
+        revisions: asset.revisionOnlyPostCount,
+      })
+    : m.media_post_count({ count: asset.postCount });
+}
+
 export function MediaTile({
   asset,
   selected = false,
@@ -66,7 +76,7 @@ export function MediaTile({
             ) : (
               <span>
                 {usage === "current"
-                  ? m.media_post_count({ count: asset.postCount })
+                  ? usageCount(asset)
                   : m.media_badge_revisions()}
               </span>
             )}

@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { mediaUsageOf } from "@/features/media/utils/media.utils";
 import { formatBytes } from "@/lib/utils";
 import { m } from "@/paraglide/messages";
+import { usageCount } from "./media-tile";
 import { useMediaGridMotion } from "../hooks/use-media-grid-motion";
 import type { MediaAsset } from "../types";
 import type { MediaView } from "./media-toolbar";
@@ -44,7 +45,7 @@ export function MediaCollection({
   const usage = (asset: MediaAsset) => {
     const state = mediaUsageOf(asset);
     return state === "current"
-      ? m.media_post_count({ count: asset.postCount })
+      ? usageCount(asset)
       : state === "revisions-only"
         ? m.media_badge_revisions()
         : m.media_unreferenced();

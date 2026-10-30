@@ -147,14 +147,14 @@ export function MediaDetail({
                 <FileText size={16} />
                 <span className="media-reference-title">{post.title}</span>
                 <ExternalLink size={14} />
-                {post.isCover || post.revisionsOnly ? (
+                {post.isCover || (usage === "current" && post.revisionsOnly) ? (
                   <span className="media-reference-badges">
                     {post.isCover ? (
                       <Badge tone="primary" size="sm">
                         {m.media_badge_cover()}
                       </Badge>
                     ) : null}
-                    {post.revisionsOnly ? (
+                    {usage === "current" && post.revisionsOnly ? (
                       <Badge size="sm">{m.media_badge_revisions()}</Badge>
                     ) : null}
                   </span>

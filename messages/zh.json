@@ -671,6 +671,7 @@
   "media_badge_cover": "封面",
   "media_badge_revisions": "仅历史版本引用",
   "media_post_count": "{count} 篇",
+  "media_post_count_with_revisions": "{count} 篇 · 另 {revisions} 篇历史",
   "media_used_in": "用于 {count} 篇文章",
   "media_revisions_also": "另有 {count} 篇文章仅历史版本引用",
   "media_copy_link": "复制链接",
