@@ -6,6 +6,16 @@ import {
 } from "@/features/categories/categories.schema";
 import { TagSelectSchema } from "@/features/tags/tags.schema";
 import { POST_STATUSES, PostsTable } from "@/lib/db/schema";
+import {
+  IdCursorSchema,
+  PageOffsetSchema,
+  pageLimitSchema,
+} from "@/lib/orpc/pagination";
+import {
+  isPostSlugFormat,
+  POST_SLUG_MAX_LENGTH,
+  POST_TITLE_MAX_LENGTH,
+} from "@/features/posts/utils/post-fields";
 import { NullableJsonContentSchema } from "./json-content.schema";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
@@ -63,6 +73,31 @@ const ContentMarkdownInputSchema = z
     `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} Any other image, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal.`,
   );
 
+const PostTitleInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(POST_TITLE_MAX_LENGTH)
+  .describe(
+    `Title, trimmed. It must not be empty and holds at most ${POST_TITLE_MAX_LENGTH} characters.`,
+  );
+
+const SLUG_FORMAT_RULE =
+  "cannot contain / ? # % \\, whitespace or control characters, or be . or ..";
+
+const PostSlugInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(POST_SLUG_MAX_LENGTH)
+  .refine(isPostSlugFormat, { message: `A slug ${SLUG_FORMAT_RULE}.` })
+  .describe(
+    `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. No other post may use it, ignoring case, as its slug or as the slug of its live page: that answers 409 SLUG_TAKEN.`,
+  );
+
+const PUBLISHED_AT_RULES =
+  "Publication date, ISO 8601, stored to the whole second. Publishing refuses it with 400 PUBLISHED_AT_IN_FUTURE while it is later than the server's current time. Null lets the next publish set it to that time.";
+
 const SaveTokenSchema = z
   .string()
   .describe(
@@ -105,6 +140,9 @@ const PostSelectSchema = createSelectSchema(PostsTable, {
  */
 const PostUpdateSchema = createUpdateSchema(PostsTable, {
   contentJson: NullableJsonContentSchema.optional(),
+  title: PostTitleInputSchema.optional(),
+  slug: PostSlugInputSchema.optional(),
+  publishedAt: (schema) => schema.describe(PUBLISHED_AT_RULES),
 })
   .omit({
     publicSnapshotJson: true,
@@ -206,8 +244,8 @@ export const PostCategoryNameSchema = z
   .optional();
 
 export const GetPostsCursorInputSchema = z.object({
-  cursor: z.number().optional(),
-  limit: z.number().optional(),
+  cursor: IdCursorSchema.optional(),
+  limit: pageLimitSchema(50).optional(),
   tagName: PostTagNameSchema,
   categoryName: PostCategoryNameSchema,
   uncategorized: z.boolean().optional(),
@@ -232,30 +270,30 @@ export type GetPostsCursorInput = z.infer<typeof GetPostsCursorInputSchema>;
 export type FindPostBySlugInput = z.infer<typeof FindPostBySlugInputSchema>;
 
 // Admin API Schemas
-export const GenerateSlugInputSchema = z.object({
+export const GenerateSlugInputSchema = z.strictObject({
   title: z.string().optional(),
   excludeId: z.number().optional(),
 });
 
 const AdminTaxonomyFilterSchema = z.discriminatedUnion("kind", [
-  z.object({
+  z.strictObject({
     kind: z.literal("category"),
     id: z.number().int().positive(),
     scope: z.enum(["current", "public"]),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("tag"),
     id: z.number().int().positive(),
     scope: z.enum(["current", "public"]),
   }),
-  z.object({
+  z.strictObject({
     kind: z.literal("uncategorized"),
     scope: z.enum(["current", "public"]),
   }),
 ]);
 export type AdminTaxonomyFilter = z.infer<typeof AdminTaxonomyFilterSchema>;
 
-export const GetPostsInputSchema = z.object({
+export const GetPostsInputSchema = z.strictObject({
   taxonomy: AdminTaxonomyFilterSchema.optional(),
   categoryId: z
     .number()
@@ -273,8 +311,8 @@ export const GetPostsInputSchema = z.object({
     .positive()
     .optional()
     .describe("Only posts currently carrying this tag."),
-  offset: z.number().optional(),
-  limit: z.number().optional(),
+  offset: PageOffsetSchema.optional(),
+  limit: pageLimitSchema(50).optional(),
   status: z.enum(POST_STATUSES).optional(),
   hasUnpublishedChanges: z
     .boolean()
@@ -350,7 +388,7 @@ export const AdminPostListPageSchema = z.object({
   ),
 });
 
-export const FindPostByIdInputSchema = z.object({ id: z.number() });
+export const FindPostByIdInputSchema = z.strictObject({ id: z.number() });
 
 export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
   contentFormat: PostContentFormatSchema,
@@ -361,35 +399,33 @@ export const AdminFindPostByIdInputSchema = FindPostByIdInputSchema.extend({
  * always creates a new draft instead of reusing an existing empty one, so
  * several external clients can create posts without colliding.
  */
-const CreatePostDataSchema = z.object({
-  title: z
-    .string()
-    .trim()
-    .min(1)
-    .describe("Draft title; a unique slug is generated from it."),
+const CreatePostDataSchema = z.strictObject({
+  title: PostTitleInputSchema.describe(
+    `Draft title, trimmed: not empty, at most ${POST_TITLE_MAX_LENGTH} characters. A unique slug is generated from it.`,
+  ),
   summary: z.string().nullable().optional(),
   contentJson: NullableJsonContentSchema.optional(),
   contentMarkdown: ContentMarkdownInputSchema,
 });
 
 export const CreatePostInputSchema = z
-  .object({
+  .strictObject({
     data: CreatePostDataSchema.optional().describe(
       "Omit to keep the get-or-create-empty-draft behavior used by the Admin UI.",
     ),
   })
   .optional();
 
-export const UpdatePostInputSchema = z.object({
+export const UpdatePostInputSchema = z.strictObject({
   id: z.number(),
   data: PostUpdateSchema,
   saveToken: StatedSaveTokenSchema,
   contentFormat: PostContentFormatSchema,
 });
 
-export const DeletePostInputSchema = z.object({ id: z.number() });
+export const DeletePostInputSchema = z.strictObject({ id: z.number() });
 
-export const PublishPostInputSchema = z.object({
+export const PublishPostInputSchema = z.strictObject({
   id: z.number(),
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and want to go live. If the post was saved since, nothing is published and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to publish whatever the draft is now.",
@@ -469,22 +505,22 @@ export const EditConflictDataSchema = z.object({
     ),
 });
 
-export const UnpublishPostInputSchema = z.object({
+export const UnpublishPostInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const DiscardPostChangesInputSchema = z.object({
+export const DiscardPostChangesInputSchema = z.strictObject({
   id: z.number(),
   saveToken: StatedSaveTokenSchema.describe(
     "The saveToken of the draft you read and mean to discard. If the post was saved since, nothing is written and the response is 409 EDIT_CONFLICT with the current token in data.saveToken. Omit it to discard whatever the draft is now.",
   ),
 });
 
-export const PinPostInputSchema = z.object({
+export const PinPostInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const UnpinPostInputSchema = z.object({
+export const UnpinPostInputSchema = z.strictObject({
   id: z.number(),
 });
 
@@ -505,7 +541,7 @@ export type UnpinPostInput = z.infer<typeof UnpinPostInputSchema>;
 export type PostItem = z.infer<typeof PostItemSchema>;
 export type PostWithToc = z.infer<typeof PostWithTocSchema>;
 
-export const VideoMetaInputSchema = z.object({
+export const VideoMetaInputSchema = z.strictObject({
   provider: z.enum(["bilibili", "youtube"]),
   videoId: z.string().max(32),
   page: z.number().int().positive().nullable().optional(),

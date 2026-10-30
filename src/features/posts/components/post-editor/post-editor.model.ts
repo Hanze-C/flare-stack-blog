@@ -10,6 +10,14 @@ export const BLOB_UPLOADING_ERROR = "BLOB_UPLOADING";
 /** What `flush` throws once a save was refused; the conflict notice is shown. */
 export const EDIT_CONFLICT_ERROR = "EDIT_CONFLICT";
 
+/** What autosave reports when another post already uses the slug. */
+export const SLUG_TAKEN_ERROR = "SLUG_TAKEN";
+
+/** Whether a failed save was refused because another post uses the slug. */
+export function isSlugTaken(error: unknown) {
+  return error instanceof ORPCError && error.code === "SLUG_TAKEN";
+}
+
 /** The conflict a failed write was refused with, if it was an Edit Conflict. */
 export function editConflictOf(error: unknown): EditConflict | null {
   if (!(error instanceof ORPCError) || error.code !== "EDIT_CONFLICT") {

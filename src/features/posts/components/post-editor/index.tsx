@@ -14,6 +14,7 @@ import { CodeBlockHighlightProvider } from "@/features/posts/editor/extensions/c
 import { postContentOf } from "@/features/posts/editor/extensions/image-placeholder";
 import { postRevisionListQuery } from "@/features/posts/queries";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
+import { POST_TITLE_MAX_LENGTH } from "@/features/posts/utils/post-fields";
 import { m } from "@/paraglide/messages";
 import { useDeletePost } from "../post-manager/hooks";
 import { postStateOf, publishActionLabel } from "../post-state";
@@ -23,6 +24,7 @@ import { PostEditorHeader } from "./post-editor-header";
 import { PostEditorMetadata } from "./post-editor-metadata";
 import { PostEditorInfoPanel } from "./post-editor-info-panel";
 import { PostEditorSummary } from "./post-editor-summary";
+import { SLUG_TAKEN_ERROR } from "./post-editor.model";
 import type { PostEditorData, PostEditorProps } from "./types";
 
 export function PostEditor({
@@ -72,6 +74,7 @@ export function PostEditor({
   const {
     saveStatus,
     lastSaved,
+    error: saveError,
     setError,
     flush,
     waitForInFlightSave,
@@ -252,6 +255,7 @@ export function PostEditor({
     <PostEditorMetadata
       post={post}
       isGeneratingSlug={isGeneratingSlug}
+      slugTaken={saveError === SLUG_TAKEN_ERROR}
       onPostChange={handlePostChange}
       onGenerateSlug={handleGenerateSlug}
     />
@@ -370,6 +374,7 @@ function TextareaTitle({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       rows={1}
+      maxLength={POST_TITLE_MAX_LENGTH}
       placeholder={m.editor_title_placeholder()}
       aria-label={m.editor_title_placeholder()}
       className="post-editor-title w-full resize-none overflow-hidden bg-transparent fuwari-text-90 outline-none placeholder:fuwari-text-30"

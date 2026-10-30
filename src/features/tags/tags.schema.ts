@@ -45,31 +45,44 @@ export const SetPostTagsResultSchema = z.object({
 });
 
 // API Input Schemas
-export const CreateTagInputSchema = z.object({
-  name: z.string().min(1).max(50),
+const TagNameInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(50)
+  .describe(
+    "Name, trimmed: not empty, at most 50 characters. No other tag may have it, ignoring case: that answers 409 TAG_NAME_ALREADY_EXISTS.",
+  );
+
+export const CreateTagInputSchema = z.strictObject({
+  name: TagNameInputSchema,
 });
 
-export const UpdateTagInputSchema = z.object({
+export const UpdateTagInputSchema = z.strictObject({
   id: z.number(),
-  data: z.object({
-    name: z.string().min(1).max(50).optional(),
+  data: z.strictObject({
+    name: TagNameInputSchema.optional(),
   }),
 });
 
-export const DeleteTagInputSchema = z.object({
+export const DeleteTagInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const GetTagsInputSchema = z.object({
+export const GetTagsInputSchema = z.strictObject({
   sortBy: z.enum(["name", "createdAt", "postCount"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
   withCount: z.boolean().optional(),
   publicOnly: z.boolean().optional(),
 });
 
-export const SetPostTagsInputSchema = z.object({
+export const SetPostTagsInputSchema = z.strictObject({
   postId: z.number(),
-  tagIds: z.array(z.number()),
+  tagIds: z
+    .array(z.number())
+    .describe(
+      "The ids of every tag the post should carry; an empty list removes them all. An id no tag has answers 404 TAG_NOT_FOUND and nothing is written.",
+    ),
   saveToken: z
     .string()
     .optional()
@@ -78,7 +91,7 @@ export const SetPostTagsInputSchema = z.object({
     ),
 });
 
-export const GetTagsByPostIdInputSchema = z.object({
+export const GetTagsByPostIdInputSchema = z.strictObject({
   postId: z.number(),
 });
 

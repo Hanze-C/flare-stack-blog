@@ -440,6 +440,8 @@
   "editor_toast_unpublished": "文章已取消发布",
   "editor_title_placeholder": "在此输入文章标题...",
   "editor_meta_link": "链接",
+  "editor_meta_slug_invalid": "链接不能为空，也不能包含空格或 / ? # % \\ 等字符，改好之前不会保存",
+  "editor_meta_slug_taken": "其他文章已在使用这个链接（不区分大小写），换一个才能保存",
   "editor_meta_date": "日期",
   "editor_meta_tags": "标签",
   "editor_meta_category": "分类",

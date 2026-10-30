@@ -150,13 +150,14 @@ export async function getTagsByPostId(db: DB, postId: number) {
 /**
  * Replaces the Post's draft Tags and the Post's saveToken in one batch (one
  * transaction). The token update is the only guarded statement: it matches the
- * Post, and with `saveToken` only while the Post still carries it. It sets the
- * new token explicitly, and the Tag statements run only while the Post carries
- * that token, that is, only when the update matched, so a refused save leaves
- * the Tags as they were. Tags deleted since they were read are skipped.
+ * Post, with `saveToken` only while the Post still carries it, and only while
+ * every Tag in `tagIds` exists. It sets the new token explicitly, and the Tag
+ * statements run only while the Post carries that token, that is, only when
+ * the update matched, so a refused save leaves the Tags as they were.
  *
  * Returns the Post's new saveToken, or null when nothing was written: the Post
- * does not exist, or it no longer carries the stated `saveToken`.
+ * does not exist, it no longer carries the stated `saveToken`, or a Tag does
+ * not exist.
  */
 export async function setPostTags(
   db: DB,
@@ -165,6 +166,7 @@ export async function setPostTags(
   options: { saveToken?: string } = {},
 ) {
   const saveToken = newSaveToken();
+  const ids = [...new Set(tagIds)];
   const tokenWrite = db
     .update(PostsTable)
     .set({ updatedAt: new Date(), draftFingerprint: null, saveToken })
@@ -174,6 +176,9 @@ export async function setPostTags(
         options.saveToken === undefined
           ? undefined
           : eq(PostsTable.saveToken, options.saveToken),
+        ids.length === 0
+          ? undefined
+          : sql`(SELECT count(*) FROM ${TagsTable} WHERE ${inArray(TagsTable.id, ids)}) = ${ids.length}`,
       ),
     )
     .returning({ saveToken: PostsTable.saveToken });
@@ -184,7 +189,6 @@ export async function setPostTags(
       .delete(PostTagsTable)
       .where(and(eq(PostTagsTable.postId, postId), written)),
   ];
-  const ids = [...new Set(tagIds)];
   if (ids.length > 0) {
     tagWrites.push(
       db.insert(PostTagsTable).select(
@@ -203,8 +207,20 @@ export async function setPostTags(
   return row?.saveToken ?? null;
 }
 
+/** The ids in `ids` no Tag has. */
+export async function findMissingTagIds(db: DB, ids: Array<number>) {
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return [];
+  const found = await db
+    .select({ id: TagsTable.id })
+    .from(TagsTable)
+    .where(inArray(TagsTable.id, unique));
+  const existing = new Set(found.map((tag) => tag.id));
+  return unique.filter((id) => !existing.has(id));
+}
+
 /**
- * Check if a tag name exists
+ * Check if a tag name exists, ignoring the case of ASCII letters
  */
 export async function nameExists(
   db: DB,
@@ -212,7 +228,7 @@ export async function nameExists(
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
   const { excludeId } = options;
-  const conditions = [eq(TagsTable.name, name)];
+  const conditions = [sql`lower(${TagsTable.name}) = lower(${name})`];
   if (excludeId) {
     conditions.push(ne(TagsTable.id, excludeId));
   }

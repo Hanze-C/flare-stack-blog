@@ -58,6 +58,11 @@ const postErrors = {
     status: 409,
     message: "This public slug is already in use.",
   },
+  SLUG_TAKEN: {
+    status: 409,
+    message:
+      "Another post already uses this slug, or a case variant of it, as its slug or live page.",
+  },
   MEDIA_NOT_FOUND: { status: 404, message: "Media not found." },
   CATEGORY_NOT_FOUND: { status: 404, message: "Category not found." },
   CONTENT_FORMAT_AMBIGUOUS: {
@@ -226,6 +231,7 @@ const update = adminProcedure
     ...markdownContentErrors,
     MEDIA_NOT_FOUND: postErrors.MEDIA_NOT_FOUND,
     CATEGORY_NOT_FOUND: postErrors.CATEGORY_NOT_FOUND,
+    SLUG_TAKEN: postErrors.SLUG_TAKEN,
     ...editConflictErrors,
   })
   .route({
@@ -260,6 +266,9 @@ const update = adminProcedure
         },
         CATEGORY_NOT_FOUND: () => {
           throw errors.CATEGORY_NOT_FOUND();
+        },
+        SLUG_TAKEN: () => {
+          throw errors.SLUG_TAKEN();
         },
       },
     );
@@ -296,7 +305,7 @@ const publishPost = adminProcedure
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
     description:
-      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
+      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case, and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)

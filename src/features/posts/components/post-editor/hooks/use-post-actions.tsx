@@ -3,6 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { PostEditorData } from "@/features/posts/components/post-editor/types";
 import { slugify } from "@/features/posts/utils/content";
+import {
+  isValidPostSlug,
+  truncateGeneratedSlug,
+} from "@/features/posts/utils/post-fields";
 import { orpcClient } from "@/lib/orpc";
 import { useDebounce } from "@/hooks/use-debounce";
 import { m } from "@/paraglide/messages";
@@ -60,9 +64,12 @@ export function usePostActions({
 
   const canPublish = useMemo(() => {
     if (conflicted) return false;
+    // Autosave leaves a slug the API would refuse unsaved, so publishing
+    // would put the previous one live.
+    if (!isValidPostSlug(post.slug)) return false;
     if (!post.publishedAt) return true;
     return post.publishedAt.toISOString().slice(0, 10) <= post.serverToday;
-  }, [conflicted, post.publishedAt, post.serverToday]);
+  }, [conflicted, post.publishedAt, post.serverToday, post.slug]);
 
   const lastAutoSlugRef = useRef<string | null>(null);
   const queuedTitleRef = useRef<string | null>(null);
@@ -223,7 +230,9 @@ export function usePostActions({
       if (error) {
         console.error("Slug generation failed:", error);
         setError(m.editor_action_slug_error());
-        const fallbackSlug = slugify(latestTitleRef.current) || "untitled-log";
+        const fallbackSlug =
+          truncateGeneratedSlug(slugify(latestTitleRef.current)) ||
+          "untitled-log";
         lastAutoSlugRef.current = fallbackSlug;
         setPost((prev) => ({ ...prev, slug: fallbackSlug }));
       }

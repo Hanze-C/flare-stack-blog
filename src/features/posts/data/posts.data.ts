@@ -623,6 +623,14 @@ export async function findPostSaveToken(db: DB, id: number) {
   return post?.saveToken ?? null;
 }
 
+export async function findPostSlug(db: DB, id: number) {
+  const [post] = await db
+    .select({ slug: PostsTable.slug })
+    .from(PostsTable)
+    .where(eq(PostsTable.id, id));
+  return post?.slug ?? null;
+}
+
 /**
  * Writes the Public Content Snapshot together with the draft fields publishing
  * settles and the public Category and Tags the snapshot assigns, in one batch
@@ -720,12 +728,21 @@ export async function clearPublicSnapshot(db: DB, id: number) {
   return await findWrittenPost(db, id, written.saveToken);
 }
 
+/** `column` equals `slug`, ignoring the case of ASCII letters. */
+function sameSlug(
+  column: typeof PostsTable.slug | typeof PostsTable.publicSlug,
+  slug: string,
+) {
+  return sql`lower(${column}) = lower(${slug})`;
+}
+
+/** Whether another Post's live page uses `slug`, ignoring case. */
 export async function publicSlugExists(
   db: DB,
   slug: string,
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
-  const conditions = [eq(PostsTable.publicSlug, slug)];
+  const conditions = [sameSlug(PostsTable.publicSlug, slug)];
   if (options.excludeId) {
     conditions.push(ne(PostsTable.id, options.excludeId));
   }
@@ -742,8 +759,8 @@ export async function deletePost(db: DB, id: number) {
 }
 
 /**
- * Check if a slug exists in the database
- * @param slug - The slug to check
+ * Whether another Post uses `slug`, ignoring case, as its slug or as the slug
+ * of its live page, which publishing that Post would keep or take.
  * @param excludeId - Optional post ID to exclude (for editing existing posts)
  */
 export async function slugExists(
@@ -752,7 +769,9 @@ export async function slugExists(
   options: { excludeId?: number } = {},
 ): Promise<boolean> {
   const { excludeId } = options;
-  const conditions = [eq(PostsTable.slug, slug)];
+  const conditions = [
+    or(sameSlug(PostsTable.slug, slug), sameSlug(PostsTable.publicSlug, slug)),
+  ];
   if (excludeId) {
     conditions.push(ne(PostsTable.id, excludeId));
   }
@@ -772,7 +791,13 @@ export async function findSimilarSlugs(
   baseSlug: string,
   options: { excludeId?: number } = {},
 ) {
-  const conditions = [like(PostsTable.slug, `${baseSlug}-%`)];
+  // LIKE ignores the case of ASCII letters, as slugExists does.
+  const conditions = [
+    or(
+      like(PostsTable.slug, `${baseSlug}-%`),
+      like(PostsTable.publicSlug, `${baseSlug}-%`),
+    ),
+  ];
 
   // 如果是编辑文章，要排除掉自己，防止把自己算作冲突
   if (options.excludeId) {
@@ -780,11 +805,13 @@ export async function findSimilarSlugs(
   }
 
   const results = await db
-    .select({ slug: PostsTable.slug })
+    .select({ slug: PostsTable.slug, publicSlug: PostsTable.publicSlug })
     .from(PostsTable)
     .where(and(...conditions));
 
-  return results.map((r) => r.slug);
+  return results.flatMap((r) =>
+    r.publicSlug ? [r.slug, r.publicSlug] : [r.slug],
+  );
 }
 
 export async function findAdjacentPublicPosts(db: DB, slug: string) {

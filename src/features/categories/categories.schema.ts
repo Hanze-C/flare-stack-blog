@@ -44,22 +44,31 @@ export const AdminCategoryListSchema = z.object({
 
 export const DeleteCategoryResultSchema = z.object({ success: z.boolean() });
 
-export const CreateCategoryInputSchema = z.object({
-  name: z.string().min(1).max(50),
+const CategoryNameInputSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(50)
+  .describe(
+    "Name, trimmed: not empty, at most 50 characters. No other category may have it, ignoring case: that answers 409 CATEGORY_NAME_ALREADY_EXISTS.",
+  );
+
+export const CreateCategoryInputSchema = z.strictObject({
+  name: CategoryNameInputSchema,
 });
 
-export const UpdateCategoryInputSchema = z.object({
+export const UpdateCategoryInputSchema = z.strictObject({
   id: z.number(),
-  data: z.object({
-    name: z.string().min(1).max(50).optional(),
+  data: z.strictObject({
+    name: CategoryNameInputSchema.optional(),
   }),
 });
 
-export const DeleteCategoryInputSchema = z.object({
+export const DeleteCategoryInputSchema = z.strictObject({
   id: z.number(),
 });
 
-export const GetCategoriesInputSchema = z.object({
+export const GetCategoriesInputSchema = z.strictObject({
   sortBy: z.enum(["name", "createdAt", "postCount"]).optional(),
   sortDir: z.enum(["asc", "desc"]).optional(),
   publicOnly: z.boolean().optional(),

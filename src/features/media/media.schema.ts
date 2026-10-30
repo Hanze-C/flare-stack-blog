@@ -1,6 +1,7 @@
 import { createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { MediaTable, POST_STATUSES } from "@/lib/db/schema";
+import { IdCursorSchema, pageLimitSchema } from "@/lib/orpc/pagination";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
@@ -86,23 +87,23 @@ export const DeleteUnusedMediaResultSchema = z.object({
   error: z.null(),
 });
 
-export const MediaKeyInputSchema = z.object({
+export const MediaKeyInputSchema = z.strictObject({
   key: z.string(),
 });
 
-export const UpdateMediaNameInputSchema = z.object({
+export const UpdateMediaNameInputSchema = z.strictObject({
   key: z.string().min(1),
   name: z.string().min(1),
 });
 
-export const GetMediaListInputSchema = z.object({
-  cursor: z.number().optional(),
-  limit: z.number().optional(),
+export const GetMediaListInputSchema = z.strictObject({
+  cursor: IdCursorSchema.optional(),
+  limit: pageLimitSchema(100).optional(),
   search: z.string().optional(),
   unusedOnly: z.boolean().optional(),
 });
 
-export const ImportMediaUrlInputSchema = z.object({
+export const ImportMediaUrlInputSchema = z.strictObject({
   url: z.string().min(1),
 });
 

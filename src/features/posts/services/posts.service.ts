@@ -33,10 +33,12 @@ import { toIsoOrNull } from "@/features/posts/public-snapshot";
 import type { PublicPostCover } from "@/lib/db/schema";
 
 import { slugify } from "@/features/posts/utils/content";
+import { truncateGeneratedSlug } from "@/features/posts/utils/post-fields";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
 import {
   isFuturePublishDate,
   serverUtcDateString,
+  toWholeSecond,
 } from "@/features/posts/utils/date";
 import * as UnpublishedChangesService from "@/features/posts/services/unpublished-changes.service";
 import {
@@ -135,7 +137,8 @@ async function buildPublicSnapshot(
     contentJson,
     tagIds: [...new Set(post.tags.map((tag) => tag.id))].sort((a, b) => a - b),
     categoryId: post.categoryId ?? null,
-    publishedAt: toIsoOrNull(post.publishedAt) ?? new Date().toISOString(),
+    publishedAt:
+      toIsoOrNull(post.publishedAt) ?? toWholeSecond(new Date()).toISOString(),
     cover: await resolveSnapshotCover(db, post.coverMediaId),
   };
 }
@@ -241,7 +244,7 @@ export async function generateSlug(
   context: DbContext,
   data: GenerateSlugInput,
 ) {
-  const baseSlug = slugify(data.title);
+  const baseSlug = truncateGeneratedSlug(slugify(data.title));
   // 1. 先查有没有完全一样的 (比如 'hello-world')
   const exactMatch = await PostRepo.slugExists(context.db, baseSlug, {
     excludeId: data.excludeId,
@@ -257,7 +260,7 @@ export async function generateSlug(
 
   // 3. 在内存里找最大的数字后缀
   // 正则含义：匹配以 "-数字" 结尾的字符串，并捕获那个数字
-  const regex = new RegExp(`^${baseSlug}-(\\d+)$`);
+  const regex = new RegExp(`^${baseSlug}-(\\d+)$`, "i");
 
   let maxSuffix = 0;
   for (const slug of similarSlugs) {
@@ -283,6 +286,18 @@ function isSlugConflict(error: unknown) {
     if (SLUG_CONFLICT_PATTERN.test(current.message)) return true;
   }
   return false;
+}
+
+/**
+ * Whether saving `slug` would collide with another Post's slug or live page,
+ * ignoring case. A Post already carrying exactly that slug keeps it, so a
+ * collision older than this check does not stop its saves.
+ */
+async function slugTakenByAnotherPost(db: DB, id: number, slug: string) {
+  if (!(await PostRepo.slugExists(db, slug, { excludeId: id }))) return false;
+  const own = await PostRepo.findPostSlug(db, id);
+  // A missing Post is answered by the write as POST_NOT_FOUND.
+  return own !== null && own !== slug;
 }
 
 function randomSlugSuffix() {
@@ -496,6 +511,13 @@ export async function updatePost(
     }
   }
 
+  if (
+    data.data.slug !== undefined &&
+    (await slugTakenByAnotherPost(context.db, data.id, data.data.slug))
+  ) {
+    return err({ reason: "SLUG_TAKEN" });
+  }
+
   const updateData =
     data.data.contentJson !== undefined
       ? {
@@ -503,12 +525,16 @@ export async function updatePost(
           contentJson: normalizePostContent(data.data.contentJson),
         }
       : data.data;
-  const updatedPost = await PostRepo.updatePost(
-    context.db,
-    data.id,
-    updateData,
-    { saveToken: data.saveToken },
-  );
+  let updatedPost;
+  try {
+    updatedPost = await PostRepo.updatePost(context.db, data.id, updateData, {
+      saveToken: data.saveToken,
+    });
+  } catch (error) {
+    // A concurrent save claimed the same slug between the check and the write.
+    if (isSlugConflict(error)) return err({ reason: "SLUG_TAKEN" });
+    throw error;
+  }
   if (!updatedPost) {
     return editConflictOrNotFound(context.db, data.id);
   }
@@ -568,14 +594,18 @@ export async function publishPost(
   const draft: { publishedAt?: Date; contentJson?: typeof post.contentJson } =
     {};
   if (!post.publishedAt) {
-    draft.publishedAt = new Date();
-  } else if (isFuturePublishDate(post.publishedAt.toISOString())) {
+    draft.publishedAt = toWholeSecond(new Date());
+  } else if (isFuturePublishDate(post.publishedAt)) {
     return err({ reason: "PUBLISHED_AT_IN_FUTURE" });
   }
 
-  const slugTaken = await PostRepo.publicSlugExists(context.db, post.slug, {
-    excludeId: post.id,
-  });
+  // A Post whose live page already has this slug keeps it, even when an older
+  // page differs from it only in case.
+  const slugTaken =
+    post.publicSlug !== post.slug &&
+    (await PostRepo.publicSlugExists(context.db, post.slug, {
+      excludeId: post.id,
+    }));
   if (slugTaken) {
     return err({ reason: "PUBLIC_SLUG_TAKEN" });
   }

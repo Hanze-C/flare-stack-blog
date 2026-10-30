@@ -192,8 +192,9 @@ export async function deleteTag(
  * Replaces the Post's draft Tags. The public site keeps the Tags of its Public
  * Content Snapshot until the Post is published (ADR 0033), so no public cache
  * needs purging. Returns the Post's new saveToken, or POST_NOT_FOUND when there
- * is no such Post. With a stated saveToken the Post was saved since, nothing is
- * written, and the current token comes back as an Edit Conflict (ADR 0031).
+ * is no such Post, or TAG_NOT_FOUND when a Tag id has no Tag. With a stated
+ * saveToken the Post was saved since, nothing is written, and the current token
+ * comes back as an Edit Conflict (ADR 0031).
  */
 export async function setPostTags(context: DbContext, data: SetPostTagsInput) {
   const saveToken = await TagRepo.setPostTags(
@@ -204,9 +205,11 @@ export async function setPostTags(context: DbContext, data: SetPostTagsInput) {
   );
   if (saveToken !== null) return ok({ saveToken });
 
-  // Nothing was written: the Post is missing, or a newer save replaced the
-  // stated token.
+  // Nothing was written: the Post is missing, a Tag is missing, or a newer
+  // save replaced the stated token.
   const current = await PostRepo.findPostSaveToken(context.db, data.postId);
   if (current === null) return err({ reason: "POST_NOT_FOUND" });
+  const missing = await TagRepo.findMissingTagIds(context.db, data.tagIds);
+  if (missing.length > 0) return err({ reason: "TAG_NOT_FOUND" });
   return err({ reason: "EDIT_CONFLICT", saveToken: current });
 }
