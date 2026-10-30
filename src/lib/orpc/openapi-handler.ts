@@ -54,7 +54,7 @@ Post and Post Revision reads, and saves, take \`contentFormat=markdown\` (defaul
 - Tables keep column alignment; a Markdown write resets column widths to equal.
 - Inline math is \`$…$\`; block math has \`$$\` alone on the lines before and after it.
 - Fenced code blocks carry their language.
-- An image must be an http(s) address or a \`/images/…\` Media path. Any other source, such as a local file path, answers 400 naming the image: upload the file as Media first and use its path.
+- An image must be an http(s) address or the \`/images/…\` path of existing Media. Any other source, such as a local file path, answers 400 naming the image, and so does a Media path no Media has, unless the draft already shows it: upload the file as Media first and use its path.
 
 ## Media
 
@@ -62,7 +62,7 @@ Upload a file as multipart form data to the Media upload operation; its answer c
 
 ## Errors
 
-Every error answers JSON with \`code\`, \`status\` and \`message\`; the errors an operation declares carry \`defined: true\` and may carry \`data\`. A request that fails validation answers 400 \`BAD_REQUEST\` with \`data.issues\`, each naming the path of a field and what is wrong with it: correct those fields and resend. 404 with a declared code (such as \`POST_NOT_FOUND\`) means what you named does not exist; 404 \`ROUTE_NOT_FOUND\` and 405 \`METHOD_NOT_ALLOWED\` mean the call itself is wrong, so check the path and method against this document. 413 means the request body is too large. After a timeout or a 5xx, read before retrying: the write may have landed.`;
+Every error answers JSON with \`code\`, \`status\` and \`message\`; the errors an operation declares carry \`defined: true\` and may carry \`data\`. A request that fails validation answers 400 \`BAD_REQUEST\` with \`data.issues\`, each naming the path of a field and what is wrong with it: correct those fields and resend. 404 with a declared code (such as \`POST_NOT_FOUND\`) means what you named does not exist; 404 \`ROUTE_NOT_FOUND\` and 405 \`METHOD_NOT_ALLOWED\` mean the call itself is wrong, so check the path and method against this document. 413 \`PAYLOAD_TOO_LARGE\` means the request body is too large; 413 \`POST_CONTENT_TOO_LARGE\` means a Post's body, or the snapshot publishing would store, is too large to keep, and nothing was written. After a timeout or a 5xx, read before retrying: the write may have landed.`;
 
 export const openAPIHandler = new OpenAPIHandler(router, {
   adapterInterceptors: [
