@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { extractAllImageKeys } from "@/features/posts/utils/content";
 import {
@@ -13,6 +13,7 @@ import {
 
 export type PostMediaSource = {
   id: number;
+  saveToken: string;
   contentJson: JSONContent | null;
   publicSnapshotJson: PublicPostSnapshot | null;
   coverMediaId: number | null;
@@ -35,6 +36,14 @@ function sameMediaIdSet(existing: Array<number>, next: Set<number>) {
   return existing.every((mediaId) => next.has(mediaId));
 }
 
+/**
+ * Sets the Media the Post uses (`post_media`) to what `post`, as read, refers
+ * to. It writes only while the Post still carries the saveToken of that read:
+ * a write landing since then syncs after it, and a sync from an older read
+ * must not drop what that write added. Adding never waits for a sync: a save
+ * records the Media its body adds in the same batch (`mediaReferenceGuards`),
+ * so a sync only ever removes what is no longer used.
+ */
 export async function syncPostMedia(db: DB, post: PostMediaSource) {
   const usedKeys = referencedImageKeys(
     post.contentJson,
@@ -64,25 +73,96 @@ export async function syncPostMedia(db: DB, post: PostMediaSource) {
   const existingIds = existing.map((row) => row.mediaId);
   if (sameMediaIdSet(existingIds, mediaIds)) return;
 
+  const readCurrent = sql`EXISTS (SELECT 1 FROM ${PostsTable} WHERE ${PostsTable.id} = ${post.id} AND ${PostsTable.saveToken} = ${post.saveToken})`;
   const statements: Array<BatchItem<"sqlite">> = [];
   if (existingIds.length > 0) {
     statements.push(
-      db.delete(PostMediaTable).where(eq(PostMediaTable.postId, post.id)),
+      db
+        .delete(PostMediaTable)
+        .where(and(eq(PostMediaTable.postId, post.id), readCurrent)),
     );
   }
   if (mediaIds.size > 0) {
+    // From `media`, so an item deleted since it was looked up is left out
+    // instead of failing the foreign key.
     statements.push(
-      db.insert(PostMediaTable).values(
-        [...mediaIds].map((mediaId) => ({
-          postId: post.id,
-          mediaId,
-        })),
-      ),
+      db
+        .insert(PostMediaTable)
+        .select(
+          sql`SELECT ${post.id}, ${MediaTable.id} FROM ${MediaTable} WHERE ${inArray(MediaTable.id, [...mediaIds])} AND ${readCurrent}`,
+        ),
     );
   }
   const [head, ...rest] = statements;
   if (!head) return;
   await db.batch([head, ...rest]);
+}
+
+/**
+ * Which of `keys` no Media has.
+ */
+export async function findMissingMediaKeys(db: DB, keys: Array<string>) {
+  const unique = [...new Set(keys)];
+  if (unique.length === 0) return [];
+  const found = await db
+    .select({ key: MediaTable.key })
+    .from(MediaTable)
+    .where(inArray(MediaTable.key, unique));
+  const existing = new Set(found.map((media) => media.key));
+  return unique.filter((key) => !existing.has(key));
+}
+
+/**
+ * Statements, for the batch that writes a Post, that record the Post as
+ * using the Media with `keys` and `mediaIds`. They apply once the Post
+ * (`postId`, when the write knows it) carries `saveToken`, the token that
+ * write sets, and each one fails the
+ * whole batch with a NOT NULL constraint failure on `post_media.media_id`
+ * (see `isMediaGone`) if its Media no longer exists. Deleting Media is one
+ * statement that refuses Media in `post_media`, so either the write commits
+ * first and the delete refuses, or the delete commits first and the write
+ * fails: no Post is left referring to deleted Media.
+ */
+export function mediaReferenceGuards(
+  db: DB,
+  written: { postId?: number; saveToken: string },
+  refs: { keys: Array<string>; mediaIds: Array<number> },
+): Array<BatchItem<"sqlite">> {
+  const post = sql`(SELECT ${PostsTable.id} FROM ${PostsTable} WHERE ${
+    written.postId === undefined
+      ? sql`true`
+      : sql`${PostsTable.id} = ${written.postId}`
+  } AND ${PostsTable.saveToken} = ${written.saveToken})`;
+  const media = [
+    ...[...new Set(refs.keys)].map(
+      (key) =>
+        sql`(SELECT ${MediaTable.id} FROM ${MediaTable} WHERE ${MediaTable.key} = ${key})`,
+    ),
+    ...[...new Set(refs.mediaIds)].map(
+      (id) =>
+        sql`(SELECT ${MediaTable.id} FROM ${MediaTable} WHERE ${MediaTable.id} = ${id})`,
+    ),
+  ];
+  return media.map((mediaId) =>
+    db
+      .insert(PostMediaTable)
+      .select(sql`SELECT ${post}, ${mediaId} WHERE ${post} IS NOT NULL`)
+      .onConflictDoNothing(),
+  );
+}
+
+/** Whether a batch failed because Media a guard records was deleted. */
+export function isMediaGone(error: unknown) {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    if (
+      /NOT NULL constraint failed:\s*post_media\.media_id/i.test(
+        current.message,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function getPostsByMediaKey(db: DB, key: string) {

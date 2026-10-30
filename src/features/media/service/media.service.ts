@@ -80,19 +80,13 @@ export async function deleteImage(
   context: DbContext & { executionCtx: ExecutionContext },
   key: string,
 ) {
-  if (!(await MediaRepo.findMediaByKey(context.db, key))) {
-    return err({ reason: "MEDIA_NOT_FOUND" });
+  // The in-use check is part of the delete, so a Post saved meanwhile with
+  // the image either makes it refuse or is refused itself.
+  if (!(await MediaRepo.deleteMediaIfUnused(context.db, key))) {
+    return (await MediaRepo.findMediaByKey(context.db, key))
+      ? err({ reason: "MEDIA_IN_USE" })
+      : err({ reason: "MEDIA_NOT_FOUND" });
   }
-
-  // 后端兜底检查：防止删除正在被引用的媒体
-  const inUse =
-    (await PostMediaRepo.isMediaInUse(context.db, key)) ||
-    (await MediaRepo.isUsedAsAdminAvatar(context.db, key));
-  if (inUse) {
-    return err({ reason: "MEDIA_IN_USE" });
-  }
-
-  await MediaRepo.deleteMedia(context.db, key);
   context.executionCtx.waitUntil(
     Storage.deleteFromR2(context.env, key).catch((deleteError) =>
       console.error(

@@ -69,6 +69,16 @@ const postErrors = {
     status: 400,
     message: "Send contentJson or contentMarkdown, not both.",
   },
+  CONTENT_IMAGE_NOT_FOUND: {
+    status: 400,
+    message:
+      "The body shows an image by a Media path (/images/<key>) that no Media has.",
+    data: z.object({
+      images: z
+        .array(z.string())
+        .describe("The image addresses whose Media does not exist."),
+    }),
+  },
   MARKDOWN_IMAGE_INVALID: {
     status: 400,
     message:
@@ -83,6 +93,26 @@ const markdownContentErrors = {
   CONTENT_FORMAT_AMBIGUOUS: postErrors.CONTENT_FORMAT_AMBIGUOUS,
   MARKDOWN_IMAGE_INVALID: postErrors.MARKDOWN_IMAGE_INVALID,
 } as const;
+
+const contentImageErrors = {
+  CONTENT_IMAGE_NOT_FOUND: postErrors.CONTENT_IMAGE_NOT_FOUND,
+} as const;
+
+function throwContentImageNotFound(
+  images: Array<string>,
+  errors: {
+    CONTENT_IMAGE_NOT_FOUND: (options: {
+      message: string;
+      data: { images: Array<string> };
+    }) => Error;
+  },
+): never {
+  const list = images.map((src) => `"${src}"`).join(", ");
+  throw errors.CONTENT_IMAGE_NOT_FOUND({
+    message: `No Media has ${images.length > 1 ? "the images" : "the image"} ${list}. Upload it as Media first, or remove it from the body.`,
+    data: { images },
+  });
+}
 
 const postNotFoundErrors = {
   POST_NOT_FOUND: postErrors.POST_NOT_FOUND,
@@ -204,13 +234,13 @@ const videoMeta = adminProcedure
   });
 
 const create = adminProcedure
-  .errors(markdownContentErrors)
+  .errors({ ...markdownContentErrors, ...contentImageErrors })
   .route({
     method: "POST",
     path: "/admin/posts",
     summary: "Create a draft post",
     description:
-      "With data, creates a new draft post carrying that content. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
+      "With data, creates a new draft post carrying that content. An image shown by a Media path (/images/<key>) must be existing Media: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and creates nothing. Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.",
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
@@ -222,13 +252,17 @@ const create = adminProcedure
       input.data,
     );
     if (data.error) throwMarkdownContentError(data.error, errors);
-    return PostService.createDraft(context, data.data);
+    return unwrapResult(PostService.createDraft(context, data.data), {
+      CONTENT_IMAGE_NOT_FOUND: ({ images }) =>
+        throwContentImageNotFound(images, errors),
+    });
   });
 
 const update = adminProcedure
   .errors({
     ...postNotFoundErrors,
     ...markdownContentErrors,
+    ...contentImageErrors,
     MEDIA_NOT_FOUND: postErrors.MEDIA_NOT_FOUND,
     CATEGORY_NOT_FOUND: postErrors.CATEGORY_NOT_FOUND,
     SLUG_TAKEN: postErrors.SLUG_TAKEN,
@@ -239,7 +273,7 @@ const update = adminProcedure
     path: "/admin/posts/{id}",
     summary: "Update a post",
     description:
-      "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data), whichever format it was written in. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
+      "Writes only the fields in data and returns the updated Post with its new saveToken. The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data), whichever format it was written in. An image the body shows by a Media path (/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)
@@ -264,6 +298,8 @@ const update = adminProcedure
         MEDIA_NOT_FOUND: () => {
           throw errors.MEDIA_NOT_FOUND();
         },
+        CONTENT_IMAGE_NOT_FOUND: ({ images }) =>
+          throwContentImageNotFound(images, errors),
         CATEGORY_NOT_FOUND: () => {
           throw errors.CATEGORY_NOT_FOUND();
         },

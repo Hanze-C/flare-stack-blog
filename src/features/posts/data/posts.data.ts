@@ -39,6 +39,7 @@ import { HOME_POSTS_PER_PAGE } from "@/features/posts/schema/posts.schema";
 import { isPostBodyEmpty } from "@/features/posts/utils/is-post-body-empty";
 import type { PostStatus, PublicPostSnapshot } from "@/lib/db/schema";
 import { newSaveToken, PostsTable } from "@/lib/db/schema";
+import { mediaReferenceGuards } from "@/features/posts/data/post-media.data";
 import {
   keyForWrite,
   POST_PUBLIC_SLUG,
@@ -87,14 +88,31 @@ export type SitemapPostRow = {
   publishedAt: Date | null;
 };
 
+/**
+ * Media a write puts into the draft, recorded in the same batch so that it
+ * cannot be deleted meanwhile; see `mediaReferenceGuards`.
+ */
+export type MediaReferences = { keys: Array<string>; mediaIds: Array<number> };
+
 export async function insertPost(
   db: DB,
-  data: Omit<typeof PostsTable.$inferInsert, "slugKey" | "publicSlugKey">,
+  data: Omit<
+    typeof PostsTable.$inferInsert,
+    "slugKey" | "publicSlugKey" | "saveToken"
+  >,
+  options: { media?: MediaReferences } = {},
 ) {
-  const [post] = await db
+  const saveToken = newSaveToken();
+  const insert = db
     .insert(PostsTable)
-    .values({ ...data, slugKey: uniqueKeyOf(data.slug) })
+    .values({ ...data, slugKey: uniqueKeyOf(data.slug), saveToken })
     .returning();
+  const guards = options.media
+    ? mediaReferenceGuards(db, { saveToken }, options.media)
+    : [];
+  const [post] = guards.length
+    ? (await db.batch([insert, ...guards]))[0]
+    : await insert;
   return post;
 }
 
@@ -547,9 +565,11 @@ export async function updatePost(
       | "publicSlugKey"
     >
   >,
-  options: { saveToken?: string } = {},
+  options: { saveToken?: string; media?: MediaReferences } = {},
 ) {
-  const [written] = await db
+  // Set here rather than by $onUpdate so the media guards can find the row.
+  const saveToken = newSaveToken();
+  const update = db
     .update(PostsTable)
     .set({
       ...data,
@@ -557,9 +577,16 @@ export async function updatePost(
         slugKey: keyForWrite(PostsTable.slug, PostsTable.slugKey, data.slug),
       }),
       ...(changesFingerprintedFields(data) && { draftFingerprint: null }),
+      saveToken,
     })
     .where(postToWrite(id, options.saveToken))
     .returning({ saveToken: PostsTable.saveToken });
+  const guards = options.media
+    ? mediaReferenceGuards(db, { postId: id, saveToken }, options.media)
+    : [];
+  const [written] = guards.length
+    ? (await db.batch([update, ...guards]))[0]
+    : await update;
   if (!written) return null;
   return await findWrittenPost(db, id, written.saveToken);
 }
@@ -640,6 +667,14 @@ export async function findPostSaveToken(db: DB, id: number) {
     .from(PostsTable)
     .where(eq(PostsTable.id, id));
   return post?.saveToken ?? null;
+}
+
+export async function findPostContentJson(db: DB, id: number) {
+  const [post] = await db
+    .select({ contentJson: PostsTable.contentJson })
+    .from(PostsTable)
+    .where(eq(PostsTable.id, id));
+  return post?.contentJson ?? null;
 }
 
 export async function findPostSlug(db: DB, id: number) {

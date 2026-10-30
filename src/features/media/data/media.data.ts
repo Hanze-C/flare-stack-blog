@@ -20,14 +20,6 @@ const usedAsAdminAvatar = sql`exists (select 1 from ${user} where ${user.role} =
 // deleted image.
 const unreferenced = sql`not exists (select 1 from ${PostMediaTable} where ${PostMediaTable.mediaId} = ${MediaTable.id}) and not exists (select 1 from ${PostRevisionMediaTable} where ${PostRevisionMediaTable.mediaId} = ${MediaTable.id}) and not ${usedAsAdminAvatar}`;
 
-export async function isUsedAsAdminAvatar(db: DB, key: string) {
-  const rows = await db
-    .select({ id: MediaTable.id })
-    .from(MediaTable)
-    .where(and(eq(MediaTable.key, key), usedAsAdminAvatar))
-    .limit(1);
-  return rows.length > 0;
-}
 export type MediaListItem = Media & {
   postCount: number;
   isCover: boolean;
@@ -62,8 +54,19 @@ export async function findMediaByKey(
   return media ?? null;
 }
 
-export async function deleteMedia(db: DB, key: string) {
-  await db.delete(MediaTable).where(eq(MediaTable.key, key));
+/**
+ * Deletes the Media with `key` unless something uses it: a Post (draft,
+ * Public Content Snapshot or cover), a Post Revision or an Admin's avatar.
+ * The check and the delete are one statement, so a Post write that records
+ * the Media in the meantime (`mediaReferenceGuards`) makes it refuse. Returns
+ * whether it deleted.
+ */
+export async function deleteMediaIfUnused(db: DB, key: string) {
+  const deleted = await db
+    .delete(MediaTable)
+    .where(and(eq(MediaTable.key, key), unreferenced))
+    .returning({ id: MediaTable.id });
+  return deleted.length > 0;
 }
 
 /** Returns false when no Media has `key`. */

@@ -210,7 +210,7 @@ const remove = adminProcedure
     path: "/admin/media/{key}",
     summary: "Delete media",
     description:
-      "Deletes one image. Answers 404 MEDIA_NOT_FOUND when no Media has the key, and 409 MEDIA_IN_USE while a post uses it (draft, published version or Post Revision) or an Admin has it as an avatar; GET /admin/media/{key}/posts lists the posts. Cannot be undone.",
+      "Deletes one image. Answers 404 MEDIA_NOT_FOUND when no Media has the key, and 409 MEDIA_IN_USE while a post uses it (draft, published version or Post Revision) or an Admin has it as an avatar; GET /admin/media/{key}/posts lists the posts. The check and the delete are one step: a post saved with the image at the same moment either makes the delete answer 409 MEDIA_IN_USE or is itself refused, so no post is left showing a deleted image. Cannot be undone.",
     tags: ["Admin Media"],
   })
   .input(MediaKeyInputSchema)

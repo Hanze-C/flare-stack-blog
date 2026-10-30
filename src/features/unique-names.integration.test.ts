@@ -59,10 +59,10 @@ let created = 0;
 /** A new draft each time; createEmptyPost would hand back the same one. */
 async function newPost() {
   created += 1;
-  return (
+  return unwrap(
     await PostService.createDraft(createAdminTestContext(), {
       title: `unique names post ${created}`,
-    })
+    }),
   ).id;
 }
 

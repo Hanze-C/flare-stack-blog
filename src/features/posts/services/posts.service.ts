@@ -1,7 +1,12 @@
+import type { JSONContent } from "@tiptap/react";
 import { invalidate } from "@/features/cache/public-cache";
 import * as CategoryRepo from "@/features/categories/data/categories.data";
 import * as MediaRepo from "@/features/media/data/media.data";
-import { syncPostMedia } from "@/features/posts/data/post-media.data";
+import {
+  findMissingMediaKeys,
+  isMediaGone,
+  syncPostMedia,
+} from "@/features/posts/data/post-media.data";
 import * as PostRevisionRepo from "@/features/posts/data/post-revisions.data";
 import * as PostRepo from "@/features/posts/data/posts.data";
 import {
@@ -32,7 +37,11 @@ import {
 import { toIsoOrNull } from "@/features/posts/public-snapshot";
 import type { PublicPostCover } from "@/lib/db/schema";
 
-import { slugify } from "@/features/posts/utils/content";
+import {
+  extractAllImageKeys,
+  extractMediaPathImages,
+  slugify,
+} from "@/features/posts/utils/content";
 import { truncateGeneratedSlug } from "@/features/posts/utils/post-fields";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
 import {
@@ -146,6 +155,42 @@ async function buildPublicSnapshot(
       toIsoOrNull(post.publishedAt) ?? toWholeSecond(new Date()).toISOString(),
     cover: await resolveSnapshotCover(db, post.coverMediaId),
   };
+}
+
+/**
+ * The Media keys a body written into a draft uses by path (`/images/{key}`),
+ * or the images whose Media does not exist. An image the Post's stored draft
+ * (`postId`) already shows is accepted even when its Media is gone, so a body
+ * with an old broken image can still be saved; it cannot be added anew.
+ */
+async function bodyMediaReferences(
+  db: DB,
+  contentJson: JSONContent | null,
+  postId?: number,
+) {
+  const images = extractMediaPathImages(contentJson);
+  const keys = [...new Set(images.map((image) => image.key))];
+  const missing = await findMissingMediaKeys(db, keys);
+  const refusedKeys = new Set(missing);
+  if (refusedKeys.size > 0 && postId !== undefined) {
+    const stored = await PostRepo.findPostContentJson(db, postId);
+    for (const key of extractAllImageKeys(stored)) refusedKeys.delete(key);
+  }
+  const refused = images.filter((image) => refusedKeys.has(image.key));
+  if (refused.length > 0) {
+    return err({
+      reason: "CONTENT_IMAGE_NOT_FOUND",
+      images: [...new Set(refused.map((image) => image.src))],
+    });
+  }
+  return ok({ keys: keys.filter((key) => !missing.includes(key)) });
+}
+
+function isForeignKeyFailure(error: unknown) {
+  for (let current = error; current instanceof Error; current = current.cause) {
+    if (/FOREIGN KEY constraint failed/i.test(current.message)) return true;
+  }
+  return false;
 }
 
 /** A conditional write matched nothing: tell a missing Post from a newer save. */
@@ -320,16 +365,18 @@ async function insertDraftWithGeneratedSlug(
   context: DbContext,
   title: string,
   values: Omit<Parameters<typeof PostRepo.insertPost>[1], "slug">,
+  options: Parameters<typeof PostRepo.insertPost>[2] = {},
 ) {
   for (let attempt = 1; ; attempt += 1) {
     const { slug } = await generateSlug(context, { title });
     const candidate =
       attempt <= SLUG_DERIVED_ATTEMPTS ? slug : `${slug}-${randomSlugSuffix()}`;
     try {
-      return await PostRepo.insertPost(context.db, {
-        ...values,
-        slug: candidate,
-      });
+      return await PostRepo.insertPost(
+        context.db,
+        { ...values, slug: candidate },
+        options,
+      );
     } catch (error) {
       if (attempt >= SLUG_INSERT_ATTEMPTS || !isSlugConflict(error))
         throw error;
@@ -343,16 +390,34 @@ async function insertDraftWithGeneratedSlug(
  * safely retry a failed create or create several posts in a row.
  */
 export async function createDraft(context: DbContext, data: CreatePostData) {
-  const post = await insertDraftWithGeneratedSlug(context, data.title, {
-    title: data.title,
-    summary: data.summary ?? null,
-    status: "draft",
-    contentJson: normalizePostContent(data.contentJson ?? null),
-  });
+  const contentJson = normalizePostContent(data.contentJson ?? null);
+  const references = await bodyMediaReferences(context.db, contentJson);
+  if (references.error) return references;
+
+  let post;
+  try {
+    post = await insertDraftWithGeneratedSlug(
+      context,
+      data.title,
+      {
+        title: data.title,
+        summary: data.summary ?? null,
+        status: "draft",
+        contentJson,
+      },
+      { media: { keys: references.data.keys, mediaIds: [] } },
+    );
+  } catch (error) {
+    // Media the body uses was deleted after the check; nothing was written.
+    if (!isMediaGone(error)) throw error;
+    const recheck = await bodyMediaReferences(context.db, contentJson);
+    if (recheck.error) return recheck;
+    throw error;
+  }
 
   await syncPostMedia(context.db, post);
 
-  return { id: post.id, saveToken: post.saveToken };
+  return ok({ id: post.id, saveToken: post.saveToken });
 }
 
 export async function createEmptyPost(context: DbContext) {
@@ -526,14 +591,56 @@ export async function updatePost(
           contentJson: normalizePostContent(data.data.contentJson),
         }
       : data.data;
+  let bodyKeys: Array<string> = [];
+  if (updateData.contentJson !== undefined) {
+    const references = await bodyMediaReferences(
+      context.db,
+      updateData.contentJson,
+      data.id,
+    );
+    if (references.error) return references;
+    bodyKeys = references.data.keys;
+  }
+  const coverMediaId = updateData.coverMediaId;
   let updatedPost;
   try {
     updatedPost = await PostRepo.updatePost(context.db, data.id, updateData, {
       saveToken: data.saveToken,
+      media: {
+        keys: bodyKeys,
+        mediaIds: coverMediaId == null ? [] : [coverMediaId],
+      },
     });
   } catch (error) {
     // A concurrent save claimed the same slug between the check and the write.
     if (isSlugConflict(error)) return err({ reason: "SLUG_TAKEN" });
+    // Media or the Category the write uses was deleted after the check (the
+    // cover and the Category are foreign keys too); nothing was written.
+    if (isMediaGone(error) || isForeignKeyFailure(error)) {
+      if (
+        coverMediaId != null &&
+        !(await MediaRepo.findMediaById(context.db, coverMediaId))
+      ) {
+        return err({ reason: "MEDIA_NOT_FOUND" });
+      }
+      if (
+        updateData.categoryId != null &&
+        !(await CategoryRepo.findCategoryById(
+          context.db,
+          updateData.categoryId,
+        ))
+      ) {
+        return err({ reason: "CATEGORY_NOT_FOUND" });
+      }
+      if (updateData.contentJson !== undefined) {
+        const recheck = await bodyMediaReferences(
+          context.db,
+          updateData.contentJson,
+          data.id,
+        );
+        if (recheck.error) return recheck;
+      }
+    }
     throw error;
   }
   if (!updatedPost) {
