@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, LockKeyhole, Trash2 } from "lucide-react";
+import { ArrowLeft, CircleAlert, LockKeyhole, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { useAdminChrome } from "@/components/admin/admin-chrome";
 import { Button, buttonClass } from "@/components/ui/button";
+import { Callout } from "@/components/ui/callout";
 import ConfirmationModal from "@/components/ui/confirmation-modal";
 import { SectionHeading } from "@/components/ui/page-heading";
 import { postRevisionListQuery } from "@/features/posts/queries";
@@ -78,6 +79,10 @@ export function PostHistoryPage({
     };
   }, [setMobileTitle, setPrimaryAction]);
 
+  // After an Edit Conflict, the next restore replaces the newer save, and the
+  // confirmation says so.
+  const restoreAnyway = history.restoreFailure?.editConflict === true;
+
   const deleteAction = (
     <Button
       variant="plain"
@@ -100,8 +105,16 @@ export function PostHistoryPage({
         onClose={history.cancelConfirm}
         onConfirm={history.confirmRestore}
         title={m.editor_history_restore_title()}
-        message={m.editor_history_restore_message()}
-        confirmLabel={m.editor_history_restore_action()}
+        message={
+          restoreAnyway
+            ? m.editor_history_restore_anyway_message()
+            : m.editor_history_restore_message()
+        }
+        confirmLabel={
+          restoreAnyway
+            ? m.editor_history_restore_anyway()
+            : m.editor_history_restore_action()
+        }
         isLoading={history.isRestoring}
       />
       <ConfirmationModal
@@ -153,6 +166,17 @@ export function PostHistoryPage({
           </Button>
         </div>
       </header>
+      {history.restoreFailure && (
+        <Callout
+          role="alert"
+          tone={history.restoreFailure.editConflict ? "warning" : "danger"}
+          icon={CircleAlert}
+          className="post-editor-conflict"
+        >
+          <strong>{m.editor_history_toast_restore_failed()}</strong>
+          <p>{history.restoreFailure.message}</p>
+        </Callout>
+      )}
       <div className="post-history-body">
         <section className="post-history-content">
           <PostEditorHistoryDocument

@@ -1,5 +1,7 @@
+import { ORPCError } from "@orpc/client";
 import { orpcClient } from "@/lib/orpc";
 import { m } from "@/paraglide/messages";
+import { editConflictOf } from "./post-editor.model";
 
 export type RevisionListItem = Awaited<
   ReturnType<typeof orpcClient.posts.admin.revisions.list>
@@ -34,6 +36,33 @@ export function getRestoreErrorMessage(reason: string) {
     default:
       return m.editor_action_unknown_error();
   }
+}
+
+/**
+ * Why a restore was refused. The page shows it until the Admin acts again, so
+ * a confirmation that closes over it cannot hide it.
+ */
+export interface RestoreFailure {
+  revisionId: number;
+  /** The post was saved again after the history was opened. */
+  editConflict: boolean;
+  message: string;
+}
+
+export function restoreFailureOf(
+  error: Error,
+  revisionId: number | null,
+): RestoreFailure {
+  const editConflict = editConflictOf(error) !== null;
+  return {
+    revisionId: revisionId ?? 0,
+    editConflict,
+    message: editConflict
+      ? m.editor_history_error_edit_conflict()
+      : getRestoreErrorMessage(
+          error instanceof ORPCError ? error.code : error.message,
+        ),
+  };
 }
 
 export function getDeleteErrorMessage(reason: string) {
