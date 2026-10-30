@@ -449,6 +449,7 @@ describe("Media operations", () => {
         slug: "with-cover",
         status: "draft",
         isCover: true,
+        revisionsOnly: false,
       },
     ]);
 

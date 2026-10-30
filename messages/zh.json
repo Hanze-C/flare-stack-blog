@@ -653,6 +653,7 @@
   "media_drop": "松开以上传",
   "media_badge_unused": "未使用",
   "media_badge_cover": "封面",
+  "media_badge_revisions": "仅历史版本",
   "media_post_count": "{count} 篇",
   "media_used_in": "用于 {count} 篇文章",
   "media_copy_link": "复制链接",

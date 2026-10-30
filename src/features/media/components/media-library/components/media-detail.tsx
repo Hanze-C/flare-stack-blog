@@ -137,6 +137,9 @@ export function MediaDetail({
                 <FileText size={16} />
                 <span>{post.title}</span>
                 {post.isCover ? <small>{m.media_badge_cover()}</small> : null}
+                {post.revisionsOnly ? (
+                  <small>{m.media_badge_revisions()}</small>
+                ) : null}
                 <ExternalLink size={14} />
               </Link>
             ))

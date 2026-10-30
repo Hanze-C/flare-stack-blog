@@ -35,7 +35,9 @@ export const MediaSelectSchema = createSelectSchema(MediaTable, {
 export const MediaListItemSchema = MediaSelectSchema.extend({
   postCount: z
     .number()
-    .describe("How many posts use the image in their body or as their cover."),
+    .describe(
+      "How many posts use the image in their body or as their cover, in the draft, the published version or a Post Revision. Media with a count above 0 cannot be deleted.",
+    ),
   isCover: z
     .boolean()
     .describe("True when a post uses the image as its cover."),
@@ -54,7 +56,9 @@ export const MediaStatsSchema = z.object({
   unusedCount: z
     .number()
     .int()
-    .describe("Images no post uses and no Admin has as an avatar."),
+    .describe(
+      "Images no post uses (draft, published version or Post Revision) and no Admin has as an avatar.",
+    ),
   totalBytes: z.number().int(),
 });
 
@@ -66,6 +70,11 @@ export const LinkedPostSchema = z.object({
   isCover: z
     .boolean()
     .describe("True when the post uses the image as its cover."),
+  revisionsOnly: z
+    .boolean()
+    .describe(
+      "True when only Post Revisions of the post use the image, not its draft or published version. Restoring such a revision brings the image back, so it still counts as in use.",
+    ),
 });
 
 export const DeleteMediaResultSchema = z.object({ success: z.boolean() });

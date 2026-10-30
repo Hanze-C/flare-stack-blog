@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/react";
 import { eq } from "drizzle-orm";
 import { user } from "@/lib/db/schema";
+import * as PostRevisionService from "@/features/posts/services/post-revisions.service";
 import * as PostService from "@/features/posts/services/posts.service";
 import { unwrap } from "@/lib/errors";
 import * as Storage from "./data/media.storage";
@@ -293,6 +294,19 @@ describe("MediaService", () => {
     );
   }
 
+  async function deleteAllRevisions(postId: number) {
+    const revisions = await PostRevisionService.listPostRevisions(
+      adminContext,
+      { postId },
+    );
+    unwrap(
+      await PostRevisionService.deletePostRevisions(adminContext, {
+        postId,
+        revisionIds: revisions.map((revision) => revision.id),
+      }),
+    );
+  }
+
   async function publishPost(postId: number) {
     unwrap(
       await PostService.updatePost(adminContext, {
@@ -418,13 +432,18 @@ describe("MediaService", () => {
       expect(linked[0].isCover).toBe(true);
 
       unwrap(await PostService.unpublishPost(adminContext, { id: postId }));
+      // The publish revision still has it as its cover.
+      expect(await MediaService.isMediaInUse(adminContext, media.key)).toBe(
+        true,
+      );
+      await deleteAllRevisions(postId);
       expect(await MediaService.isMediaInUse(adminContext, media.key)).toBe(
         false,
       );
     });
 
-    it("unlocks snapshot-only images after unpublish if the draft no longer uses them", async () => {
-      const file = pngFile("unpublish-image.png", "unpublish image");
+    it("keeps an image only a Post Revision uses until the revision is deleted", async () => {
+      const file = pngFile("revision-image.png", "revision image");
       const media = unwrap(await MediaService.upload(adminContext, { file }));
       const { id: postId } = await PostService.createEmptyPost(adminContext);
 
@@ -434,9 +453,94 @@ describe("MediaService", () => {
       unwrap(await PostService.unpublishPost(adminContext, { id: postId }));
 
       expect(await MediaService.isMediaInUse(adminContext, media.key)).toBe(
+        true,
+      );
+      expect(
+        (await MediaService.deleteImage(adminContext, media.key)).error?.reason,
+      ).toBe("MEDIA_IN_USE");
+
+      const unused = await MediaService.getMediaList(adminContext, {
+        unusedOnly: true,
+      });
+      expect(unused.items.some((item) => item.key === media.key)).toBe(false);
+      const stats = await MediaService.getMediaStats(adminContext);
+      expect(stats.unusedCount).toBe(0);
+      unwrap(await MediaService.deleteUnused(adminContext));
+
+      const listed = await MediaService.getMediaList(adminContext, {});
+      expect(listed.items.find((item) => item.key === media.key)).toMatchObject(
+        { postCount: 1, isCover: false },
+      );
+      expect(
+        await MediaService.getLinkedMediaKeys(adminContext, [media.key]),
+      ).toEqual([media.key]);
+      expect(
+        await MediaService.getLinkedPosts(adminContext, media.key),
+      ).toEqual([
+        expect.objectContaining({
+          id: postId,
+          isCover: false,
+          revisionsOnly: true,
+        }),
+      ]);
+
+      await deleteAllRevisions(postId);
+      expect(await MediaService.isMediaInUse(adminContext, media.key)).toBe(
         false,
       );
       unwrap(await MediaService.deleteImage(adminContext, media.key));
+    });
+
+    it("keeps the images of the backup a restore saves", async () => {
+      const kept = unwrap(
+        await MediaService.upload(adminContext, {
+          file: pngFile("before-restore.png", "kept"),
+        }),
+      );
+      const { id: postId } = await PostService.createEmptyPost(adminContext);
+      await publishPost(postId);
+      const [published] = await PostRevisionService.listPostRevisions(
+        adminContext,
+        { postId },
+      );
+      await setPostContent(postId, imageDoc(kept.key));
+
+      // Restoring the empty publish revision first saves the draft, which
+      // has the image, as a backup revision.
+      unwrap(
+        await PostRevisionService.restorePostRevision(adminContext, {
+          postId,
+          revisionId: published.id,
+        }),
+      );
+
+      expect(await MediaService.getLinkedPosts(adminContext, kept.key)).toEqual(
+        [expect.objectContaining({ id: postId, revisionsOnly: true })],
+      );
+      expect(
+        (await MediaService.deleteImage(adminContext, kept.key)).error?.reason,
+      ).toBe("MEDIA_IN_USE");
+    });
+
+    it("counts a post once when its draft and revisions both use the image", async () => {
+      const media = unwrap(
+        await MediaService.upload(adminContext, {
+          file: pngFile("both.png", "both"),
+        }),
+      );
+      const { id: postId } = await PostService.createEmptyPost(adminContext);
+      await setPostContent(postId, imageDoc(media.key));
+      await publishPost(postId);
+
+      const listed = await MediaService.getMediaList(adminContext, {});
+      expect(listed.items.find((item) => item.key === media.key)).toMatchObject(
+        { postCount: 1 },
+      );
+      expect(
+        await MediaService.getLinkedPosts(adminContext, media.key),
+      ).toEqual([
+        expect.objectContaining({ id: postId, revisionsOnly: false }),
+      ]);
     });
 
     it("marks a Post Cover on linked posts", async () => {

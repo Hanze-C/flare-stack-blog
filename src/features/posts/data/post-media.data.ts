@@ -8,6 +8,8 @@ import {
 import {
   MediaTable,
   PostMediaTable,
+  PostRevisionMediaTable,
+  PostRevisionsTable,
   PostsTable,
   type PublicPostSnapshot,
 } from "@/lib/db/schema";
@@ -122,27 +124,44 @@ export async function pointDraftImagesAt(
 }
 
 export async function getPostsByMediaKey(db: DB, key: string) {
-  const posts = await db
-    .select({
-      id: PostsTable.id,
-      title: PostsTable.title,
-      slug: PostsTable.slug,
-      status: PostsTable.status,
-      coverMediaId: PostsTable.coverMediaId,
-      snapshotCoverKey: sql<
-        string | null
-      >`json_extract(${PostsTable.publicSnapshotJson}, '$.cover.key')`,
-      snapshotCoverMediaId: sql<
-        number | null
-      >`json_extract(${PostsTable.publicSnapshotJson}, '$.cover.mediaId')`,
-      mediaId: MediaTable.id,
-    })
-    .from(PostsTable)
-    .innerJoin(PostMediaTable, eq(PostsTable.id, PostMediaTable.postId))
-    .innerJoin(MediaTable, eq(MediaTable.id, PostMediaTable.mediaId))
-    .where(eq(MediaTable.key, key));
+  const [posts, revisionPosts] = await Promise.all([
+    db
+      .select({
+        id: PostsTable.id,
+        title: PostsTable.title,
+        slug: PostsTable.slug,
+        status: PostsTable.status,
+        coverMediaId: PostsTable.coverMediaId,
+        snapshotCoverKey: sql<
+          string | null
+        >`json_extract(${PostsTable.publicSnapshotJson}, '$.cover.key')`,
+        snapshotCoverMediaId: sql<
+          number | null
+        >`json_extract(${PostsTable.publicSnapshotJson}, '$.cover.mediaId')`,
+        mediaId: MediaTable.id,
+      })
+      .from(PostsTable)
+      .innerJoin(PostMediaTable, eq(PostsTable.id, PostMediaTable.postId))
+      .innerJoin(MediaTable, eq(MediaTable.id, PostMediaTable.mediaId))
+      .where(eq(MediaTable.key, key)),
+    db
+      .selectDistinct({
+        id: PostsTable.id,
+        title: PostsTable.title,
+        slug: PostsTable.slug,
+        status: PostsTable.status,
+      })
+      .from(PostRevisionMediaTable)
+      .innerJoin(MediaTable, eq(MediaTable.id, PostRevisionMediaTable.mediaId))
+      .innerJoin(
+        PostRevisionsTable,
+        eq(PostRevisionsTable.id, PostRevisionMediaTable.revisionId),
+      )
+      .innerJoin(PostsTable, eq(PostsTable.id, PostRevisionsTable.postId))
+      .where(eq(MediaTable.key, key)),
+  ]);
 
-  return posts.map((post) => ({
+  const linked = posts.map((post) => ({
     id: post.id,
     title: post.title,
     slug: post.slug,
@@ -152,18 +171,33 @@ export async function getPostsByMediaKey(db: DB, key: string) {
       post.snapshotCoverKey === key ||
       (post.snapshotCoverMediaId != null &&
         Number(post.snapshotCoverMediaId) === post.mediaId),
+    revisionsOnly: false,
   }));
+  const listed = new Set(linked.map((post) => post.id));
+  for (const post of revisionPosts) {
+    if (listed.has(post.id)) continue;
+    linked.push({ ...post, isCover: false, revisionsOnly: true });
+  }
+  return linked;
 }
 
 export async function isMediaInUse(db: DB, key: string): Promise<boolean> {
-  const result = await db
-    .select({ id: PostMediaTable.postId })
-    .from(PostMediaTable)
-    .innerJoin(MediaTable, eq(MediaTable.id, PostMediaTable.mediaId))
-    .where(eq(MediaTable.key, key))
-    .limit(1);
+  const [inPost, inRevision] = await Promise.all([
+    db
+      .select({ id: PostMediaTable.postId })
+      .from(PostMediaTable)
+      .innerJoin(MediaTable, eq(MediaTable.id, PostMediaTable.mediaId))
+      .where(eq(MediaTable.key, key))
+      .limit(1),
+    db
+      .select({ id: PostRevisionMediaTable.revisionId })
+      .from(PostRevisionMediaTable)
+      .innerJoin(MediaTable, eq(MediaTable.id, PostRevisionMediaTable.mediaId))
+      .where(eq(MediaTable.key, key))
+      .limit(1),
+  ]);
 
-  return result.length > 0;
+  return inPost.length > 0 || inRevision.length > 0;
 }
 
 export async function getLinkedMediaKeys(
@@ -172,11 +206,21 @@ export async function getLinkedMediaKeys(
 ): Promise<Array<string>> {
   if (keys.length === 0) return [];
 
-  const results = await db
-    .selectDistinct({ key: MediaTable.key })
-    .from(MediaTable)
-    .innerJoin(PostMediaTable, eq(MediaTable.id, PostMediaTable.mediaId))
-    .where(inArray(MediaTable.key, keys));
+  const [inPosts, inRevisions] = await Promise.all([
+    db
+      .selectDistinct({ key: MediaTable.key })
+      .from(MediaTable)
+      .innerJoin(PostMediaTable, eq(MediaTable.id, PostMediaTable.mediaId))
+      .where(inArray(MediaTable.key, keys)),
+    db
+      .selectDistinct({ key: MediaTable.key })
+      .from(MediaTable)
+      .innerJoin(
+        PostRevisionMediaTable,
+        eq(MediaTable.id, PostRevisionMediaTable.mediaId),
+      )
+      .where(inArray(MediaTable.key, keys)),
+  ]);
 
-  return results.map((r) => r.key);
+  return [...new Set([...inPosts, ...inRevisions].map((r) => r.key))];
 }

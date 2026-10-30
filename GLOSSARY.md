@@ -180,7 +180,7 @@ _Avoid_: New commit, fork update
 - Public listings and counts of **Comments** exclude deleted **Comments**, except that a deleted root remains visible as a placeholder when its thread still has published replies, and a deleted reply remains visible as a placeholder in a visible thread.
 - A **Reply** notifies the author of the targeted **Comment**, not the rest of the **Comment Thread**. A new root **Comment** by a non-**Admin** notifies the **Admin**.
 - A **Reply** belongs to exactly one **Comment Thread**.
-- A **Media** item cannot be deleted from the media library while it appears in the editable **Post** or in a **Public Content Snapshot**. **Post Revision**s do not keep **Media** from being deleted.
+- A **Media** item cannot be deleted from the media library while it appears in the editable **Post**, in a **Public Content Snapshot** or in a **Post Revision**, so restoring a **Post Revision** never brings back a deleted image. Deleting the **Post Revision** releases it.
 - A user-submitted **Friend Link** belongs to its submitting **User**; review notifications use that **User**’s account email. An admin-created **Friend Link** may have no submitting **User**.
 - A rejected **Friend Link** can be revised and resubmitted by its submitting **User**.
 - Only an approved **Friend Link** appears on the public friend-links page.

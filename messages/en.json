@@ -660,6 +660,7 @@
   "media_drop": "Drop to upload",
   "media_badge_unused": "Unused",
   "media_badge_cover": "Cover",
+  "media_badge_revisions": "Revisions only",
   "media_post_count": "{count} posts",
   "media_used_in": "Used in {count} posts",
   "media_copy_link": "Copy link",
