@@ -705,7 +705,7 @@
           "method": "POST",
           "path": "/admin/media/{key}/replace",
           "summary": "Replace media file",
-          "description": "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares (data.detail says why).",
+          "description": "Puts a new file at the same key, from a multipart/form-data body with one part, image. Every post that uses the image shows the new file at once, on the public site and in the editor, without being saved: no post is written, so none gains Unpublished Changes or a new saveToken. The Media's fileName becomes the uploaded file's name, or stays as it was when the part has none. Returns the updated Media. Answers 404 MEDIA_NOT_FOUND when no Media has the key and 400 MEDIA_INVALID when the file's bytes are not the type it declares (data.detail says why).",
           "tags": ["Admin Media"]
         }
       }
