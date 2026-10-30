@@ -1,6 +1,7 @@
 import type {
   AnyExtension,
   JSONContent,
+  MarkdownParseHelpers,
   MarkdownToken,
   MarkdownTokenizer,
 } from "@tiptap/core";
@@ -123,10 +124,28 @@ function imageDestination(src: string): string {
     : src;
 }
 
+/**
+ * Marks a parsed link that was an autolink, a bare address or one in `<>`,
+ * so `parseMarkdown` can tell it from `[text](address)` showing the same
+ * text. `parseMarkdown` removes it.
+ */
+export const AUTOLINK_FLAG = "autolink";
+
 const markdownOverrides: Record<
   string,
   (extension: AnyExtension) => AnyExtension
 > = {
+  link: (extension) =>
+    extension.extend({
+      parseMarkdown: (token: MarkdownToken, helpers: MarkdownParseHelpers) =>
+        helpers.applyMark("link", helpers.parseInline(token.tokens ?? []), {
+          href: token.href,
+          title: token.title || null,
+          ...(token.raw && !token.raw.startsWith("[")
+            ? { [AUTOLINK_FLAG]: true }
+            : {}),
+        }),
+    }),
   inlineMath: (extension) =>
     extension.extend({
       markdownTokenizer: inlineMathTokenizer,
