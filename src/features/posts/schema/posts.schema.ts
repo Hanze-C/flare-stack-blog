@@ -6,6 +6,7 @@ import {
 } from "@/features/categories/categories.schema";
 import { TagSelectSchema } from "@/features/tags/tags.schema";
 import { POST_STATUSES, PostsTable } from "@/lib/db/schema";
+import { atLeastOneField } from "@/lib/orpc/changes";
 import {
   IdCursorSchema,
   PageOffsetSchema,
@@ -16,6 +17,11 @@ import {
   POST_SLUG_MAX_LENGTH,
   POST_TITLE_MAX_LENGTH,
 } from "@/features/posts/utils/post-fields";
+import {
+  PUBLICATION_DATE_MAX,
+  PUBLICATION_DATE_MIN,
+  parsePublicationDate,
+} from "@/features/posts/utils/date";
 import { NullableJsonContentSchema } from "./json-content.schema";
 
 // Date fields need to accept both Date objects and ISO strings (for JSON serialization)
@@ -95,8 +101,30 @@ const PostSlugInputSchema = z
     `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. No other post may use it, ignoring case, as its slug or as the slug of its live page: that answers 409 SLUG_TAKEN.`,
   );
 
-const PUBLISHED_AT_RULES =
-  "Publication date, ISO 8601, stored to the whole second. Publishing refuses it with 400 PUBLISHED_AT_IN_FUTURE while it is later than the server's current time. Null lets the next publish set it to that time.";
+const PUBLISHED_AT_RULES = `Publication date, ISO 8601: a date such as 2026-10-01, or a date and time such as 2026-10-01T08:30:00Z or 2026-10-01T08:30:00+08:00. A time with no Z or offset is read as UTC, and a date alone as the start of that day in UTC. A day the calendar does not have (2026-02-30) answers 400, and so does a date before ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} or from ${PUBLICATION_DATE_MAX.toISOString().slice(0, 10)} on. Stored to the whole second. Publishing refuses it with 400 PUBLISHED_AT_IN_FUTURE while it is later than the server's current time. Null lets the next publish set it to that time.`;
+
+const PUBLICATION_DATE_MESSAGES = {
+  FORMAT:
+    "Not an ISO 8601 date: write 2026-10-01 or 2026-10-01T08:30:00Z. A time with no Z or offset is read as UTC.",
+  NOT_A_DATE: "The calendar has no such day.",
+  OUT_OF_RANGE: `A publication date is from ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} to the end of ${PUBLICATION_DATE_MAX.getUTCFullYear() - 1}.`,
+} as const;
+
+/** Read as the strict ISO 8601 `parsePublicationDate` takes, then a Date. */
+const PublishedAtInputSchema = z
+  .string()
+  .transform((value, ctx) => {
+    const parsed = parsePublicationDate(value);
+    if ("date" in parsed) return parsed.date;
+    ctx.addIssue({
+      code: "custom",
+      message: PUBLICATION_DATE_MESSAGES[parsed.issue],
+    });
+    return z.NEVER;
+  })
+  .nullable()
+  .optional()
+  .describe(PUBLISHED_AT_RULES);
 
 const SaveTokenSchema = z
   .string()
@@ -142,7 +170,7 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
   contentJson: NullableJsonContentSchema.optional(),
   title: PostTitleInputSchema.optional(),
   slug: PostSlugInputSchema.optional(),
-  publishedAt: (schema) => schema.describe(PUBLISHED_AT_RULES),
+  publishedAt: PublishedAtInputSchema,
 })
   .omit({
     publicSnapshotJson: true,
@@ -159,6 +187,7 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
   })
   .extend({ contentMarkdown: ContentMarkdownInputSchema })
   .strict();
+const NonEmptyPostUpdateSchema = atLeastOneField(PostUpdateSchema);
 
 export const PostItemSchema = PostSelectSchema.omit({
   saveToken: true,
@@ -418,7 +447,9 @@ export const CreatePostInputSchema = z
 
 export const UpdatePostInputSchema = z.strictObject({
   id: z.number(),
-  data: PostUpdateSchema,
+  data: NonEmptyPostUpdateSchema.describe(
+    "The fields to change; at least one, or the request answers 400.",
+  ),
   saveToken: StatedSaveTokenSchema,
   contentFormat: PostContentFormatSchema,
 });

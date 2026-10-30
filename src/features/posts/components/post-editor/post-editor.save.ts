@@ -30,7 +30,7 @@ export function savePostEdits(postId: number): PostEditorSave {
           summary: data.summary,
           ...(withSlug && isValidPostSlug(data.slug) && { slug: data.slug }),
           contentJson: data.contentJson,
-          publishedAt: data.publishedAt,
+          publishedAt: data.publishedAt?.toISOString() ?? null,
           coverMediaId: data.coverMediaId,
           categoryId: data.categoryId,
         },
