@@ -206,7 +206,7 @@ _Avoid_: New commit, fork update
 - A **Sign-in Code** for an email that has no **User** creates one; the person chooses that **User**'s public name before the sign-in completes.
 - A **Sign-in Code** is offered only when email delivery is configured in **System Config**.
 - The **Search Index** includes **Published Posts** and excludes **Draft Posts**.
-- Publishing a **Post** updates the **Search Index** from its **Public Content Snapshot**, **Category** and **Tags** included. Unpublishing removes that **Post** from the **Search Index**. Renaming a **Category** or **Tag** may remain stale in search until republishing or rebuilding the index.
+- Publishing a **Post** updates the **Search Index** from its **Public Content Snapshot**, **Category** and **Tags** included. Unpublishing removes that **Post** from the **Search Index**. Renaming or deleting a **Category** or **Tag** updates the **Search Index** documents of the **Published Posts** in its **Public Usage** at once.
 - Publishing, unpublishing or deleting a **Published Post**, and renaming or deleting a **Category** or **Tag**, can update the **Public Cache**.
 - The public sidebar lists **Categories** whose **Public Usage** is not empty, ordered by name. It does not list uncategorized.
 - The **Search Index** includes the **Category** name of a **Published Post**.
