@@ -160,7 +160,7 @@ const importFromUrl = adminProcedure
     path: "/admin/media/import",
     summary: "Import an image from a URL",
     description:
-      "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public, MEDIA_IMPORT_FAILED when the download fails, and MEDIA_INVALID when the response is not an accepted image type, is empty or over the size limit, or its bytes are not that type; data.detail says which.",
+      "Downloads a public http(s) image and stores it in the media library, as an upload would. Answers 400 MEDIA_INVALID_URL for an address that is not public: a loopback, private, link-local or reserved IP in any notation, a local name, a name any of whose DNS answers is such an address, or a redirect to any of these. Redirects are followed up to five times. Answers MEDIA_IMPORT_FAILED when the download fails or the name does not resolve, and MEDIA_INVALID when the response is not an accepted image type, is empty or over the size limit, or its bytes are not that type; data.detail says which.",
     tags: ["Admin Media"],
   })
   .input(ImportMediaUrlInputSchema)

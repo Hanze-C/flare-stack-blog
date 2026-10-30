@@ -225,6 +225,79 @@ describe("Post content as Markdown over the Admin API", () => {
     );
   });
 
+  it("refuses javascript: and data: links in either format and names them", async () => {
+    const apiKey = await seedAdminApiKey();
+    const id = await createPost(apiKey, { contentJson: paragraph("Before") });
+    type LinkError = {
+      code: string;
+      message: string;
+      data: { links: Array<string> };
+    };
+
+    const markdown = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          contentMarkdown:
+            "[ok](https://example.com) [site](/posts) [top](#top) [mail](mailto:a@b.example)\n\n[x](javascript:alert(1)) [y](data:text/html;base64,PHNjcmlwdD4=)\n\n[z][r]\n\n[r]: JAVASCRIPT:alert(2)",
+        },
+      },
+    });
+    expect(markdown.status).toBe(400);
+    const markdownBody = (await markdown.json()) as LinkError;
+    expect(markdownBody.code).toBe("CONTENT_LINK_INVALID");
+    expect(markdownBody.data.links).toEqual([
+      "javascript:alert(1)",
+      "data:text/html;base64,PHNjcmlwdD4=",
+      "JAVASCRIPT:alert(2)",
+    ]);
+    expect(markdownBody.message).toContain('"javascript:alert(1)"');
+
+    const linked = (href: string) => ({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "click",
+              marks: [{ type: "bold" }, { type: "link", attrs: { href } }],
+            },
+          ],
+        },
+      ],
+    });
+    const json = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { contentJson: linked(" java\tscript:alert(3)") } },
+    });
+    expect(json.status).toBe(400);
+    const jsonBody = (await json.json()) as LinkError;
+    expect(jsonBody.code).toBe("CONTENT_LINK_INVALID");
+    expect(jsonBody.data.links).toEqual([" java\tscript:alert(3)"]);
+    expect((await readPost(apiKey, id)).contentJson).toEqual(
+      paragraph("Before"),
+    );
+
+    const create = await callAdminApi(apiKey, "/admin/posts", {
+      method: "POST",
+      body: {
+        data: { title: "Data link", contentJson: linked("data:,hello") },
+      },
+    });
+    expect(create.status).toBe(400);
+    expect(((await create.json()) as LinkError).data.links).toEqual([
+      "data:,hello",
+    ]);
+
+    const fine = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: { data: { contentJson: linked("https://example.com/") } },
+    });
+    expect(fine.status).toBe(200);
+  });
+
   it("refuses contentJson and contentMarkdown together", async () => {
     const apiKey = await seedAdminApiKey();
     const id = await createPost(apiKey, { contentJson: paragraph("Before") });

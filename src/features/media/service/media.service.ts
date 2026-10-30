@@ -22,6 +22,7 @@ import { purgeWorkersCache } from "@/features/cache/workers-cache";
 import { mediaPurgeTarget } from "@/features/cache/workers-cache-policy";
 import * as PostMediaRepo from "@/features/posts/data/post-media.data";
 import { CACHE_CONTROL } from "@/lib/constants";
+import { fetchPublicUrl } from "@/lib/http/public-fetch";
 import { err, ok } from "@/lib/errors";
 
 function mediaInvalid(detail: MediaInvalidDetail) {
@@ -227,20 +228,22 @@ export async function importFromUrl(
   context: DbContext & { executionCtx: ExecutionContext },
   input: { url: string },
 ) {
-  const parsed = parsePublicImageUrl(input.url);
+  const parsed = parseImageUrl(input.url);
   if (!parsed) {
     return err({ reason: "MEDIA_INVALID_URL" });
   }
 
-  let response: Response;
-  try {
-    response = await fetch(parsed, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(15_000),
-    });
-  } catch {
-    return err({ reason: "MEDIA_IMPORT_FAILED" });
+  // The address, the DNS answers of its name and every redirect must all
+  // be on the public internet.
+  const fetched = await fetchPublicUrl(parsed, {
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (fetched.error) {
+    return fetched.error.reason === "NOT_PUBLIC"
+      ? err({ reason: "MEDIA_INVALID_URL" })
+      : err({ reason: "MEDIA_IMPORT_FAILED" });
   }
+  const response = fetched.data;
 
   if (!response.ok) {
     return err({ reason: "MEDIA_IMPORT_FAILED" });
@@ -268,40 +271,12 @@ export async function importFromUrl(
   return upload(context, { file });
 }
 
-function parsePublicImageUrl(raw: string): URL | null {
-  let url: URL;
+function parseImageUrl(raw: string): URL | null {
   try {
-    url = new URL(raw.trim());
+    return new URL(raw.trim());
   } catch {
     return null;
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-
-  const host = url.hostname.toLowerCase();
-  if (
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host === "::1" ||
-    host === "0.0.0.0" ||
-    host.endsWith(".local") ||
-    host.endsWith(".internal")
-  ) {
-    return null;
-  }
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) {
-    const [a, b] = host.split(".").map(Number);
-    if (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168)
-    ) {
-      return null;
-    }
-  }
-  return url;
 }
 
 function fileNameFromUrl(url: URL, mimeType: string) {

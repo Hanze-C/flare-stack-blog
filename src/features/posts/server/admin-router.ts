@@ -91,12 +91,23 @@ const postErrors = {
       images: z.array(z.string()).describe("The refused image addresses."),
     }),
   },
+  CONTENT_LINK_INVALID: {
+    status: 400,
+    message:
+      "Links must be http(s), mailto or tel addresses, site paths or #fragments.",
+    data: z.object({
+      links: z
+        .array(z.string())
+        .describe("The refused link addresses, such as javascript: or data:."),
+    }),
+  },
 } as const;
 
 const markdownContentErrors = {
   CONTENT_FORMAT_AMBIGUOUS: postErrors.CONTENT_FORMAT_AMBIGUOUS,
   MARKDOWN_IMAGE_INVALID: postErrors.MARKDOWN_IMAGE_INVALID,
   CONTENT_JSON_INVALID: postErrors.CONTENT_JSON_INVALID,
+  CONTENT_LINK_INVALID: postErrors.CONTENT_LINK_INVALID,
 } as const;
 
 const postNotFoundErrors = {
@@ -111,7 +122,8 @@ type MarkdownContentError =
       nodeTypes: Array<string>;
       markTypes: Array<string>;
       images: Array<string>;
-    };
+    }
+  | { reason: "CONTENT_LINK_INVALID"; links: Array<string> };
 
 function throwMarkdownContentError(
   error: MarkdownContentError,
@@ -128,6 +140,10 @@ function throwMarkdownContentError(
         markTypes: Array<string>;
         images: Array<string>;
       };
+    }) => Error;
+    CONTENT_LINK_INVALID: (options: {
+      message: string;
+      data: { links: Array<string> };
     }) => Error;
   },
 ): never {
@@ -154,6 +170,13 @@ function throwMarkdownContentError(
       throw errors.CONTENT_JSON_INVALID({
         message: `contentJson is refused: ${problems.join("; ")}.`,
         data: { nodeTypes, markTypes, images },
+      });
+    }
+    case "CONTENT_LINK_INVALID": {
+      const list = error.links.map((href) => `"${href}"`).join(", ");
+      throw errors.CONTENT_LINK_INVALID({
+        message: `${error.links.length > 1 ? "Links" : "Link"} ${list} must be an http(s), mailto or tel address, a site path or a #fragment. Links such as javascript: or data: cannot be shown on a post.`,
+        data: { links: error.links },
       });
     }
     default:

@@ -31,7 +31,7 @@ export const SearchResultSchema = z.object({
       contentSnippet: z.string().nullable(),
     })
     .describe(
-      "Excerpts around the matched words, which are wrapped in <mark> tags. A text without a match shows its beginning; an empty text is null.",
+      "Excerpts around the matched words, as HTML: every field is always HTML-escaped (& < > \" ' as &amp; &lt; &gt; &quot; &#039;), whether or not it matched, and the matched words are wrapped in <mark></mark>, the only tags. Decode the entities to get the plain text. A text without a match shows its beginning; an empty text is null.",
     ),
 });
 
