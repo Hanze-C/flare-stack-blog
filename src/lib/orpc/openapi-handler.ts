@@ -1,9 +1,18 @@
 import { SmartCoercionPlugin } from "@orpc/json-schema";
+import { ORPCError } from "@orpc/client";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
 import { OpenAPIReferencePlugin } from "@orpc/openapi/plugins";
+import { StandardOpenAPIMatcher } from "@orpc/openapi/standard";
 import { lazy, onError, unlazyRouter } from "@orpc/server";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
+import { MAX_FILE_SIZE } from "@/features/media/media.schema";
+import {
+  bodyLimitOf,
+  payloadTooLargeResponse,
+  readBodyWithin,
+} from "./body-limit";
 import type { ApiContext } from "./context";
+import { CanonicalPathIdPlugin } from "./path-ids";
 import { router } from "./router";
 
 const schemaConverter = new ZodToJsonSchemaConverter();
@@ -62,6 +71,16 @@ class ReferencePlugin extends OpenAPIReferencePlugin<ApiContext> {
 }
 
 export const openAPIHandler = new OpenAPIHandler(router, {
+  adapterInterceptors: [
+    async (options) => {
+      const limit = bodyLimitOf(options.request, MAX_FILE_SIZE);
+      const request = await readBodyWithin(options.request, limit);
+      if (!request) {
+        return { matched: true, response: payloadTooLargeResponse(limit) };
+      }
+      return options.next({ ...options, request });
+    },
+  ],
   interceptors: [
     onError((error) => {
       console.error(
@@ -84,6 +103,7 @@ export const openAPIHandler = new OpenAPIHandler(router, {
     new SmartCoercionPlugin({
       schemaConverters: [schemaConverter],
     }),
+    new CanonicalPathIdPlugin({ schemaConverter }),
     new ReferencePlugin({
       schemaConverters: [schemaConverter],
       docsPath: "/docs",
@@ -107,3 +127,65 @@ export const openAPIHandler = new OpenAPIHandler(router, {
     }),
   ],
 });
+
+const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
+// A second route table, built on the first request nobody matches: it lets
+// that request tell an unknown path from a known one with another method.
+let routeTable: StandardOpenAPIMatcher | undefined;
+
+async function methodsAllowedAt(pathname: `/${string}`) {
+  if (!routeTable) {
+    routeTable = new StandardOpenAPIMatcher();
+    routeTable.init(router);
+  }
+  const table = routeTable;
+  const matches = await Promise.all(
+    METHODS.map((method) => table.match(method, pathname)),
+  );
+  return METHODS.filter((_, index) => matches[index] !== undefined);
+}
+
+function errorResponse(
+  error: ORPCError<string, unknown>,
+  headers?: HeadersInit,
+) {
+  return Response.json(error.toJSON(), { status: error.status, headers });
+}
+
+/**
+ * Answers an API request. A request no operation takes still answers JSON, so
+ * a client can tell what it called wrong: 405 with `Allow` for a known path
+ * with another method, 404 ROUTE_NOT_FOUND for a path nothing serves.
+ */
+export async function handleApiRequest(
+  request: Request,
+  context: ApiContext,
+): Promise<Response> {
+  const { response } = await openAPIHandler.handle(request, {
+    prefix: "/api",
+    context,
+  });
+  if (response) return response;
+
+  const url = new URL(request.url);
+  const pathname =
+    `/${url.pathname.replace(/^\/api/, "").replace(/^\/|\/$/g, "")}` as const;
+  const allowed = await methodsAllowedAt(pathname);
+  if (allowed.length > 0) {
+    return errorResponse(
+      new ORPCError("METHOD_NOT_ALLOWED", {
+        status: 405,
+        message: `${request.method} is not allowed on ${url.pathname}. Use ${allowed.join(", ")}.`,
+        data: { allow: allowed },
+      }),
+      { Allow: allowed.join(", ") },
+    );
+  }
+  return errorResponse(
+    new ORPCError("ROUTE_NOT_FOUND", {
+      status: 404,
+      message: `No API route matches ${request.method} ${url.pathname}. The routes are listed in /api/spec.json.`,
+    }),
+  );
+}
