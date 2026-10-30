@@ -68,19 +68,39 @@ export function extractAllImageKeys(doc: JSONContent | null): Array<string> {
 }
 
 /**
- * The images the body shows from the media library by its path,
- * `/images/{key}` (a full URL is an external image even when its path looks
- * the same), with the Media key each names. These must exist.
+ * The Media key `src` names by its path, `/images/{key}`, alone or on the
+ * site's own address (`siteHost`, the bare host such as `blog.example.com`,
+ * over http or https). An address on any other host is an external image
+ * even when its path looks the same.
+ */
+export function mediaPathKey(src: string, siteHost: string) {
+  if (src.startsWith("/images/")) return extractImageKey(src);
+  if (!/^https?:\/\//i.test(src)) return undefined;
+  let url: URL;
+  try {
+    url = new URL(src);
+  } catch {
+    return undefined;
+  }
+  return url.host === siteHost.toLowerCase()
+    ? extractImageKey(url.pathname)
+    : undefined;
+}
+
+/**
+ * The images the body shows from the media library by its path (see
+ * `mediaPathKey`), with the Media key each names. These must exist.
  */
 export function extractMediaPathImages(
   doc: JSONContent | null | undefined,
+  siteHost: string,
 ): Array<{ src: string; key: string }> {
   const images: Array<{ src: string; key: string }> = [];
 
   function traverse(node: JSONContent) {
     const src = node.type === "image" ? node.attrs?.src : undefined;
-    if (typeof src === "string" && src.startsWith("/images/")) {
-      const key = extractImageKey(src);
+    if (typeof src === "string") {
+      const key = mediaPathKey(src, siteHost);
       if (key) images.push({ src, key });
     }
     node.content?.forEach(traverse);

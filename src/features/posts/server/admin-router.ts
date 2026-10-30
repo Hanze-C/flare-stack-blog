@@ -78,7 +78,7 @@ const postErrors = {
   CONTENT_IMAGE_NOT_FOUND: {
     status: 400,
     message:
-      "The body shows an image by a Media path (/images/<key>) that no Media has.",
+      "The body shows an image by a Media path (/images/<key>, alone or on the blog's own address) that no Media has.",
     data: z.object({
       images: z
         .array(z.string())
@@ -96,7 +96,7 @@ const postErrors = {
   CONTENT_JSON_INVALID: {
     status: 400,
     message:
-      "contentJson holds node or mark types the editor does not know, or images that are not http(s) addresses or Media paths (/images/<key>).",
+      "contentJson holds node or mark types the editor does not know, attributes it does not give them, or images that are not http(s) addresses or Media paths (/images/<key>).",
     data: z.object({
       nodeTypes: z
         .array(z.string())
@@ -104,6 +104,11 @@ const postErrors = {
       markTypes: z
         .array(z.string())
         .describe("The mark types the editor does not know."),
+      attributes: z
+        .array(z.string())
+        .describe(
+          "The attributes the editor does not give their node or mark type, as type.attribute, such as link.onclick.",
+        ),
       images: z.array(z.string()).describe("The refused image addresses."),
     }),
   },
@@ -202,6 +207,7 @@ type MarkdownContentError =
       reason: "CONTENT_JSON_INVALID";
       nodeTypes: Array<string>;
       markTypes: Array<string>;
+      attributes: Array<string>;
       images: Array<string>;
     }
   | { reason: "CONTENT_LINK_INVALID"; links: Array<string> };
@@ -219,6 +225,7 @@ function throwMarkdownContentError(
       data: {
         nodeTypes: Array<string>;
         markTypes: Array<string>;
+        attributes: Array<string>;
         images: Array<string>;
       };
     }) => Error;
@@ -239,18 +246,20 @@ function throwMarkdownContentError(
       });
     }
     case "CONTENT_JSON_INVALID": {
-      const { nodeTypes, markTypes, images } = error;
+      const { nodeTypes, markTypes, attributes, images } = error;
       const quoted = (list: Array<string>) =>
         list.map((item) => `"${item}"`).join(", ");
       const problems = [
         nodeTypes.length > 0 && `unknown node types ${quoted(nodeTypes)}`,
         markTypes.length > 0 && `unknown mark types ${quoted(markTypes)}`,
+        attributes.length > 0 &&
+          `unknown attributes ${quoted(attributes)} (type.attribute)`,
         images.length > 0 &&
           `images ${quoted(images)}, which must be http(s) addresses or Media paths (/images/<key>)`,
       ].filter(Boolean);
       throw errors.CONTENT_JSON_INVALID({
         message: `contentJson is refused: ${problems.join("; ")}.`,
-        data: { nodeTypes, markTypes, images },
+        data: { nodeTypes, markTypes, attributes, images },
       });
     }
     case "CONTENT_LINK_INVALID": {
@@ -364,7 +373,7 @@ const create = adminProcedure
     method: "POST",
     path: "/admin/posts",
     summary: "Create a draft post",
-    description: `With data, creates a new draft post carrying that content. An image shown by a Media path (/images/<key>) must be existing Media: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and creates nothing. ${CONTENT_SIZE_RULES} Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.`,
+    description: `With data, creates a new draft post carrying that content. An image shown by a Media path (/images/<key>, alone or on the blog's own address, as https://<blog>/images/<key>) must be existing Media: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and creates nothing. ${CONTENT_SIZE_RULES} Without data, returns an existing empty draft post when one exists, otherwise creates one. Returns the post's id and saveToken, never the body, so it takes no contentFormat; read the post to get it in either format.`,
     tags: ["Admin Posts"],
   })
   .input(CreatePostInputSchema)
@@ -398,7 +407,7 @@ const update = adminProcedure
     method: "PATCH",
     path: "/admin/posts/{id}",
     summary: "Update a post",
-    description: `Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. The Post's Tags are not among them: set them with tags.admin.setPostTags (PUT /admin/posts/{postId}/tags), which takes saveToken the same way. A save that leaves every stated field as it is writes nothing and answers the current saveToken. ${CONTENT_SIZE_RULES} The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. An image the body shows by a Media path (/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.`,
+    description: `Writes only the fields in data, at least one (an empty data answers 400), and returns the updated Post with its new saveToken. The Post's Tags are not among them: set them with tags.admin.setPostTags (PUT /admin/posts/{postId}/tags), which takes saveToken the same way. A save that leaves every stated field as it is writes nothing and answers the current saveToken. ${CONTENT_SIZE_RULES} The body comes back as contentJson, or as contentMarkdown instead when contentFormat=markdown (a top-level field next to data); it follows contentFormat, not the format the body was written in. An image the body shows by a Media path (/images/<key>, alone or on the blog's own address, as https://<blog>/images/<key>) must be existing Media, unless the draft already showed it: otherwise it answers 400 CONTENT_IMAGE_NOT_FOUND naming it and writes nothing. A cover (coverMediaId) that is not existing Media answers 404 MEDIA_NOT_FOUND. Media the draft uses cannot be deleted, so a body saved at the same time as its image is deleted ends with one of them refused. With saveToken, the write happens only if the post was not saved since that token was read; otherwise it answers 409 EDIT_CONFLICT, writes nothing, and data.saveToken is the current token.`,
     tags: ["Admin Posts"],
   })
   .input(UpdatePostInputSchema)

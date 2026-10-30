@@ -51,11 +51,11 @@ Post and Post Revision reads, and saves, take \`contentFormat=markdown\` (defaul
 
 - It carries headings, bold, italic, underline as \`++text++\`, strikethrough, inline code, links, nested bullet and numbered lists, block quotes, horizontal rules, hard line breaks, tables, images and videos. Task list markers, footnotes and HTML stay plain text, and front matter is dropped.
 - Headings are levels 2 to 4: when the Markdown has an H1, every heading moves one level down, and anything deeper than level 4 becomes level 4.
-- A Bilibili or YouTube link alone on a line is a video block. Its title, cover and duration are looked up on write and left empty when the lookup fails.
-- Tables keep column alignment, and a table cell holds a single line; column widths are not carried, so a Markdown write resets them to equal.
+- A Bilibili or YouTube address alone in a paragraph, bare or in \`<>\`, is a video block; a \`[text](address)\` link stays a link, even when its text is the address. A video's title, cover and duration are looked up on write and left empty when the lookup fails.
+- Tables keep column alignment, and a table cell holds a single line: merged cells are written as separate cells and read back unmerged, a cell's paragraphs and line breaks are joined with \`<br>\`, which reads back as text, and a list in a cell reads back as text. Column widths are not carried, so a Markdown write resets them to equal.
 - Inline math is \`$…$\`; block math has \`$$\` alone on the lines before and after it.
 - Fenced code blocks carry their language; a \`mermaid\` block renders as a diagram.
-- An image must be an http(s) address or the \`/images/…\` path of existing Media. Any other source, such as a local file path, answers 400 naming the image, and so does a Media path no Media has, unless the draft already shows it: upload the file as Media first and use its path.
+- An image must be an http(s) address or the \`/images/…\` path of existing Media; an address on the blog's own origin ending in \`/images/…\` counts as that path. Any other source, such as a local file path, answers 400 naming the image, and so does a Media path no Media has, unless the draft already shows it: upload the file as Media first and use its path.
 - A link whose address has a scheme other than http, https, ftp, ftps, mailto, tel, callto, sms, cid or xmpp, such as \`javascript:\` or \`data:\`, answers 400 \`CONTENT_LINK_INVALID\` naming it, in Markdown and in \`contentJson\` alike. Site paths, #fragments and relative addresses are kept.
 
 ## Media

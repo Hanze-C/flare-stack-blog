@@ -44,7 +44,9 @@ describe("renderFeedHtml", () => {
     );
     expect(html).toContain("<h2");
     expect(html).toContain("<strong>bold</strong>");
-    expect(html).toContain('href="https://example.com/">link</a>');
+    expect(html).toContain(
+      '<a href="https://example.com/" target="_blank" rel="noopener noreferrer nofollow">link</a>',
+    );
     expect(html).toContain("<ul>");
     expect(html).toContain("<li>");
   });
@@ -99,5 +101,35 @@ describe("renderFeedHtml", () => {
 
   it("gives an empty string for no body", () => {
     expect(renderFeedHtml(null, ORIGIN)).toBe("");
+  });
+
+  it("sets a link's target and rel itself, shows no class and makes site paths absolute", () => {
+    const html = renderFeedHtml(
+      doc({
+        type: "paragraph",
+        content: [
+          {
+            type: "text",
+            text: "a",
+            marks: [
+              {
+                type: "link",
+                attrs: {
+                  href: "/post/b",
+                  target: "_self",
+                  rel: "opener",
+                  class: "fixed inset-0",
+                  title: 'say "hi"',
+                },
+              },
+            ],
+          },
+        ],
+      }),
+      ORIGIN,
+    );
+    expect(html).toBe(
+      '<p><a href="https://blog.example/post/b" title="say &quot;hi&quot;" target="_blank" rel="noopener noreferrer nofollow">a</a></p>',
+    );
   });
 });

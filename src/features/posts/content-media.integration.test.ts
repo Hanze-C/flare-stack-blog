@@ -151,7 +151,7 @@ describe("writing a body that shows Media", () => {
         data: {
           contentJson: imageDoc(
             "/images/cm-kept.png",
-            "https://example.com/images/elsewhere.png",
+            "https://cdn.example.org/images/elsewhere.png",
           ),
         },
       },
@@ -204,6 +204,100 @@ describe("writing a body that shows Media", () => {
       reason: "CONTENT_IMAGE_NOT_FOUND",
       images: ["/images/cm-new.png"],
     });
+  });
+
+  // The tests run with DOMAIN=example.com.
+  it("checks a Media path on the site's own address like the bare path", async () => {
+    const apiKey = await seedAdminApiKey();
+    const media = await seedMedia("cm-site.png");
+    const id = await newPost();
+
+    const refused = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          contentJson: imageDoc(
+            "https://example.com/images/cm-nope.png",
+            "http://EXAMPLE.com/images/cm-nope2.png?width=800",
+          ),
+        },
+      },
+    });
+    expect(refused.status).toBe(400);
+    const body = (await refused.json()) as {
+      code: string;
+      data: { images: Array<string> };
+    };
+    expect(body.code).toBe("CONTENT_IMAGE_NOT_FOUND");
+    expect(body.data.images).toEqual([
+      "https://example.com/images/cm-nope.png",
+      "http://EXAMPLE.com/images/cm-nope2.png?width=800",
+    ]);
+
+    const markdown = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          contentMarkdown: "![x](https://example.com/images/cm-nope.png)",
+        },
+      },
+    });
+    expect(markdown.status).toBe(400);
+    expect(await readContent(id)).toBeNull();
+
+    const saved = await callAdminApi(apiKey, `/admin/posts/${id}`, {
+      method: "PATCH",
+      body: {
+        data: {
+          contentJson: imageDoc("https://example.com/images/cm-site.png"),
+        },
+      },
+    });
+    expect(saved.status).toBe(200);
+    const { db } = createAdminTestContext();
+    const used = await db
+      .select({ mediaId: PostMediaTable.mediaId })
+      .from(PostMediaTable)
+      .where(eq(PostMediaTable.postId, id));
+    expect(used).toEqual([{ mediaId: media.id }]);
+  });
+
+  it("lets a draft keep only gone Media it already showed by path", async () => {
+    const context = createAdminTestContext();
+    const external = await newPost();
+    const onSite = await newPost();
+    // Written before Media references were checked.
+    await context.db
+      .update(PostsTable)
+      .set({
+        contentJson: imageDoc("https://cdn.example.org/images/cm-gone.png"),
+      })
+      .where(eq(PostsTable.id, external));
+    await context.db
+      .update(PostsTable)
+      .set({ contentJson: imageDoc("https://example.com/images/cm-gone.png") })
+      .where(eq(PostsTable.id, onSite));
+
+    // Another host's image of the same name is not this Media.
+    const fromExternal = await PostService.updatePost(context, {
+      id: external,
+      data: { contentJson: imageDoc("/images/cm-gone.png") },
+    });
+    expect(fromExternal.error).toEqual({
+      reason: "CONTENT_IMAGE_NOT_FOUND",
+      images: ["/images/cm-gone.png"],
+    });
+
+    const fromSite = await PostService.updatePost(context, {
+      id: onSite,
+      data: {
+        contentJson: imageDoc(
+          "https://example.com/images/cm-gone.png",
+          "/images/cm-gone.png",
+        ),
+      },
+    });
+    expect(fromSite.error).toBeNull();
   });
 
   it("writes nothing when the Media goes between the check and the write", async () => {

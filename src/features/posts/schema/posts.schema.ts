@@ -24,6 +24,11 @@ import {
   PUBLICATION_DATE_MIN,
   parsePublicationDate,
 } from "@/features/posts/utils/date";
+import {
+  LEGACY_NODE_ATTRIBUTES,
+  POST_MARK_ATTRIBUTES,
+  POST_NODE_ATTRIBUTES,
+} from "@/features/posts/utils/post-content-rules";
 import { NullableJsonContentSchema } from "./json-content.schema";
 import { SaveTokenSchema, StatedSaveTokenSchema } from "./save-token.schema";
 import { coercedDate } from "@/lib/orpc/dates";
@@ -84,10 +89,25 @@ export const ContentMarkdownInputSchema = z
     `The body as Markdown, converted to contentJson on the server. Send either contentJson or contentMarkdown, not both (CONTENT_FORMAT_AMBIGUOUS). ${MARKDOWN_RULES} An image that is not an http(s) address or a Media path, such as a local file path, is refused with MARKDOWN_IMAGE_INVALID naming it, so upload it as Media first; a link the rules refuse answers CONTENT_LINK_INVALID naming it. The title, cover and length of a video are looked up from its provider, or kept from the body being replaced, and stay empty when the lookup fails. Column widths of every table reset to equal. An empty string writes an empty body.`,
   );
 
+/** `type` and its attributes in brackets, for each type of `lists`. */
+function typesWithAttributes(
+  lists: Readonly<Record<string, ReadonlyArray<string>>>,
+) {
+  return Object.entries(lists)
+    .map(([type, attrs]) =>
+      attrs.length > 0 ? `${type} [${attrs.join(", ")}]` : type,
+    )
+    .join(", ");
+}
+
+const LEGACY_ATTRIBUTES = Object.entries(LEGACY_NODE_ATTRIBUTES)
+  .map(([type, attrs]) => `${type} ${attrs.join(", ")}`)
+  .join("; ");
+
+const CONTENT_JSON_RULES = `The body as TipTap JSON, held to the same rules as Markdown: only the editor's node types (${typesWithAttributes(POST_NODE_ATTRIBUTES)}) and mark types (${typesWithAttributes(POST_MARK_ATTRIBUTES)}), each with at most the attributes in its brackets, and images whose src is an http(s) address or a Media path (/images/<key>). Anything else is refused with 400 CONTENT_JSON_INVALID naming it, an attribute as type.attribute. Attributes older editors stored (${LEGACY_ATTRIBUTES}) are accepted and dropped. The public site opens every link in a new tab with rel="noopener noreferrer nofollow" whatever its target and rel, and shows no class. A link the Markdown rules of the API description refuse answers CONTENT_LINK_INVALID naming it. Send either contentJson or contentMarkdown, not both.`;
+
 export const ContentJsonInputSchema =
-  NullableJsonContentSchema.optional().describe(
-    "The body as TipTap JSON, held to the same rules as Markdown: only the editor's node types (doc, text, paragraph, heading, blockquote, bulletList, orderedList, listItem, codeBlock, horizontalRule, hardBreak, table, tableRow, tableHeader, tableCell, image, video, inlineMath, blockMath) and mark types (bold, italic, underline, strike, code, link), and images whose src is an http(s) address or a Media path (/images/<key>). Anything else is refused with 400 CONTENT_JSON_INVALID naming it, and a link the Markdown rules of the API description refuse with CONTENT_LINK_INVALID. Send either contentJson or contentMarkdown, not both.",
-  );
+  NullableJsonContentSchema.optional().describe(CONTENT_JSON_RULES);
 
 const TITLE_FORMAT_RULE =
   "It cannot contain control or format characters (Unicode Cc or Cf, such as NUL, a tab, a zero width space or a bidirectional control); a zero width joiner inside an emoji is fine.";

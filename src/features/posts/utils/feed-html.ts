@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { renderToHTMLString } from "@tiptap/static-renderer/pm/html-string";
 import { schemaExtensions } from "@/features/posts/editor/schema";
+import { publicLinkAttributes } from "@/features/posts/utils/public-link";
 import {
   videoMetaOf,
   videoPageUrl,
@@ -12,7 +13,7 @@ import { escapeCodeHtml as escape } from "@/lib/plain-code-html";
  * A post body as the HTML a feed reader shows (RSS content:encoded, Atom
  * content, JSON Feed content_html). A reader has no site around it, so
  * addresses are absolute, a video is a link to its page, and math is its
- * source in code.
+ * source in code. Links open as on the public page (`publicLinkAttributes`).
  */
 
 function absolute(address: string, origin: string) {
@@ -50,6 +51,18 @@ export function renderFeedHtml(
           `<code>${escape(String(node.attrs.latex ?? ""))}</code>`,
         blockMath: ({ node }) =>
           `<pre><code>${escape(String(node.attrs.latex ?? ""))}</code></pre>`,
+      },
+      markMapping: {
+        link: ({ mark, children }) => {
+          const { href, title, target, rel } = publicLinkAttributes(mark.attrs);
+          const attrs = [
+            href !== undefined && `href="${escape(absolute(href, origin))}"`,
+            title !== undefined && `title="${escape(title)}"`,
+            `target="${target}"`,
+            `rel="${rel}"`,
+          ].filter(Boolean);
+          return `<a ${attrs.join(" ")}>${[children].flat().join("")}</a>`;
+        },
       },
     },
   });

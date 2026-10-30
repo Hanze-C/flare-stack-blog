@@ -288,6 +288,86 @@ describe("Post content as Markdown", () => {
     ).toEqual(["video", "paragraph", "bulletList"]);
   });
 
+  it("keeps [address](address) a link, even a video's, both ways", () => {
+    const url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+    const content = doc(
+      paragraph(text(url, [{ type: "link", attrs: { href: url } }])),
+      paragraph(
+        text("https://youtu.be/dQw4w9WgXcQ", [
+          { type: "link", attrs: { href: "https://youtu.be/dQw4w9WgXcQ" } },
+        ]),
+      ),
+    );
+    expect(postContentToMarkdown(editorJson(content))).toBe(
+      `[${url}](${url})\n\n[https://youtu.be/dQw4w9WgXcQ](https://youtu.be/dQw4w9WgXcQ)\n`,
+    );
+    expect(roundTrip(content)).toEqual(editorJson(content));
+    expect(
+      fromMarkdown(
+        [`[${url}](${url})`, `[watch](${url})`, url].join("\n\n"),
+      ).content?.map((node) => node.type),
+    ).toEqual(["paragraph", "paragraph", "video"]);
+  });
+
+  it("flattens merged cells and cells of several lines, as the rules say", () => {
+    const merged = doc({
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [cell("tableHeader", "Both", { colspan: 2 })],
+        },
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableCell",
+              content: [paragraph(text("a")), paragraph(text("b"))],
+            },
+            cell("tableCell", "c"),
+          ],
+        },
+      ],
+    });
+    expect(roundTrip(merged)).toEqual(
+      editorJson(
+        doc({
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                cell("tableHeader", "Both"),
+                { type: "tableHeader", content: [paragraph()] },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [cell("tableCell", "a<br>b"), cell("tableCell", "c")],
+            },
+          ],
+        }),
+      ),
+    );
+  });
+
+  it("leaves no trace of how a link was written", () => {
+    const { contentJson } = postContentFromMarkdown(
+      "<https://example.com> and https://example.org\n\nhttps://example.net",
+    );
+    const links: Array<unknown> = [];
+    const visit = (node: JSONContent) => {
+      for (const mark of node.marks ?? []) links.push(mark.attrs);
+      node.content?.forEach(visit);
+    };
+    visit(contentJson);
+    expect(links).toEqual([
+      { href: "https://example.com", title: null },
+      { href: "https://example.org", title: null },
+      { href: "https://example.net", title: null },
+    ]);
+  });
+
   it("refuses images that are neither web addresses nor Media paths", () => {
     const { refusedImages } = postContentFromMarkdown(
       [

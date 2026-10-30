@@ -121,11 +121,12 @@ function asJsonWrite(contentJson: JSONContent) {
 
 /**
  * What keeps `contentJson` from being stored: node or mark types the editor
- * does not know, and images the server cannot show, the rule Markdown images
- * follow. A body that passes reads as Markdown and writes back unchanged.
+ * does not know, attributes it does not give them, and images the server
+ * cannot show, the rule Markdown images follow. A body that passes reads as
+ * Markdown and writes back unchanged.
  */
 async function invalidContentJson(contentJson: JSONContent) {
-  const { nodeTypes, markTypes, imageSources } =
+  const { nodeTypes, markTypes, attributes, imageSources } =
     inspectPostContent(contentJson);
   let images: Array<string> = [];
   if (imageSources.length > 0) {
@@ -134,11 +135,16 @@ async function invalidContentJson(contentJson: JSONContent) {
       ...new Set(imageSources.filter((src) => !isPostMarkdownImage(src))),
     ];
   }
-  return nodeTypes.length + markTypes.length + images.length > 0
+  return nodeTypes.length +
+    markTypes.length +
+    attributes.length +
+    images.length >
+    0
     ? ({
         reason: "CONTENT_JSON_INVALID",
         nodeTypes,
         markTypes,
+        attributes,
         images,
       } as const)
     : null;

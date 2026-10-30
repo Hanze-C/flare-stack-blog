@@ -1,5 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
-import { getMarkdownManager } from "@/features/posts/editor/markdown/markdown-manager";
+import {
+  AUTOLINK_FLAG,
+  getMarkdownManager,
+} from "@/features/posts/editor/markdown/markdown-manager";
 
 const MIN_HEADING_LEVEL = 2;
 const MAX_HEADING_LEVEL = 4;
@@ -15,6 +18,13 @@ export interface ParseMarkdownOptions {
    * there is an H1, so H2 to H4 come back as they were written.
    */
   headings: "fit" | "keep";
+  /**
+   * What a paragraph holding nothing but an autolink, a bare address or one
+   * in `<>`, becomes, given the address as written; null keeps the
+   * paragraph. A `[text](address)` link is never one, and a list item's
+   * opening paragraph stays. Without it every such paragraph stays.
+   */
+  autolinkLine?: (text: string) => JSONContent | null;
 }
 
 export interface ParsedMarkdown {
@@ -41,6 +51,7 @@ function minHeadingLevel(nodes: Array<JSONContent>): number {
 
 interface NormalizeContext {
   acceptsImage: (src: string) => boolean;
+  autolinkLine?: (text: string) => JSONContent | null;
   headingOffset: number;
   refusedImages: Array<string>;
 }
@@ -94,17 +105,36 @@ function splitParagraph(
   return blocks;
 }
 
+function isAutolink(mark: { type: string; attrs?: Record<string, unknown> }) {
+  return mark.type === "link" && mark.attrs?.[AUTOLINK_FLAG] === true;
+}
+
+/** The address of a paragraph that holds nothing but an autolink. */
+function autolinkLineText(paragraph: JSONContent): string | null {
+  const [only, ...rest] = paragraph.content ?? [];
+  if (!only || rest.length > 0 || only.type !== "text") return null;
+  const marks = only.marks ?? [];
+  return marks.length === 1 && isAutolink(marks[0]) ? (only.text ?? "") : null;
+}
+
 function normalizeBlocks(
   blocks: Array<JSONContent>,
   context: NormalizeContext,
+  parentType?: string,
 ): Array<JSONContent> {
-  return blocks.flatMap((block): Array<JSONContent> => {
+  return blocks.flatMap((block, index): Array<JSONContent> => {
     switch (block.type) {
       case "image":
         if (acceptImage(block, context)) return [block];
         return [{ type: "paragraph", content: [imageAsText(block)] }];
-      case "paragraph":
-        return splitParagraph(block, context);
+      case "paragraph": {
+        const text =
+          parentType === "listItem" && index === 0
+            ? null
+            : autolinkLineText(block);
+        const line = text === null ? null : context.autolinkLine?.(text);
+        return line ? [line] : splitParagraph(block, context);
+      }
       case "heading": {
         const level =
           (block.attrs?.level ?? MIN_HEADING_LEVEL) + context.headingOffset;
@@ -126,13 +156,29 @@ function normalizeBlocks(
         return [block];
       default: {
         if (!block.content) return [block];
-        const content = normalizeBlocks(block.content, context);
+        const content = normalizeBlocks(block.content, context, block.type);
         if (block.type === "listItem" && content[0]?.type !== "paragraph") {
           content.unshift({ type: "paragraph" });
         }
         return [{ ...block, content }];
       }
     }
+  });
+}
+
+/** `nodes` with the autolink flag gone from their links. */
+function withoutAutolinkFlags(nodes: Array<JSONContent>): Array<JSONContent> {
+  return nodes.map((node) => {
+    const next = { ...node };
+    if (node.marks?.some(isAutolink)) {
+      next.marks = node.marks.map((mark) => {
+        if (!isAutolink(mark)) return mark;
+        const { [AUTOLINK_FLAG]: _flag, ...attrs } = mark.attrs ?? {};
+        return { ...mark, attrs };
+      });
+    }
+    if (node.content) next.content = withoutAutolinkFlags(node.content);
+    return next;
   });
 }
 
@@ -158,12 +204,13 @@ export function parseMarkdown(
   const content = parsed.content ?? [];
   const context: NormalizeContext = {
     acceptsImage: options.acceptsImage,
+    autolinkLine: options.autolinkLine,
     headingOffset: headingOffset(minHeadingLevel(content), options.headings),
     refusedImages: [],
   };
 
   return {
-    content: normalizeBlocks(content, context),
+    content: withoutAutolinkFlags(normalizeBlocks(content, context)),
     refusedImages: context.refusedImages,
   };
 }
