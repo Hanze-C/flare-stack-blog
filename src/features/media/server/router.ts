@@ -9,6 +9,8 @@ import {
   ImportMediaUrlInputSchema,
   LinkedPostSchema,
   MAX_FILE_SIZE,
+  MEDIA_INVALID_DETAILS,
+  type MediaInvalidDetail,
   MediaKeyInputSchema,
   MediaListPageSchema,
   MediaSelectSchema,
@@ -30,7 +32,7 @@ const mediaErrors = {
     message: "Invalid media upload.",
     data: z.object({
       detail: z
-        .enum(["TYPE_MISMATCH", "TYPE_UNRECOGNIZED", "EMPTY", "TOO_LARGE"])
+        .enum(MEDIA_INVALID_DETAILS)
         .describe(
           `Why the file is refused. TYPE_MISMATCH: the bytes are not the image type the file declares. TYPE_UNRECOGNIZED: a downloaded response is not one of ${ACCEPTED_IMAGE_TYPES.join(", ")}. EMPTY: a downloaded response has no bytes. TOO_LARGE: a downloaded response is over ${MAX_FILE_SIZE / 1024 / 1024} MB.`,
         ),
@@ -40,12 +42,6 @@ const mediaErrors = {
   MEDIA_INVALID_URL: { status: 400, message: "Invalid image URL." },
   MEDIA_IMPORT_FAILED: { status: 400, message: "Could not import image." },
 } as const;
-
-type MediaInvalidDetail =
-  | "TYPE_MISMATCH"
-  | "TYPE_UNRECOGNIZED"
-  | "EMPTY"
-  | "TOO_LARGE";
 
 const MEDIA_INVALID_MESSAGES: Record<MediaInvalidDetail, string> = {
   TYPE_MISMATCH:

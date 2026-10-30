@@ -7,6 +7,15 @@ import { IdCursorSchema, pageLimitSchema } from "@/lib/orpc/pagination";
 const coercedDate = z.union([z.date(), z.string().pipe(z.coerce.date())]);
 
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+/** Why a file is refused with MEDIA_INVALID. */
+export const MEDIA_INVALID_DETAILS = [
+  "TYPE_MISMATCH",
+  "TYPE_UNRECOGNIZED",
+  "EMPTY",
+  "TOO_LARGE",
+] as const;
+export type MediaInvalidDetail = (typeof MEDIA_INVALID_DETAILS)[number];
+
 export const ACCEPTED_IMAGE_TYPES = [
   "image/jpeg",
   "image/jpg",

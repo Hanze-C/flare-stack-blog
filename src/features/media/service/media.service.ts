@@ -2,6 +2,7 @@ import * as MediaRepo from "@/features/media/data/media.data";
 import * as Storage from "@/features/media/data/media.storage";
 import type {
   GetMediaListInput,
+  MediaInvalidDetail,
   UpdateMediaNameInput,
 } from "@/features/media/media.schema";
 import {
@@ -23,6 +24,10 @@ import * as PostMediaRepo from "@/features/posts/data/post-media.data";
 import { CACHE_CONTROL } from "@/lib/constants";
 import { err, ok } from "@/lib/errors";
 
+function mediaInvalid(detail: MediaInvalidDetail) {
+  return err({ reason: "MEDIA_INVALID" as const, detail });
+}
+
 export async function upload(
   context: DbContext & { executionCtx: ExecutionContext },
   input: { file: File },
@@ -31,7 +36,7 @@ export async function upload(
 
   const buffer = await file.arrayBuffer();
   if (!matchesDeclaredImageType(buffer, file.type)) {
-    return err({ reason: "MEDIA_INVALID", detail: "TYPE_MISMATCH" });
+    return mediaInvalid("TYPE_MISMATCH");
   }
   const dimensions = getImageDimensions(buffer);
   const width = dimensions?.width;
@@ -173,7 +178,7 @@ export async function replaceImage(
 
   const buffer = await input.file.arrayBuffer();
   if (!matchesDeclaredImageType(buffer, input.file.type)) {
-    return err({ reason: "MEDIA_INVALID", detail: "TYPE_MISMATCH" });
+    return mediaInvalid("TYPE_MISMATCH");
   }
   const dimensions = getImageDimensions(buffer);
   await Storage.putToR2(context.env, input.file, input.key);
@@ -246,15 +251,15 @@ export async function importFromUrl(
     .trim()
     .toLowerCase();
   if (!ACCEPTED_IMAGE_TYPES.includes(mime)) {
-    return err({ reason: "MEDIA_INVALID", detail: "TYPE_UNRECOGNIZED" });
+    return mediaInvalid("TYPE_UNRECOGNIZED");
   }
 
   const buffer = await response.arrayBuffer();
   if (buffer.byteLength === 0) {
-    return err({ reason: "MEDIA_INVALID", detail: "EMPTY" });
+    return mediaInvalid("EMPTY");
   }
   if (buffer.byteLength > MAX_FILE_SIZE) {
-    return err({ reason: "MEDIA_INVALID", detail: "TOO_LARGE" });
+    return mediaInvalid("TOO_LARGE");
   }
 
   const file = new File([buffer], fileNameFromUrl(parsed, mime), {
