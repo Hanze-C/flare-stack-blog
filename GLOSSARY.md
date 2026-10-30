@@ -146,7 +146,7 @@ _Avoid_: New commit, fork update
 - An **Admin** assigns a **Category** by choosing an existing one while editing a **Post**. Editing a **Post** does not create a **Category**.
 - **Categories** and **Tags** are managed on one Admin page.
 - Deleting a **Category** is allowed. **Posts** that had it become uncategorized. Deleting a **Tag** removes its Post associations.
-- A **Category** is identified by a unique name. **Category** names, **Tag** names and **Post** slugs are unique ignoring case and Unicode compatibility forms (fullwidth letters, no-break spaces), and are stored as written. Names, slugs and titles hold no control or format characters.
+- A **Category** is identified by a unique name. **Category** names, **Tag** names and **Post** slugs are unique ignoring case and Unicode compatibility forms (fullwidth letters, no-break spaces), and are stored as written. Names, slugs and titles hold no control or format characters. A **Post** slug is never `pinned` or `popular` (the public API's list paths), in any case, and never holds `^`, which the public page cannot open.
 - The public site can list **Published Posts** by **Category**, and can apply a **Category** filter and a **Tag** filter together.
 - A **Post** can have zero or more **Post Revisions**.
 - A **Post** can have zero or more **Comment Threads**.

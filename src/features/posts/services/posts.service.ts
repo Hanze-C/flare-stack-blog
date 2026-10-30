@@ -42,7 +42,10 @@ import {
   extractMediaPathImages,
   slugify,
 } from "@/features/posts/utils/content";
-import { truncateGeneratedSlug } from "@/features/posts/utils/post-fields";
+import {
+  isReservedPostSlug,
+  truncateGeneratedSlug,
+} from "@/features/posts/utils/post-fields";
 import { normalizePostContent } from "@/features/posts/utils/normalize-content";
 import { contentTooLarge } from "@/features/posts/utils/post-content-size";
 import { sameJson } from "@/features/posts/utils/same-json";
@@ -298,10 +301,12 @@ export async function generateSlug(
   data: GenerateSlugInput,
 ) {
   const baseSlug = truncateGeneratedSlug(slugify(data.title));
-  // 1. 先查有没有完全一样的 (比如 'hello-world')
-  const exactMatch = await PostRepo.slugExists(context.db, baseSlug, {
-    excludeId: data.excludeId,
-  });
+  // 1. 先查有没有完全一样的 (比如 'hello-world')；保留的 slug 视同已被占用
+  const exactMatch =
+    isReservedPostSlug(baseSlug) ||
+    (await PostRepo.slugExists(context.db, baseSlug, {
+      excludeId: data.excludeId,
+    }));
   if (!exactMatch) {
     return { slug: baseSlug };
   }

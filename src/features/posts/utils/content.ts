@@ -6,12 +6,30 @@ import {
   videoSourceOf,
 } from "@/features/posts/utils/video-source";
 
+/**
+ * What a slug made from a title falls back to when no character of the title
+ * can be kept, such as a title of emoji alone. It is not unique by itself: the
+ * slug generator numbers it (`untitled-log-1`) when another post has it.
+ */
+export const FALLBACK_SLUG = "untitled-log";
+
+/**
+ * A slug made from `text`: lower case Latin letters and digits, Chinese
+ * characters and single dashes. Compatibility forms are folded first (NFKC:
+ * fullwidth letters, ligatures such as ﬁ) and ß becomes ss, so those keep
+ * their letters; accents are dropped (café becomes cafe). Any other
+ * character is dropped, and a title with none left gets `FALLBACK_SLUG`.
+ */
 export function slugify(text: string | null | undefined) {
-  if (!text) return "untitled-log";
+  if (!text) return FALLBACK_SLUG;
 
   const cleaned = text
     .toString()
+    .normalize("NFKC")
     .toLowerCase()
+    .replaceAll("ß", "ss")
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "")
     .trim()
     // 1. 把所有空格 (space) 和下划线 (_) 替换为横杠 (-)
     .replace(/[\s_]+/g, "-")
@@ -30,7 +48,7 @@ export function slugify(text: string | null | undefined) {
     .replace(/^-+/, "")
     .replace(/-+$/, "");
 
-  return cleaned || "untitled-log";
+  return cleaned || FALLBACK_SLUG;
 }
 
 export function jsonContentHasType(

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  isPostSlugFormat,
+  isReservedPostSlug,
   isValidPostSlug,
   isValidPostTitle,
   POST_SLUG_MAX_LENGTH,
@@ -40,9 +42,42 @@ describe("isValidPostSlug", () => {
     "bell\u0007",
     ".",
     "..",
+    "a^b",
+    "pinned",
+    " Popular ",
+    "POPULAR",
+    "ｐｉｎｎｅｄ",
     "x".repeat(POST_SLUG_MAX_LENGTH + 1),
   ])("refuses %j", (slug) => {
     expect(isValidPostSlug(slug)).toBe(false);
+  });
+
+  it("takes a slug that only contains a reserved one", () => {
+    for (const slug of ["pinned-posts", "my-popular", "popular-2", "pinned1"]) {
+      expect(isValidPostSlug(slug)).toBe(true);
+    }
+  });
+
+  // Each of these was published as `t<symbol>t` on the running app and the
+  // page opened with 200 for the raw and the percent-encoded path. The caret
+  // is the one printable ASCII symbol that did not: it redirected to itself.
+  it("allows every printable ASCII symbol that opens its page", () => {
+    const allowed: Array<string> = [];
+    for (let code = 0x21; code <= 0x7e; code += 1) {
+      const character = String.fromCharCode(code);
+      if (/[0-9A-Za-z]/.test(character)) continue;
+      if (isPostSlugFormat(`t${character}t`)) allowed.push(character);
+    }
+    expect(allowed.join("")).toBe("!\"$&'()*+,-.:;<=>@[]_`{|}~");
+  });
+});
+
+describe("isReservedPostSlug", () => {
+  it("is the slugs of the public pinned and popular lists, in any case", () => {
+    expect(isReservedPostSlug("pinned")).toBe(true);
+    expect(isReservedPostSlug("Popular")).toBe(true);
+    expect(isReservedPostSlug("ＰＩＮＮＥＤ")).toBe(true);
+    expect(isReservedPostSlug("pinned-1")).toBe(false);
   });
 });
 

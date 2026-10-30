@@ -15,8 +15,10 @@ import {
 import {
   isPostSlugFormat,
   isPostTitleFormat,
+  isReservedPostSlug,
   POST_SLUG_MAX_LENGTH,
   POST_TITLE_MAX_LENGTH,
+  RESERVED_POST_SLUGS,
 } from "@/features/posts/utils/post-fields";
 import {
   PUBLICATION_DATE_MAX,
@@ -107,7 +109,9 @@ const PostTitleInputSchema = z
   );
 
 const SLUG_FORMAT_RULE =
-  "cannot contain / ? # % \\, whitespace (no-break spaces included), or control or format characters (Unicode Cc or Cf, such as a zero width space), or be . or ..";
+  "cannot contain / ? # % \\ ^, whitespace (no-break spaces included), or control or format characters (Unicode Cc or Cf, such as a zero width space), or be . or ..";
+
+const SLUG_RESERVED_RULE = `A slug cannot be ${RESERVED_POST_SLUGS.join(" or ")}, in any case: GET /api/posts/pinned and /api/posts/popular are the pinned and popular lists, so a post with either slug could not be read by slug.`;
 
 const PostSlugInputSchema = z
   .string()
@@ -115,8 +119,11 @@ const PostSlugInputSchema = z
   .min(1)
   .max(POST_SLUG_MAX_LENGTH)
   .refine(isPostSlugFormat, { message: `A slug ${SLUG_FORMAT_RULE}.` })
+  .refine((slug) => !isReservedPostSlug(slug), {
+    message: SLUG_RESERVED_RULE,
+  })
   .describe(
-    `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. No other post may use it as its slug or as the slug of its live page, compared ignoring case and Unicode compatibility forms (NFKC, so fullwidth ＡＢＣ equals abc): that answers 409 SLUG_TAKEN. It is stored as written.`,
+    `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. ${SLUG_RESERVED_RULE} No other post may use it as its slug or as the slug of its live page, compared ignoring case and Unicode compatibility forms (NFKC, so fullwidth ＡＢＣ equals abc): that answers 409 SLUG_TAKEN. It is stored as written.`,
   );
 
 const PUBLISHED_AT_RULES = `Publication date, ISO 8601: a date such as 2026-10-01, or a date and time such as 2026-10-01T08:30:00Z or 2026-10-01T08:30:00+08:00. A time with no Z or offset is read as UTC, and a date alone as the start of that day in UTC. A day the calendar does not have (2026-02-30) answers 400, and so does a date before ${PUBLICATION_DATE_MIN.toISOString().slice(0, 10)} or from ${PUBLICATION_DATE_MAX.toISOString().slice(0, 10)} on. Stored to the whole second. Publishing refuses it with 400 PUBLISHED_AT_IN_FUTURE while it is later than the server's current time. Null lets the next publish set it to that time.`;
@@ -498,7 +505,7 @@ export const GenerateSlugResultSchema = z.object({
   slug: z
     .string()
     .describe(
-      "A slug made from the title that no other post uses. A number is appended when the plain one is taken.",
+      "A slug made from the title that no other post uses. Compatibility forms are folded first (fullwidth letters, ligatures such as ﬁ) and ß becomes ss, accents are dropped, and a letter outside Latin letters, digits and Chinese characters is left out. A title with nothing left, such as emoji alone, gets untitled-log. A number is appended when the plain slug is taken or reserved (pinned, popular): untitled-log-1, pinned-1.",
     ),
 });
 

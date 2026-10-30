@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { CategorySelect } from "@/features/categories/components/category-select";
 import { pickedPublishDate } from "@/features/posts/utils/date";
 import {
+  isReservedPostSlug,
   isValidPostSlug,
   POST_SLUG_MAX_LENGTH,
 } from "@/features/posts/utils/post-fields";
@@ -32,7 +33,9 @@ export function PostEditorMetadata({
   onGenerateSlug,
 }: PostEditorMetadataProps) {
   const slugError = !isValidPostSlug(post.slug ?? "")
-    ? m.editor_meta_slug_invalid()
+    ? isReservedPostSlug((post.slug ?? "").trim())
+      ? m.editor_meta_slug_reserved()
+      : m.editor_meta_slug_invalid()
     : slugTaken
       ? m.editor_meta_slug_taken()
       : undefined;
