@@ -6,7 +6,7 @@ import {
   seedAdminApiKey,
   seedUser,
 } from "tests/test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { isPairedApiKey } from "@/features/agent-pairing/agent-pairing.schema";
 import { getAuth } from "@/lib/auth/auth.server";
 import { getDb } from "@/lib/db";
@@ -140,6 +140,63 @@ describe("generating a Pairing Code", () => {
     expect((await exchange(code)).status).toBe(200);
     expect((await status(one)).state).toBe("connected");
     expect((await status(two)).state).toBe("waiting");
+  });
+});
+
+describe("generating a code another Admin's live code equals", () => {
+  const realGetRandomValues = crypto.getRandomValues.bind(crypto);
+
+  /** Makes the next `count` Pairing Codes drawn all `2222-2222`. */
+  function drawSameCode(count: number) {
+    let left = count;
+    return vi
+      .spyOn(crypto, "getRandomValues")
+      .mockImplementation(((array: Uint8Array<ArrayBuffer>) =>
+        array.length === 8 && left-- > 0
+          ? array.fill(0)
+          : realGetRandomValues(array)) as typeof crypto.getRandomValues);
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("draws another code instead of failing on the unique index", async () => {
+    const one = await signIn({ id: "pair-clash-one", role: "admin" });
+    const two = await signIn({ id: "pair-clash-two", role: "admin" });
+
+    drawSameCode(1);
+    const first = await generate(one);
+    expect(first.code).toBe("2222-2222");
+    drawSameCode(1);
+    const second = await generate(two);
+    vi.restoreAllMocks();
+
+    expect(second.code).not.toBe(first.code);
+    expect((await exchange(first.code, "Agent One")).status).toBe(200);
+    expect((await exchange(second.code, "Agent Two")).status).toBe(200);
+    expect((await status(one)).agent?.name).toBe("Agent One");
+    expect((await status(two)).agent?.name).toBe("Agent Two");
+  });
+
+  it("gives up with an error after a few clashes, leaving the other Admin's code alone", async () => {
+    const one = await signIn({ id: "pair-clash-held", role: "admin" });
+    const two = await signIn({ id: "pair-clash-lost", role: "admin" });
+
+    drawSameCode(1);
+    const first = await generate(one);
+    vi.restoreAllMocks();
+
+    drawSameCode(Infinity);
+    const response = await call("/admin/pairing-code", {
+      method: "POST",
+      headers: { cookie: two },
+    });
+    vi.restoreAllMocks();
+
+    expect(response.status).toBe(500);
+    expect((await status(two)).state).toBe("none");
+    expect((await exchange(first.code)).status).toBe(200);
   });
 });
 

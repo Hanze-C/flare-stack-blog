@@ -10,31 +10,50 @@ import {
   normalizePairingCode,
   PAIRING_CODE_TTL_MS,
 } from "@/features/agent-pairing/utils/pairing-code";
+import { isUniqueViolation, type UniquelyKeyed } from "@/lib/db/unique-keys";
 import { serverEnv } from "@/lib/env/server.env";
 import { err, ok } from "@/lib/errors";
 
 type AdminContext = DbContext & { session: Session };
+
+const PAIRING_CODE_HASH: UniquelyKeyed = {
+  table: "pairing_codes",
+  value: "code_hash",
+  key: "code_hash",
+};
+const GENERATE_ATTEMPTS = 5;
 
 /**
  * A new Pairing Code for the signed-in Admin. It replaces the Admin's
  * previous code, which stops working.
  */
 export async function generatePairingCode(context: AdminContext) {
-  const code = newPairingCode();
   const now = new Date();
   // The column keeps seconds; the answer says what is stored.
   const expiresAt = new Date(
     Math.floor((now.getTime() + PAIRING_CODE_TTL_MS) / 1000) * 1000,
   );
-  // Two Admins drawing the same code out of 31^8 would fail the unique index
-  // and answer 500; generating again draws another.
-  await PairingCodeRepo.replacePairingCode(context.db, {
-    userId: context.session.user.id,
-    codeHash: await hashPairingCode(normalizePairingCode(code)!),
-    expiresAt,
-    now,
-  });
-  return { code, expiresAt };
+  for (let attempt = 1; ; attempt += 1) {
+    const code = newPairingCode();
+    try {
+      await PairingCodeRepo.replacePairingCode(context.db, {
+        userId: context.session.user.id,
+        codeHash: await hashPairingCode(normalizePairingCode(code)!),
+        expiresAt,
+        now,
+      });
+      return { code, expiresAt };
+    } catch (error) {
+      // Another Admin's live code drawn out of 31^8 fails the unique index;
+      // generating again draws another.
+      if (
+        attempt >= GENERATE_ATTEMPTS ||
+        !isUniqueViolation(error, PAIRING_CODE_HASH)
+      ) {
+        throw error;
+      }
+    }
+  }
 }
 
 export async function getPairingStatus(
