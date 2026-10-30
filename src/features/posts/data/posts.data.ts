@@ -59,7 +59,6 @@ async function hydratePublicPosts(
     id: number;
     status: PostStatus;
     createdAt: Date;
-    updatedAt: Date;
     pinnedAt: Date | null;
     publicSnapshotJson: PublicPostSnapshot | null;
   }>,
@@ -308,7 +307,6 @@ export async function getPostsCursor(
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
@@ -334,7 +332,6 @@ export async function getHomePosts(db: DB, requestedPage: number) {
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
@@ -426,7 +423,6 @@ export async function findPinnedPosts(db: DB) {
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })
@@ -450,7 +446,6 @@ export async function findPostsByIds(db: DB, ids: number[]) {
       id: PostsTable.id,
       status: PostsTable.status,
       createdAt: PostsTable.createdAt,
-      updatedAt: PostsTable.updatedAt,
       pinnedAt: PostsTable.pinnedAt,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
     })

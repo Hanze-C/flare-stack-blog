@@ -224,6 +224,10 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
   .strict();
 const NonEmptyPostUpdateSchema = atLeastOneField(PostUpdateSchema);
 
+const PublicUpdatedAtSchema = coercedDate.describe(
+  "When the post was last published. Saving a draft does not change it, publishing does.",
+);
+
 export const PostItemSchema = PostSelectSchema.omit({
   saveToken: true,
   contentJson: true,
@@ -231,6 +235,7 @@ export const PostItemSchema = PostSelectSchema.omit({
   coverMediaId: true,
   categoryId: true,
 }).extend({
+  updatedAt: PublicUpdatedAtSchema,
   tags: z.array(TagSelectSchema).optional(),
   category: PublicCategorySchema.nullable().catch(null),
   readTimeInMinutes: z.number().int().min(1),
@@ -257,6 +262,7 @@ export const PostWithTocSchema = PostSelectSchema.omit({
   categoryId: true,
 })
   .extend({
+    updatedAt: PublicUpdatedAtSchema,
     tags: z.array(TagSelectSchema).optional(),
     category: PublicCategorySchema.nullable().catch(null),
     readTimeInMinutes: z.number().int().min(1),

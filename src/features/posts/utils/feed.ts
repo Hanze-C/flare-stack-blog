@@ -2,6 +2,7 @@ import { desc, isNotNull, sql } from "drizzle-orm";
 import { Feed } from "feed";
 import type { SiteConfig } from "@/features/config/config.schema";
 import * as ConfigService from "@/features/config/service/config.service";
+import { publicModifiedAt } from "@/features/posts/public-snapshot";
 import { renderFeedHtml } from "@/features/posts/utils/feed-html";
 import { getDb } from "@/lib/db";
 import { PostsTable } from "@/lib/db/schema";
@@ -37,7 +38,6 @@ export async function buildFeed(env: Env, executionCtx: ExecutionContext) {
       id: PostsTable.id,
       publicSnapshotJson: PostsTable.publicSnapshotJson,
       publicSlug: PostsTable.publicSlug,
-      updatedAt: PostsTable.updatedAt,
     })
     .from(PostsTable)
     .where(isNotNull(PostsTable.publicSnapshotJson))
@@ -55,7 +55,16 @@ export async function buildFeed(env: Env, executionCtx: ExecutionContext) {
     link: `https://${DOMAIN}/`,
   };
 
+  // The feed was last updated when its newest change was published, not when
+  // it was built and not when a draft was saved.
+  const updated = posts.reduce<Date | undefined>((latest, post) => {
+    if (!post.publicSnapshotJson) return latest;
+    const modifiedAt = publicModifiedAt(post.publicSnapshotJson);
+    return !latest || modifiedAt > latest ? modifiedAt : latest;
+  }, undefined);
+
   const feed = new Feed({
+    updated,
     title: siteConfig.title,
     description: siteConfig.description,
     id: `https://${DOMAIN}/`,
@@ -76,7 +85,8 @@ export async function buildFeed(env: Env, executionCtx: ExecutionContext) {
       description: snapshot.summary ?? "",
       content: renderFeedHtml(snapshot.contentJson, `https://${DOMAIN}`),
       author: [feedAuthor],
-      date: new Date(snapshot.publishedAt),
+      date: publicModifiedAt(snapshot),
+      published: new Date(snapshot.publishedAt),
     });
   });
 
