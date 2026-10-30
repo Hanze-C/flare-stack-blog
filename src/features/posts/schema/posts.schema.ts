@@ -95,6 +95,9 @@ const PostSlugInputSchema = z
     `Slug of the post's page, /post/<slug> once published, trimmed. It must not be empty, holds at most ${POST_SLUG_MAX_LENGTH} characters and ${SLUG_FORMAT_RULE}; letters of any script, such as Chinese, are fine. No other post may use it, ignoring case, as its slug or as the slug of its live page: that answers 409 SLUG_TAKEN.`,
   );
 
+const PUBLISHED_AT_RULES =
+  "Publication date, ISO 8601, stored to the whole second. Publishing refuses it with 400 PUBLISHED_AT_IN_FUTURE while it is later than the server's current time. Null lets the next publish set it to that time.";
+
 const SaveTokenSchema = z
   .string()
   .describe(
@@ -139,6 +142,7 @@ const PostUpdateSchema = createUpdateSchema(PostsTable, {
   contentJson: NullableJsonContentSchema.optional(),
   title: PostTitleInputSchema.optional(),
   slug: PostSlugInputSchema.optional(),
+  publishedAt: (schema) => schema.describe(PUBLISHED_AT_RULES),
 })
   .omit({
     publicSnapshotJson: true,

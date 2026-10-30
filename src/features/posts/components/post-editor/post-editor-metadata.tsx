@@ -5,6 +5,7 @@ import DatePicker from "@/components/ui/date-picker";
 import { FormField } from "@/components/ui/form-field";
 import { Spinner } from "@/components/ui/spinner";
 import { CategorySelect } from "@/features/categories/components/category-select";
+import { pickedPublishDate } from "@/features/posts/utils/date";
 import {
   isValidPostSlug,
   POST_SLUG_MAX_LENGTH,
@@ -79,7 +80,9 @@ export function PostEditorMetadata({
             onChange={(dateStr) => {
               if (dateStr && dateStr > post.serverToday) return;
               onPostChange({
-                publishedAt: dateStr ? new Date(`${dateStr}T12:00:00Z`) : null,
+                publishedAt: dateStr
+                  ? pickedPublishDate(dateStr, post.serverToday)
+                  : null,
               });
             }}
           />

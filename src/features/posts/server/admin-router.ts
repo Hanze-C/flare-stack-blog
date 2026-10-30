@@ -305,7 +305,7 @@ const publishPost = adminProcedure
     path: "/admin/posts/{id}/publish",
     summary: "Publish a post",
     description:
-      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
+      "Publishes the post and generates or updates its Public Content Snapshot. Code blocks are highlighted on the server and stored in the snapshot. Answers 409 PUBLIC_SLUG_TAKEN when another post's live page uses the slug, ignoring case, and 400 PUBLISHED_AT_IN_FUTURE while the publication date is later than the server's current time, to the second. With saveToken, only the draft that token was read from is published; if the post was saved since, it answers 409 EDIT_CONFLICT, publishes nothing, and data.saveToken is the current token.",
     tags: ["Admin Posts"],
   })
   .input(PublishPostInputSchema)

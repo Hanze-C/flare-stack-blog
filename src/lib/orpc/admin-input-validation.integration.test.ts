@@ -304,3 +304,34 @@ describe("post title and slug", () => {
     expect((await patchPost(apiKey, id, { data: { slug } })).status).toBe(200);
   });
 });
+
+describe("publication date", () => {
+  it("refuses to publish a time later today", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id } = await createPost(apiKey, "Later today");
+    const later = new Date(Date.now() + 60_000);
+    await patchPost(apiKey, id, { data: { publishedAt: later.toISOString() } });
+
+    const response = await publish(apiKey, id);
+
+    expect(response.status).toBe(400);
+    expect(await codeOf(response)).toBe("PUBLISHED_AT_IN_FUTURE");
+  });
+
+  it("answers the same whole-second date on admin and public reads", async () => {
+    const apiKey = await seedAdminApiKey();
+    const { id } = await createPost(apiKey, "Precision");
+    await patchPost(apiKey, id, { data: { slug: "precision" } });
+    expect((await publish(apiKey, id)).status).toBe(200);
+
+    const admin = (await (
+      await callApi(apiKey, `/admin/posts/${id}`)
+    ).json()) as { publishedAt: string };
+    const publicPost = (await (
+      await callApi(apiKey, "/posts/precision")
+    ).json()) as { publishedAt: string };
+
+    expect(publicPost.publishedAt).toBe(admin.publishedAt);
+    expect(new Date(admin.publishedAt).getMilliseconds()).toBe(0);
+  });
+});

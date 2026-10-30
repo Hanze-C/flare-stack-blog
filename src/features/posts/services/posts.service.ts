@@ -38,6 +38,7 @@ import { normalizePostContent } from "@/features/posts/utils/normalize-content";
 import {
   isFuturePublishDate,
   serverUtcDateString,
+  toWholeSecond,
 } from "@/features/posts/utils/date";
 import * as UnpublishedChangesService from "@/features/posts/services/unpublished-changes.service";
 import {
@@ -136,7 +137,8 @@ async function buildPublicSnapshot(
     contentJson,
     tagIds: [...new Set(post.tags.map((tag) => tag.id))].sort((a, b) => a - b),
     categoryId: post.categoryId ?? null,
-    publishedAt: toIsoOrNull(post.publishedAt) ?? new Date().toISOString(),
+    publishedAt:
+      toIsoOrNull(post.publishedAt) ?? toWholeSecond(new Date()).toISOString(),
     cover: await resolveSnapshotCover(db, post.coverMediaId),
   };
 }
@@ -590,8 +592,8 @@ export async function publishPost(
   const draft: { publishedAt?: Date; contentJson?: typeof post.contentJson } =
     {};
   if (!post.publishedAt) {
-    draft.publishedAt = new Date();
-  } else if (isFuturePublishDate(post.publishedAt.toISOString())) {
+    draft.publishedAt = toWholeSecond(new Date());
+  } else if (isFuturePublishDate(post.publishedAt)) {
     return err({ reason: "PUBLISHED_AT_IN_FUTURE" });
   }
 
